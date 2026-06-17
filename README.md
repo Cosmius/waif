@@ -12,6 +12,12 @@ slices, the review evidence, and the completion decision.
 Waif stands for AI-Assisted Development Workflow, formed from a permutation of
 the capital letters in `AI-assisted development WorkFlow`.
 
+## Caution
+
+Due to the inherent uncertainty of AI outputs, use Waif at your own risk.
+This skill set has been tested with Codex GPT-5.5 Medium. Other capable enough
+AI models should also work, but they are not tested.
+
 ## Purpose
 
 AI-assisted development can produce useful code quickly, but that speed creates
