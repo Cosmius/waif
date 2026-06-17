@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Development Step"
+  short_description: "Draft and approve one implementation step"
+  default_prompt: "Use $dev-plan-step to plan the next step of the current task."

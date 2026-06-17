@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implement Development Step"
+  short_description: "Implement, review, and commit one step"
+  default_prompt: "Use $dev-implement-step to implement and review the current accepted step."
