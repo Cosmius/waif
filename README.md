@@ -148,14 +148,6 @@ You can configure it in workspace instructions:
 - Workflow dir: .ai-dev-workflow
 ```
 
-or:
-
-```markdown
-## Development Workflow
-
-- workflow_dir: .ai-dev-workflow
-```
-
 `dev-draft-goal` is the only skill that establishes the workflow directory.
 Later skills expect the workflow directory and `tasks/current` symlink to
 already exist.

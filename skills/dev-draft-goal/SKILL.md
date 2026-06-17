@@ -40,7 +40,7 @@ Goal drafting owns workflow dir resolution and initialization.
 
 1. Use the most specific available workflow-dir instruction from the user,
    prior explicit direction, a requested settings file, or workspace
-   instructions. Recognize `Workflow dir:` and `workflow_dir:`.
+   instructions. Recognize settings like `Workflow dir:`.
 2. If no setting exists:
    - use `<workspace-dir>/.ai-dev-workflow`;
    - commonly persist `- Workflow dir: .ai-dev-workflow` in the workspace-root

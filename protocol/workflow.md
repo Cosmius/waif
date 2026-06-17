@@ -105,8 +105,8 @@ The instruction may come from:
 2. a settings file the user asks the agent to read;
 3. workspace instructions already provided to the agent, such as `AGENTS.md`.
 
-Recognize `Workflow dir:` or `workflow_dir:` settings. Resolve a relative path
-from the workspace dir.
+Recognize settings like `Workflow dir:`. Resolve a relative setting from the
+workspace dir.
 
 After goal drafting has established it, the workflow dir:
 
