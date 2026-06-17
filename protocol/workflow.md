@@ -167,3 +167,156 @@ symlink. Stop if it is missing, broken, ambiguous, or points outside
 │       └── current -> ./20260601-2-task-name
 └── <workspace files>
 ```
+
+## Task Artifacts
+
+Task artifacts are the authoritative, human-readable workflow record. Each
+skill-specific contract defines the required content of the artifacts it owns.
+
+### Format
+
+- Use Markdown.
+- Put the title first.
+- Put top-level metadata immediately after the title as unordered-list items
+  in the form `- Field: value`.
+- Use the exact field names, section names, allowed values, and ordering
+  defined by the owning skill's artifact contract.
+- Omit optional sections when they contain no content.
+- Use task-dir-relative paths when one task artifact refers to another.
+
+### Item IDs
+
+Give every independently referable content item a stable ID. Content items
+include checklist entries, list entries, numbered actions, table rows,
+findings, and revision records. Top-level metadata fields and narrative
+paragraphs do not need IDs.
+
+- Format IDs as defined by the owning artifact contract.
+- Keep IDs unique within the task and qualified by artifact kind.
+- Preserve an item's ID when editing it.
+- Never renumber or reuse an ID after removing or superseding an item.
+- Refer to items by ID in artifacts and chat instead of relying on position or
+  heading text.
+- Prefer itemized content over compound narrative text when separate statements
+  may be reviewed, accepted, implemented, or discussed independently.
+
+Use these artifact prefixes:
+
+- `G-` for goal items;
+- `P-` and `P<number>` for plan content and plan items;
+- `S<NN>-` for step content;
+- `S<NN>-R<N>-` for implementation-review content;
+- `FR-` for final-review content.
+
+Review records and the final review use `Decision` or `Verdict` rather than a
+lifecycle `Status`. Do not add fields that imply unsupported workflow state.
+
+### Timestamps
+
+An artifact timestamp records the local date, time, and UTC offset in RFC 3339
+form, for example `2026-06-14T18:30:00+09:00`. Use this format for all artifact
+creation, update, review, report, and revision timestamps. Keep `Created`
+unchanged and refresh `Updated` whenever an artifact changes.
+
+### Status
+
+`goal.md`, `plan.md`, and each step plan persist their lifecycle in a
+top-level `Status` field.
+
+The goal and general plan have three statuses:
+
+```text
+drafting -> accepted <-> amending
+```
+
+Each step plan has three statuses:
+
+```text
+drafting -> accepted -> done
+```
+
+Status meanings:
+
+- `drafting`: the artifact is being prepared for human review.
+- `accepted`: the human has accepted the artifact.
+- `amending`: an accepted goal or general plan is being revised.
+- `done`: implementation of the step plan is complete.
+
+Only an `accepted` goal and general plan may be consumed by later skills.
+`amending` returns to `accepted` only after explicit human acceptance.
+
+Goals and general plans may repeat the `accepted -> amending -> accepted`
+cycle any number of times. Each amendment requires a new explicit acceptance.
+
+Do not reset an accepted or amending goal or general plan to `drafting`.
+Only step plans follow an accept-once rule. After a step plan changes from
+`drafting` to `accepted`, its planned content is immutable. Only lifecycle
+metadata written by `dev-implement-step`, such as `Status`, `Updated`, and the
+source commit, may change.
+
+### Ambiguity Triage
+
+Before presenting any artifact for human acceptance, triage unresolved
+ambiguity into `Open Questions` and `Assumptions`.
+
+- Put major issues in `Open Questions`. Explain each issue in detail, describe
+  why it matters, and provide several concrete options the human can adopt.
+  The artifact must not be accepted until these questions are resolved.
+- Put minor issues in `Assumptions`. Record a best-effort solution so the human
+  can review the choice without blocking acceptance.
+
+An issue is major when its resolution could materially change the artifact's
+outcome, scope, approach, risk, or acceptance criteria. Other ambiguity is
+minor unless the human marks it as blocking.
+
+This rule applies to every artifact that requires human acceptance, including
+the goal, general plan, and step plan. Omit `Open Questions` or `Assumptions`
+when that section would be empty.
+
+### Revision Rules
+
+The `Revisions` section applies only to goals and general plans changed after
+acceptance.
+
+When modifying an accepted goal or general plan:
+
+1. Change its status from `accepted` to `amending`.
+2. Create `## Revisions` if absent.
+3. Add one subsection for the amendment cycle.
+4. Keep all further changes in that cycle in the same subsection.
+5. On explicit human acceptance, return the status to `accepted`.
+
+Do not add another revision subsection until a later amendment cycle begins.
+Capture `Before` once at the start of the cycle. Accumulate every change made
+in that cycle under `Changed`; the human accepts them together.
+
+A status-only lifecycle transition does not require a revision entry.
+
+Each revision record must have a stable ID and state:
+
+- when the revision was made;
+- what the artifact said or required before the revision;
+- what changed.
+
+Preserve all earlier revision subsections.
+
+Example:
+
+```markdown
+## Revisions
+
+### G-REV1 - 2026-06-14T18:30:00+09:00 - Extend timeout scope
+
+- Before: The goal covered configurable timeouts for browser sessions only.
+- Changed:
+  - Added API sessions to the required timeout behavior.
+  - Clarified that existing sessions keep their current timeout.
+```
+
+### State Rules
+
+- Markdown artifacts are authoritative workflow state.
+- Persist decisions to artifacts instead of relying on chat history.
+- Never commit workflow artifacts to the workspace repository.
+- Preserve completed artifacts and source commits as history when upstream
+  artifacts are revised.

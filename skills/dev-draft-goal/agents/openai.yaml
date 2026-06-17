@@ -1,0 +1,4 @@
+interface:
+  display_name: "Draft Development Goal"
+  short_description: "Draft and approve a durable task goal"
+  default_prompt: "Use $dev-draft-goal to draft a new development goal."

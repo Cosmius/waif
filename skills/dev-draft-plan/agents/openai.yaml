@@ -1,0 +1,4 @@
+interface:
+  display_name: "Draft Development Plan"
+  short_description: "Draft and approve a general plan"
+  default_prompt: "Use $dev-draft-plan to create the current task plan."
