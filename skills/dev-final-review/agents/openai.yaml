@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Development Task"
+  short_description: "Perform the task-wide final review"
+  default_prompt: "Use $dev-final-review to produce the final review for the current task."
