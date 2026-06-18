@@ -42,8 +42,10 @@ Implement one accepted step through a review-and-acceptance loop.
    - Rerun required validation when the staged content differs from the content
      last validated, then commit exactly the staged changes.
 10. After the workspace commit succeeds:
-    - record its hash in `step.md`;
+    - replace `Source commit: not-created` in `step.md` with the full commit
+      hash;
     - set the step `Status: done`;
+    - refresh the step `Updated` timestamp;
     - mark mapped plan items `done` only when cumulative coverage from done
       steps completes their outcomes;
     - otherwise leave mapped plan items `pending`.
@@ -149,7 +151,7 @@ acceptance gate.
 ## Done When
 
 - Accepted source changes are committed on the recorded branch.
-- `step.md` records the commit and has `Status: done`.
+- `step.md` has `Status: done` and `Source commit: <full commit hash>`.
 - Fully consumed plan items are `done`.
 - Partially consumed plan items remain `pending`.
 - All review iterations remain available as `reviewN.md`.

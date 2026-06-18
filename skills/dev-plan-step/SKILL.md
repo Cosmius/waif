@@ -52,6 +52,7 @@ used. Never reuse or backfill a number.
 - Plan items: P1
 - Goal criteria: G-AC1
 - Estimated non-test/doc changes: ~150 lines
+- Source commit: not-created
 - Created: YYYY-MM-DDTHH:MM:SS+HH:MM
 - Updated: YYYY-MM-DDTHH:MM:SS+HH:MM
 
@@ -112,6 +113,9 @@ Statuses are `drafting`, `accepted`, and `done`.
 - `Plan items` is a comma-separated exact-ID list, for example
   `Plan items: P2, P3`.
 - `Goal criteria` is the union advanced through those plan items.
+- `Source commit` must be `not-created` while the step is `drafting` or
+  `accepted`. Only `dev-implement-step` may replace it, and only with the full
+  commit hash after the workspace commit succeeds.
 - `Plan Item Coverage` must contain one `partial` or `complete` entry for every
   listed plan ID and no others.
 

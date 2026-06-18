@@ -20,7 +20,8 @@ Audit the complete task and write the durable final review.
    substantive code, behavior, validation, or integration risk arose. Check
    only enough task-level completeness to understand the intended code result:
    - every plan item is `done`;
-   - every `steps/*/step.md` has `Status: done` and records a commit;
+   - every `steps/*/step.md` has `Status: done` and a non-`not-created`
+     `Source commit`;
    - every acceptance criterion has evidence;
    - final validation passes.
    Do not over-verify routine workflow metadata such as commit existence,
@@ -80,6 +81,9 @@ No findings.
 
 - FR-R1: None.
 ```
+
+Populate the `Commits` column from each done step's top-level `Source commit`
+field.
 
 Verdicts are `pass` and `concerns`. Use `concerns` for:
 - failed validation;

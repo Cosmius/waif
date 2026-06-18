@@ -251,8 +251,8 @@ cycle any number of times. Each amendment requires a new explicit acceptance.
 Do not reset an accepted or amending goal or general plan to `drafting`.
 Only step plans follow an accept-once rule. After a step plan changes from
 `drafting` to `accepted`, its planned content is immutable. Only lifecycle
-metadata written by `dev-implement-step`, such as `Status`, `Updated`, and the
-source commit, may change.
+metadata written by `dev-implement-step` may change after acceptance:
+`Status`, `Updated`, and `Source commit`.
 
 ### Ambiguity Triage
 
