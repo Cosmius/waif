@@ -1,5 +1,7 @@
 local/
 tmp/
+dist/
+target/
 
 .DS_Store
 
