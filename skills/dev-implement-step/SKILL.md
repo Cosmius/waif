@@ -28,13 +28,15 @@ Implement one accepted step through a review-and-acceptance loop.
 6. Spawn a new independent subagent to review the uncommitted workspace diff.
    Give it the goal, plan, step, repository instructions, diff, and validation
    results, but not a desired verdict. If subagents are unavailable, perform
-   the review in the current session and record that fallback in `reviewN.md`.
-7. Save the next gapless `reviewN.md` using the
-   [Implementation Review Contract](#implementation-review-contract).
+   the review in the current session and record that fallback in
+   `steps/NN-short-name/reviewN.md`.
+7. Save the next gapless `reviewN.md` in the current step directory using the
+   [Implementation Review Contract](#implementation-review-contract). Scope
+   review numbering to that step directory.
 8. Present the implementation and review findings to the user.
 9. Interpret the response:
    - On requested changes, revise the implementation, rerun validation, run a
-     fresh review, and create `reviewN+1.md`.
+     fresh review, and create `reviewN+1.md` in the same step directory.
    - Accept changes only when the human manually stages them. Inspect the staged
      diff and verify it contains only reviewed changes for this step. If the
      staged diff is empty, unrelated, or differs materially from the reviewed
@@ -70,7 +72,7 @@ checking whether findings were addressed. If subagents are unavailable, review
 in the current session with the same inputs and priorities, and mark the
 fallback in the artifact.
 
-Use this structure for `reviewN.md`:
+Use this structure for `steps/NN-short-name/reviewN.md`:
 
 ```markdown
 # Implementation Review N
@@ -120,7 +122,10 @@ When findings exist, order them by severity:
 ```
 
 Do not add an artifact `Status`. Review records are immutable observations.
-- Create `review1.md`, `review2.md`, and so on without gaps or overwrites.
+- Create `review1.md`, `review2.md`, and so on in the current step directory
+  without gaps or overwrites.
+- Scope the review number `N` to the current step directory. Do not number
+  implementation reviews globally across the task.
 - Prefix review content IDs with step and review numbers, such as `S01-R2-F1`.
 - Preserve source artifact IDs when referring to goal criteria, plan items, or
   step items.
@@ -145,6 +150,7 @@ acceptance gate.
   mark a plan item done merely because one mapped step is done.
 - Do not amend or rewrite earlier source commits unless the user requests it.
 - Do not reuse or overwrite review files.
+- Do not write review files outside the current step directory.
 - Stop when new instructions would materially change the accepted step plan.
   Do not revise the accepted artifact or continue under changed scope.
 
@@ -154,5 +160,6 @@ acceptance gate.
 - `step.md` has `Status: done` and `Source commit: <full commit hash>`.
 - Fully consumed plan items are `done`.
 - Partially consumed plan items remain `pending`.
-- All review iterations remain available as `reviewN.md`.
+- All review iterations remain available as
+  `steps/NN-short-name/reviewN.md`.
 - Every review content item has a stable, step-and-review-qualified ID.

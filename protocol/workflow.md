@@ -87,7 +87,8 @@ done conditions. It is persisted in `steps/NN-name/step.md`.
 
 A `task artifact` is a durable Markdown record of task state, decisions,
 plans, reviews, or results stored in the task dir. Task artifacts include
-`goal.md`, `plan.md`, each `step.md`, each `reviewN.md`, and `review.md`.
+`goal.md`, `plan.md`, each `steps/NN-name/step.md`, each
+`steps/NN-name/reviewN.md`, and `review.md`.
 
 ### Workspace Dir
 

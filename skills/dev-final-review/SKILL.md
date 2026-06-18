@@ -14,7 +14,9 @@ Audit the complete task and write the durable final review.
 1. Read [workflow.md](../../protocol/workflow.md), resolve the established
    workflow dir and current task dir, and stop if either is missing.
 2. Read the complete accepted `goal.md`, accepted `plan.md`, every
-   `steps/*/step.md`, and every `reviewN.md`.
+   `steps/*/step.md`, and every `steps/*/review*.md`. Read step artifacts in
+   step sequence order and review files in review-number order within each
+   step.
 3. Read workflow artifacts as context for the code review. Do not raise
    workflow or procedure findings unless they are necessary to explain how a
    substantive code, behavior, validation, or integration risk arose. Check
@@ -113,7 +115,8 @@ finding, but still exclude that ignored finding from the final verdict.
   reviews passed.
 - Do not let user-ignored findings affect the verdict, but keep them in the
   review with the user's required reason and any reviewer counter-opinion.
-- Keep final-review findings separate from historical `reviewN.md` records.
+- Keep final-review findings separate from historical
+  `steps/*/review*.md` records.
 - Do not delete or retarget `tasks/current`.
 
 ## Done When
