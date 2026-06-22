@@ -143,16 +143,8 @@ Implementation is complete. Use dev-final-review.
 
 ## Workflow Directory
 
-Task artifacts live in a workflow directory inside the workspace. By default,
-the directory is `.ai-dev-workflow`.
-
-You can configure it in workspace instructions:
-
-```markdown
-## Development Workflow
-
-- Workflow dir: .ai-dev-workflow
-```
+Task artifacts live in the workflow directory located at
+`<workspace-dir>/.waif`.
 
 `dev-draft-goal` is the only skill that establishes the workflow directory.
 Later skills expect the workflow directory and `tasks/current` symlink to

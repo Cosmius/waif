@@ -31,32 +31,15 @@ Create the task dir and keep `goal.md` as the product-level contract.
 7. On explicit acceptance, require no blocking open questions and set
    `Status: accepted`. Treat unqualified `accept`, `approve`, or equivalent as
    acceptance of the current goal.
-8. Apart from optional default-setting persistence below, do not modify or
-   commit workspace files.
+8. Do not modify or commit workspace files.
 
 ## Workflow Dir Setup
 
-Goal drafting owns workflow dir resolution and initialization.
-
-1. Use the most specific available workflow-dir instruction from the user,
-   prior explicit direction, a requested settings file, or workspace
-   instructions. Recognize settings like `Workflow dir:`.
-2. If no setting exists:
-   - use `<workspace-dir>/.ai-dev-workflow`;
-   - commonly persist `- Workflow dir: .ai-dev-workflow` in the workspace-root
-     `AGENTS.md` so future agents are likely to receive the setting;
-   - when doing so, create the file if needed or append a
-     `## Development Workflow` section without replacing unrelated
-     instructions;
-   - do not add a duplicate setting.
-3. Resolve a relative setting from the workspace dir. Validate the resolved
-   path using the shared workflow-dir containment rule.
-4. If the workflow dir is missing, create it and run `git init` there. If it
-   already exists, use it without inspecting or changing repository metadata.
+If the workflow dir is missing, create it and run `git init` there. If it
+already exists, use it without inspecting or changing repository metadata.
 
 Creating a missing workflow dir and running `git init` there are setup
-operations, not approval gates. Persisting the default in `AGENTS.md` is a
-compatibility measure, not a requirement. Do not edit `.gitignore`.
+operations, not approval gates. Do not edit `.gitignore`.
 
 ## `goal.md` Contract
 

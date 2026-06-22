@@ -98,25 +98,7 @@ changed. It contains the source repository and its workspace instructions.
 ### Workflow Dir
 
 The `workflow dir` is the directory that stores durable workflow artifacts.
-
-Resolve it from the most specific explicit instruction available to the agent.
-The instruction may come from:
-
-1. the user's current message or prior explicit direction;
-2. a settings file the user asks the agent to read;
-3. workspace instructions already provided to the agent, such as `AGENTS.md`.
-
-Recognize settings like `Workflow dir:`. Resolve a relative setting from the
-workspace dir.
-
-After goal drafting has established it, the workflow dir:
-
-- exists as a directory;
-- is a proper descendant of the workspace dir.
-
-All stages after goal drafting must stop if the setting is absent, the path is
-missing, or the directory invariant is violated. They must not create or repair
-the workflow dir.
+It is located at `<workspace-dir>/.waif`.
 
 ### Task Dir
 
