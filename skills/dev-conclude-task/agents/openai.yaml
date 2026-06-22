@@ -1,0 +1,4 @@
+interface:
+  display_name: "Conclude Development Task"
+  short_description: "Create a self-contained task handoff document"
+  default_prompt: "Use $dev-conclude-task to document the completed task."

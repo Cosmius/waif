@@ -10,12 +10,14 @@ const PACKAGE_FILES: &[&str] = &[
     "skills/dev-draft-goal/agents/openai.yaml",
     "skills/dev-draft-plan/SKILL.md",
     "skills/dev-draft-plan/agents/openai.yaml",
-    "skills/dev-final-review/SKILL.md",
-    "skills/dev-final-review/agents/openai.yaml",
-    "skills/dev-implement-step/SKILL.md",
-    "skills/dev-implement-step/agents/openai.yaml",
     "skills/dev-plan-step/SKILL.md",
     "skills/dev-plan-step/agents/openai.yaml",
+    "skills/dev-implement-step/SKILL.md",
+    "skills/dev-implement-step/agents/openai.yaml",
+    "skills/dev-final-review/SKILL.md",
+    "skills/dev-final-review/agents/openai.yaml",
+    "skills/dev-conclude-task/SKILL.md",
+    "skills/dev-conclude-task/agents/openai.yaml",
 ];
 
 pub(crate) struct CodexPlugin;
@@ -58,7 +60,7 @@ fn manifest(metadata: &Metadata) -> Value {
             "longDescription": concat!(
                 "A file-backed development workflow with explicit ",
                 "human approval gates for goals, plans, implementation steps, ",
-                "source changes, and final review."
+                "source changes, final review, and repository handoff report."
             ),
             "developerName": metadata.author,
             "category": "Developer Tools",
@@ -66,7 +68,8 @@ fn manifest(metadata: &Metadata) -> Value {
             "defaultPrompt": [
                 "Draft a durable goal for this development task.",
                 "Plan the next implementation step.",
-                "Review the completed development task."
+                "Review the completed development task.",
+                "Document a completed task for other contributors."
             ]
         }
     })

@@ -141,6 +141,15 @@ Run the final review when no more implementation steps remain:
 Implementation is complete. Use dev-final-review.
 ```
 
+For a multi-person project, `dev-conclude-task` can optionally create a
+self-contained teammate handoff after the final review. It is usually of
+little value for a single-person project and is not part of the normal
+workflow. The user decides whether to stage and commit the document:
+
+```text
+Use dev-conclude-task to document the completed task for other contributors.
+```
+
 ## Workflow Directory
 
 Task artifacts live in the workflow directory located at
@@ -163,3 +172,4 @@ workflow protocol state.
 - `skills/dev-plan-step/` drafts one implementation step.
 - `skills/dev-implement-step/` implements, reviews, and commits one step.
 - `skills/dev-final-review/` performs the task-wide final review.
+- `skills/dev-conclude-task/` creates the self-contained task handoff.

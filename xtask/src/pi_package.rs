@@ -8,9 +8,10 @@ const PACKAGE_FILES: &[&str] = &[
     "protocol/workflow.md",
     "skills/dev-draft-goal/SKILL.md",
     "skills/dev-draft-plan/SKILL.md",
-    "skills/dev-final-review/SKILL.md",
-    "skills/dev-implement-step/SKILL.md",
     "skills/dev-plan-step/SKILL.md",
+    "skills/dev-implement-step/SKILL.md",
+    "skills/dev-final-review/SKILL.md",
+    "skills/dev-conclude-task/SKILL.md",
 ];
 
 pub(crate) struct PiPackage;
