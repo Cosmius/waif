@@ -6,16 +6,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::Value;
 
-static METADATA : Metadata = Metadata {
-  name: "waif",
-  version: "0.1.0",
-  author: "Cosmia Fu",
-  keywords: &["development", "planning", "review", "workflow"],
-  description: "Plan, implement, and review development tasks.",
+static METADATA: Metadata = Metadata {
+    name: "waif",
+    version: "0.1.0",
+    author: "Cosmia Fu",
+    keywords: &["development", "planning", "review", "workflow"],
+    description: "Plan, implement, and review development tasks.",
 };
 
 mod codex_plugin;
 mod pi_package;
+mod skill_zip;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -39,6 +40,7 @@ fn package_build(root: &Path, target: PackageTarget) -> Result<()> {
     match target {
         PackageTarget::PiPackage => pi_package::PiPackage.build(root, &dist, &METADATA),
         PackageTarget::CodexPlugin => codex_plugin::CodexPlugin.build(root, &dist, &METADATA),
+        PackageTarget::SkillZip => skill_zip::SkillZip.build(root, &dist, &METADATA),
     }
 }
 
@@ -84,6 +86,7 @@ struct PackageCommand {
 enum PackageTarget {
     PiPackage,
     CodexPlugin,
+    SkillZip,
 }
 
 trait PackageTargetImpl {
