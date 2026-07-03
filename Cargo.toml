@@ -1,4 +1,3 @@
 [workspace]
-members = ["xtask"]
+members = ["xtask", "waif"]
 resolver = "2"
-
