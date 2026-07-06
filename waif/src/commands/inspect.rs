@@ -3,6 +3,7 @@ use std::path::Path;
 
 use clap::Args;
 
+use super::relative_path;
 use crate::protocol::{Task, WorkflowDir};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -52,11 +53,4 @@ fn print_current_task(workspace_dir: &Path, task: Task) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn relative_path(workspace_dir: &Path, path: &Path) -> String {
-    path.strip_prefix(workspace_dir)
-        .unwrap_or(path)
-        .display()
-        .to_string()
 }

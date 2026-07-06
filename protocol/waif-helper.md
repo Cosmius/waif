@@ -15,6 +15,14 @@ waif <subcommand-and-flags>
 
 ## Subcommand
 
+### Create a new workflow task:
+
+```sh
+waif new <task-slug>
+```
+
+The task slug must be lowercase letters, numbers, and hyphens.
+
 ### Inspect the current workflow task:
 
 ```sh
