@@ -8,6 +8,9 @@ use std::process::{Command, Stdio};
 
 use chrono::Local;
 
+use crate::artifact::Artifact;
+use crate::parser::{self, Diagnostic};
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub struct WorkflowDir {
@@ -134,16 +137,19 @@ impl Task {
 
 pub struct TaskArtifact {
     path: PathBuf,
-    metadata: Vec<(String, String)>,
+    artifact: Artifact,
 }
 
 impl TaskArtifact {
     pub fn read(path: PathBuf) -> Result<Self> {
         let content = fs::read_to_string(&path)?;
-        Ok(Self {
-            path,
-            metadata: parse_metadata(&content),
-        })
+        let artifact = parser::parse(&content).map_err(|diagnostics| {
+            Box::new(InvalidTaskArtifact {
+                path: path.clone(),
+                diagnostics,
+            }) as Box<dyn Error>
+        })?;
+        Ok(Self { path, artifact })
     }
 
     pub fn path(&self) -> &Path {
@@ -151,12 +157,39 @@ impl TaskArtifact {
     }
 
     pub fn metadata_value(&self, key: &str) -> Option<&str> {
-        self.metadata
+        self.artifact
+            .metadata()
             .iter()
-            .find(|(metadata_key, _)| metadata_key == key)
-            .map(|(_, value)| value.as_str())
+            .find(|metadata| metadata.key() == key)
+            .map(|metadata| metadata.value())
     }
 }
+
+#[derive(Debug)]
+struct InvalidTaskArtifact {
+    path: PathBuf,
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl fmt::Display for InvalidTaskArtifact {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, diagnostic) in self.diagnostics.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str("\n")?;
+            }
+            write!(
+                formatter,
+                "{}:{}: {}",
+                self.path.display(),
+                diagnostic.line(),
+                diagnostic.message()
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl Error for InvalidTaskArtifact {}
 
 #[derive(Debug)]
 enum ProtocolError {
@@ -260,25 +293,6 @@ fn symlink_task(task_name: &str, current_link: &Path) -> Result<()> {
 #[cfg(not(unix))]
 fn symlink_task(_task_name: &str, _current_link: &Path) -> Result<()> {
     Err(Box::new(ProtocolError::InvalidCurrentTask))
-}
-
-fn parse_metadata(content: &str) -> Vec<(String, String)> {
-    content
-        .lines()
-        .take_while(|line| !line.trim_start().starts_with("##"))
-        .filter_map(parse_metadata_line)
-        .collect()
-}
-
-fn parse_metadata_line(line: &str) -> Option<(String, String)> {
-    let item = line.trim_start().strip_prefix("- ")?;
-    let (key, value) = item.split_once(':')?;
-    let key = key.trim();
-    if key.is_empty() {
-        return None;
-    }
-
-    Some((key.to_owned(), value.trim().to_owned()))
 }
 
 #[cfg(test)]

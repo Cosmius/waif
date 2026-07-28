@@ -6,6 +6,8 @@ mod artifact;
 mod commands;
 mod parser;
 mod protocol;
+#[cfg(test)]
+mod test_support;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

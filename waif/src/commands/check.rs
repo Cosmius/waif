@@ -139,23 +139,19 @@ fn is_numbered_review_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use crate::test_support::TestDir;
 
     #[test]
     fn directory_discovery_finds_only_task_artifacts() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be valid")
-            .as_nanos();
-        let directory = std::env::temp_dir().join(format!("waif-check-{unique}"));
-        let step_dir = directory.join("steps/01-example");
-        let unrelated_dir = directory.join("other/deep");
+        let directory = TestDir::new("check-directory-discovery");
+        let step_dir = directory.path.join("steps/01-example");
+        let unrelated_dir = directory.path.join("other/deep");
         fs::create_dir_all(&step_dir).expect("test directory should be created");
         fs::create_dir_all(&unrelated_dir).expect("test directory should be created");
         for path in [
-            directory.join("goal.md"),
-            directory.join("step.md"),
-            directory.join("notes.md"),
+            directory.path.join("goal.md"),
+            directory.path.join("step.md"),
+            directory.path.join("notes.md"),
             step_dir.join("step.md"),
             step_dir.join("goal.md"),
             step_dir.join("review1.md"),
@@ -165,13 +161,12 @@ mod tests {
             fs::write(path, "test").expect("test file should be written");
         }
 
-        let paths = artifact_paths(&directory).expect("discovery should succeed");
+        let paths = artifact_paths(&directory.path).expect("discovery should succeed");
 
         assert_eq!(paths.len(), 3);
         assert!(paths.iter().any(|path| path.ends_with("goal.md")));
         assert!(paths.iter().any(|path| path.ends_with("step.md")));
         assert!(paths.iter().any(|path| path.ends_with("review1.md")));
-        fs::remove_dir_all(directory).expect("test directory should be removed");
     }
 
     #[test]

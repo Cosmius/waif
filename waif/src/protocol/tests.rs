@@ -3,32 +3,11 @@ use super::*;
 use chrono::Local;
 
 use std::fs;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 
-struct TestDir {
-    path: PathBuf,
-}
-
-impl TestDir {
-    fn new(name: &str) -> Self {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system clock should be after Unix epoch")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("waif-test-{}-{unique}", sanitize_name(name)));
-        fs::create_dir_all(&path).expect("test dir should be created");
-        Self { path }
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
+use crate::test_support::TestDir;
 
 #[test]
 fn workflow_dir_uses_workspace_waif_directory() {
@@ -339,6 +318,8 @@ fn task_goal_reads_metadata_from_goal_file() {
     fs::write(
         task.goal_path(),
         "\
+# Goal: Test the workflow
+
 - Status: drafting
 - Created: 2026-07-04T09:00:00+09:00
 
@@ -363,48 +344,28 @@ Create tests.
 }
 
 #[test]
-fn parse_metadata_stops_at_first_second_level_heading() {
-    let metadata = parse_metadata(
+fn task_goal_rejects_an_invalid_artifact() {
+    let workspace = TestDir::new("invalid-goal");
+    let task = Task::new(workspace.path.join(".waif/tasks/example-task"));
+    fs::create_dir_all(&task.path).expect("task dir should be created");
+    fs::write(
+        task.goal_path(),
         "\
-- Status: done
-- Updated: 2026-07-04T10:00:00+09:00
-## Details
-- Updated: 2026-07-04T11:00:00+09:00
+- Status: drafting
+
+## Goal
+
+Create tests.
 ",
-    );
+    )
+    .expect("goal should be written");
 
-    assert_eq!(
-        metadata,
-        vec![
-            ("Status".to_owned(), "done".to_owned()),
-            ("Updated".to_owned(), "2026-07-04T10:00:00+09:00".to_owned()),
-        ]
-    );
-}
+    let error = match task.goal() {
+        Ok(_) => panic!("invalid goal should fail"),
+        Err(error) => error,
+    };
 
-#[test]
-fn parse_metadata_line_trims_keys_and_values() {
-    assert_eq!(
-        parse_metadata_line("  - Status :  accepted  "),
-        Some(("Status".to_owned(), "accepted".to_owned()))
-    );
-}
-
-#[test]
-fn parse_metadata_line_ignores_invalid_lines() {
-    assert_eq!(parse_metadata_line("- : missing key"), None);
-    assert_eq!(parse_metadata_line("Status: missing bullet"), None);
-    assert_eq!(parse_metadata_line("- Missing separator"), None);
-}
-
-fn sanitize_name(name: &str) -> String {
-    name.chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect()
+    assert!(error
+        .to_string()
+        .contains("goal.md:1: first non-whitespace line must be a level-one"));
 }

@@ -1,31 +1,11 @@
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
-use std::path::PathBuf;
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-struct TestDir {
-    path: PathBuf,
-}
+mod test_support;
 
-impl TestDir {
-    fn new(name: &str) -> Self {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be valid")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("waif-cli-{name}-{unique}"));
-        fs::create_dir_all(&path).expect("test directory should be created");
-        Self { path }
-    }
-}
-
-impl Drop for TestDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
+use test_support::TestDir;
 
 #[test]
 fn check_reports_every_bad_artifact_before_exiting_one() {
