@@ -1,0 +1,4 @@
+interface:
+  display_name: "Draft Project Charter"
+  short_description: "Create or revise workflow-wide project rules"
+  default_prompt: "Use $dev-draft-charter to revise the project charter."

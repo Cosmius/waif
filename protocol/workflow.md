@@ -47,8 +47,10 @@ dev-final-review
 
 ### Stage Boundaries
 
-- `dev-draft-goal` alone may establish the workflow dir and create the task
-  dir.
+- `dev-draft-charter` may establish the workflow dir and changes only
+  `charter.md`. It is an optional project setup and maintenance utility, not a
+  task lifecycle stage or acceptance gate.
+- `dev-draft-goal` may establish the workflow dir and create the task dir.
 - `dev-draft-plan` creates the general plan and workspace task branch after
   goal acceptance.
 - `dev-plan-step` plans one coherent implementation step without changing
@@ -100,6 +102,22 @@ changed. It contains the source repository and its workspace instructions.
 The `workflow dir` is the directory that stores durable workflow artifacts.
 It is located at `<workspace-dir>/.waif`.
 
+### Charter
+
+`<workflow-dir>/charter.md` is an optional, human-authored set of project rules
+that applies to every task in the workflow dir. It is not a task artifact and
+has no required format or lifecycle metadata.
+
+After resolving the workflow dir, every workflow skill must read the complete
+charter when it exists and apply it throughout that skill. If a charter rule
+conflicts with a workflow skill, the charter rule prevails. The charter does
+not override this canonical workflow protocol. If a charter rule conflicts
+with this protocol or the two cannot be reconciled, stop and ask the user to
+resolve the conflict.
+
+Workflow skills must not create, modify, or delete the charter unless the user
+explicitly asks for that change.
+
 ### Task Dir
 
 The `task dir` is the directory for one development task. It is a direct child
@@ -131,6 +149,7 @@ symlink. Stop if it is missing, broken, ambiguous, or points outside
 ```text
 <workspace-dir>/
 ├── <workflow-dir>/
+│   ├── charter.md
 │   └── tasks/
 │       ├── 20260501-1-task-name/
 │       │   └── ...
