@@ -9,22 +9,42 @@ A task artifact is Markdown containing one title, metadata, and level-two
 sections. An artifact contract supplies its permitted fields, predefined
 sections, and ID formats. This document is itself a valid task artifact.
 
+## Authoring and Parser Scope
+
+Task artifacts are generated and maintained by `waif`. Humans may review them,
+but should request changes through `waif` rather than editing the files
+directly.
+
+The artifact parser is not a general-purpose Markdown or CommonMark parser. It
+supports the canonical Markdown emitted by `waif` and preserves that source
+exactly. It recognizes artifact headings and simple fenced code blocks using
+line-oriented rules.
+
+Markdown container interactions are outside the supported format. In
+particular, generated artifacts must not place headings or fenced code blocks
+inside list items, block quotes, or raw HTML blocks. Noncanonical or
+hand-edited Markdown may be rejected or interpreted differently from a
+full-featured Markdown renderer.
+
 ## Document Structure
 
 An artifact contains, in order:
 
-1. Exactly one level-one ATX heading (`#`) with a non-empty, single-line title.
-   It must be the first non-whitespace line.
-2. A metadata block whose entries have the single-line form `- Key: value`.
+1. Exactly one level-one Markdown heading (`#`) with a non-empty, single-line
+   title. It must be the first non-whitespace line.
+2. A possibly empty metadata block whose entries have the logical form
+   `- Key: value`.
 3. Zero or more level-two sections (`##`).
 
 Whitespace-only lines have no artifact-level meaning and may occur before the
 title or between these constructs. Programmatic modifications must preserve
 every existing whitespace character and line ending exactly.
 
-The first colon followed by a space separates a metadata key from its value;
-the value may contain further colons. Ignoring whitespace-only lines, no other
-content may occur between the title, metadata, and first section. Front matter,
+A metadata entry may be indented and must have at least one whitespace
+character between `-` and its key. Extra whitespace around the key, colon, and
+value has no meaning. The first colon separates the key from the value, which
+may contain further colons. Ignoring whitespace-only lines, no other content
+may occur between the title, metadata, and first section. Front matter,
 preambles, comments, footers, and all other unmentioned content are invalid.
 
 ## Section Types

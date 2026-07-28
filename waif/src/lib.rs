@@ -2,7 +2,9 @@ use std::error::Error;
 
 use clap::Parser;
 
+mod artifact;
 mod commands;
+mod parser;
 mod protocol;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;

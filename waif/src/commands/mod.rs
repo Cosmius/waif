@@ -3,6 +3,7 @@ use std::path::Path;
 
 use clap::Subcommand;
 
+mod check;
 mod inspect;
 mod new;
 
@@ -10,6 +11,8 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Check task artifacts for format errors.
+    Check(check::CheckCommand),
     /// Inspect the current workflow task.
     Inspect(inspect::InspectCommand),
     /// Create a new workflow task and make it current.
@@ -19,6 +22,7 @@ pub enum Command {
 impl Command {
     pub fn run(self) -> Result<()> {
         match self {
+            Self::Check(command) => command.run(),
             Self::Inspect(command) => command.run(),
             Self::New(command) => command.run(),
         }
