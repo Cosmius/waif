@@ -1,5 +1,8 @@
 use self::cursor::{Cursor, Position};
-use crate::artifact::{Artifact, Metadata, ProseSection, Section, SourceSpan};
+use crate::artifact::{
+    Artifact, CompactItem, Item, ItemisedSection, Located, Metadata, ProseSection, Section,
+    SourceSpan,
+};
 use std::fmt;
 
 mod cursor;
@@ -41,11 +44,56 @@ impl fmt::Display for Diagnostic {
 // Parser entry point and state
 // ============================================================================
 
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SectionType {
+    Prose,
+    Itemised,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SectionConfig {
+    name: String,
+    section_type: SectionType,
+}
+
+#[allow(dead_code)]
+impl SectionConfig {
+    pub fn new(name: impl Into<String>, section_type: SectionType) -> Self {
+        Self {
+            name: name.into(),
+            section_type,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ParserConfig {
+    sections: Vec<SectionConfig>,
+}
+
+#[allow(dead_code)]
+impl ParserConfig {
+    pub fn new(sections: Vec<SectionConfig>) -> Self {
+        Self { sections }
+    }
+
+    fn section_type(&self, name: &str) -> SectionType {
+        self.sections
+            .iter()
+            .find(|section| section.name == name)
+            .map_or(SectionType::Prose, |section| section.section_type)
+    }
+}
+
 /// Parse the common task-artifact envelope.
 ///
-/// All level-two sections are currently parsed as opaque prose. The parser
-/// deliberately does not apply artifact-specific contracts yet.
+/// With no configuration, every level-two section is opaque prose.
 pub fn parse(source: &str) -> Result<Artifact, Vec<Diagnostic>> {
+    parse_with_config(source, &ParserConfig::default())
+}
+
+pub fn parse_with_config(source: &str, config: &ParserConfig) -> Result<Artifact, Vec<Diagnostic>> {
     let diagnostics = Vec::new();
     let cursor = Cursor::new(source);
     let mut ctx = ParsingContext {
@@ -53,6 +101,7 @@ pub fn parse(source: &str) -> Result<Artifact, Vec<Diagnostic>> {
         cursor,
         diagnostics,
         code_block: None,
+        config: config.clone(),
     };
     let artifact = p_artifact(&mut ctx);
     if ctx.diagnostics.is_empty() {
@@ -69,6 +118,7 @@ struct ParsingContext<'a> {
     /// The open code fence as `(marker, opening length)`, or `None` outside
     /// a fenced code block.
     code_block: Option<(char, usize)>,
+    config: ParserConfig,
 }
 
 // ============================================================================
@@ -92,9 +142,7 @@ fn p_title_line(ctx: &mut ParsingContext) -> String {
     }
 
     let Some(MarkdownHeading {
-        level: 1,
-        name: title,
-        ..
+        level: 1, title, ..
     }) = p_markdown_heading(ctx)
     else {
         ctx.diagnostics.push(Diagnostic::new(
@@ -103,13 +151,13 @@ fn p_title_line(ctx: &mut ParsingContext) -> String {
         ));
         return String::new();
     };
-    if title.is_empty() {
+    if title.text().is_empty() {
         ctx.diagnostics.push(Diagnostic::new(
             pos.line(),
             "level-one title must not be empty",
         ));
     }
-    title
+    title.value().to_owned()
 }
 
 fn p_metadata(ctx: &mut ParsingContext) -> Vec<Metadata> {
@@ -166,16 +214,48 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
         ctx.cursor.rewind(pos);
         return None;
     }
-    if heading.name.is_empty() {
+    if heading.title.text().is_empty() {
         ctx.diagnostics.push(Diagnostic::new(
             heading.pos.line(),
             "level-two section name must not be empty",
         ));
     }
     let body_start = ctx.cursor.position();
-    let body_end = loop {
+    let body_end = p_section_body_end(ctx);
+
+    let heading_line = heading.pos.line();
+    let section_span = SourceSpan::new(heading_line, heading.pos.offset()..body_end);
+    let body_span = SourceSpan::new(body_start.line(), body_start.offset()..body_end);
+    match ctx.config.section_type(heading.title.text()) {
+        SectionType::Prose => Some(Section::Prose(Located::new(
+            ProseSection::new(
+                heading.title,
+                Located::new(
+                    ctx.source[body_start.offset()..body_end].to_owned(),
+                    body_span,
+                ),
+            ),
+            section_span,
+        ))),
+        SectionType::Itemised => {
+            ctx.cursor.rewind(body_start);
+            ctx.code_block = None;
+            let items = p_compact_items(ctx, body_end);
+            Some(Section::Itemised(Located::new(
+                ItemisedSection {
+                    title: heading.title,
+                    items: Located::new(items, body_span),
+                },
+                section_span,
+            )))
+        }
+    }
+}
+
+fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
+    loop {
         let Some((_, line)) = ctx.cursor.peek_line() else {
-            break ctx.source.len();
+            return ctx.source.len();
         };
         let start = ctx.cursor.position();
         if !is_code_block_line(line, &mut ctx.code_block) {
@@ -186,22 +266,177 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
                 }
                 Some(next) if next.level == 2 => {
                     ctx.cursor.rewind(start);
-                    break start.offset();
+                    return start.offset();
                 }
                 Some(_) => continue,
                 None => {}
             }
         }
         ctx.cursor.take_line();
+    }
+}
+
+// A compact item whose body end is not known until the next peer or section.
+struct OpenCompactItem {
+    start: Position,
+    body_start: Position,
+    marker: Located<String>,
+    identifier: Option<Located<String>>,
+    delimiter: Option<Located<String>>,
+    content: Located<String>,
+}
+
+// Parse compact peer items up to the known section-body boundary.
+fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
+    let mut items = Vec::new();
+    let mut peer_indentation = None;
+    let mut open = None;
+
+    while ctx.cursor.position().offset() < body_end {
+        let start = ctx.cursor.position();
+        let (_, line) = ctx.cursor.peek_line().expect("body has a line");
+        let in_code_block = is_code_block_line(line, &mut ctx.code_block);
+        let marker = (!in_code_block).then(|| compact_marker(line)).flatten();
+
+        if let Some((indentation, _)) = marker {
+            let peer = *peer_indentation.get_or_insert(indentation);
+            if indentation == peer {
+                if let Some(item) = open.take() {
+                    items.push(finish_compact_item(ctx.source, item, start));
+                }
+                open = Some(p_compact_item_opening(ctx));
+                continue;
+            }
+        }
+
+        // Before the first item, every nonblank line is outside an item. Once
+        // an item is open, only unfenced content at or before peer indentation
+        // falls outside its body. An open item always has a peer indentation.
+        let outside_item = open.is_none()
+            || (!in_code_block && leading_indentation_columns(line) <= peer_indentation.unwrap());
+        if !line.trim().is_empty() && outside_item {
+            ctx.diagnostics.push(Diagnostic::new(
+                start.line(),
+                "expected a compact item in `- ID: content` form",
+            ));
+        }
+        ctx.cursor.take_line();
+    }
+
+    if let Some(item) = open {
+        items.push(finish_compact_item(ctx.source, item, ctx.cursor.position()));
+    }
+    items
+}
+
+// Return a compact marker's indentation and end offset.
+// For `"  - item"`, return `(2, 4)`.
+fn compact_marker(line: &str) -> Option<(usize, usize)> {
+    let indentation = leading_spaces(line);
+    if indentation > 3 {
+        return None;
+    }
+    let rest = &line[indentation..];
+    let after_marker = rest.strip_prefix('-')?;
+    let whitespace = after_marker
+        .bytes()
+        .take_while(|byte| *byte == b' ' || *byte == b'\t')
+        .count();
+    (whitespace > 0).then_some((indentation, indentation + 1 + whitespace))
+}
+
+fn leading_spaces(line: &str) -> usize {
+    line.bytes().take_while(|byte| *byte == b' ').count()
+}
+
+// Measure leading spaces and tabs using four-column tab stops.
+fn leading_indentation_columns(line: &str) -> usize {
+    line.bytes()
+        .take_while(|byte| *byte == b' ' || *byte == b'\t')
+        .fold(0, |column, byte| {
+            if byte == b'\t' {
+                column + 4 - column % 4
+            } else {
+                column + 1
+            }
+        })
+}
+
+// Parse one compact opening line while leaving its body open.
+fn p_compact_item_opening(ctx: &mut ParsingContext) -> OpenCompactItem {
+    let start = ctx.cursor.position();
+    // The caller has just peeked this line and matched `compact_marker`
+    // without advancing the cursor, so both operations must succeed.
+    let (_, line) = ctx.cursor.take_line().expect("item has an opening line");
+    let (_, marker_end) = compact_marker(line).expect("item has a marker");
+    let content_start = marker_end;
+    let remainder = &line[content_start..];
+    let marker = located_text(line, start, 0..marker_end);
+
+    // For `G-AC1 :  value`, retain `G-AC1` as the identifier, ` :  ` as the
+    // delimiter, and begin content at `value`.
+    let (identifier, delimiter, content_offset) = if let Some(colon) = remainder.find(':') {
+        let candidate = &remainder[..colon];
+        let identifier_text = candidate.trim();
+        let leading = candidate.len() - candidate.trim_start().len();
+        let identifier_start = content_start + leading;
+        let identifier_end = identifier_start + identifier_text.len();
+        let mut content_offset = content_start + colon + 1;
+        while line[content_offset..].starts_with([' ', '\t']) {
+            content_offset += 1;
+        }
+        (
+            Some(located_text(line, start, identifier_start..identifier_end)),
+            Some(located_text(line, start, identifier_end..content_offset)),
+            content_offset,
+        )
+    } else {
+        (None, None, content_start)
     };
 
-    Some(Section::Prose(ProseSection::new(
-        heading.name,
-        ctx.source[body_start.offset()..body_end].to_owned(),
-        heading.span,
-        SourceSpan::new(body_start.line(), body_start.offset()..body_end),
-        SourceSpan::new(heading.pos.line(), heading.pos.offset()..body_end),
-    )))
+    OpenCompactItem {
+        start,
+        body_start: ctx.cursor.position(),
+        marker,
+        identifier,
+        delimiter,
+        content: located_text(line, start, content_offset..line.len()),
+    }
+}
+
+// Copy a line range while translating it to an artifact source span.
+fn located_text(
+    line: &str,
+    line_start: Position,
+    range: std::ops::Range<usize>,
+) -> Located<String> {
+    Located::new(
+        line[range.clone()].to_owned(),
+        SourceSpan::new(
+            line_start.line(),
+            line_start.offset() + range.start..line_start.offset() + range.end,
+        ),
+    )
+}
+
+// Close an open compact item at its next peer or section boundary.
+fn finish_compact_item(source: &str, open: OpenCompactItem, end: Position) -> Item {
+    Item::Compact(Located::new(
+        CompactItem {
+            marker: open.marker,
+            identifier: open.identifier,
+            delimiter: open.delimiter,
+            content: open.content,
+            body: Located::new(
+                source[open.body_start.offset()..end.offset()].to_owned(),
+                SourceSpan::new(
+                    open.body_start.line(),
+                    open.body_start.offset()..end.offset(),
+                ),
+            ),
+        },
+        SourceSpan::new(open.start.line(), open.start.offset()..end.offset()),
+    ))
 }
 
 fn report_additional_title(ctx: &mut ParsingContext, position: Position) {
@@ -217,9 +452,8 @@ fn report_additional_title(ctx: &mut ParsingContext, position: Position) {
 
 struct MarkdownHeading {
     level: usize,
-    name: String,
+    title: Located<String>,
     pos: Position,
-    span: SourceSpan,
 }
 
 fn p_markdown_heading(ctx: &mut ParsingContext) -> Option<MarkdownHeading> {
@@ -227,7 +461,6 @@ fn p_markdown_heading(ctx: &mut ParsingContext) -> Option<MarkdownHeading> {
         .try_(|cursor| {
             let pos = cursor.position();
             let (_, line) = cursor.take_line().ok_or(())?;
-            let end = cursor.position().offset();
             let candidate = line.trim_start_matches(' ');
             let indentation = line.len() - candidate.len();
             if indentation > 3 {
@@ -242,29 +475,38 @@ fn p_markdown_heading(ctx: &mut ParsingContext) -> Option<MarkdownHeading> {
             if rest.is_empty() {
                 return Ok(MarkdownHeading {
                     level,
-                    name: String::new(),
+                    title: Located::new(
+                        String::new(),
+                        SourceSpan::new(
+                            pos.line(),
+                            pos.offset() + indentation + level..pos.offset() + indentation + level,
+                        ),
+                    ),
                     pos,
-                    span: SourceSpan::new(pos.line(), pos.offset()..end),
                 });
             }
             if !rest.starts_with([' ', '\t']) {
                 return Err(());
             }
 
-            let name = rest.trim();
-            let without_hashes = name.trim_end_matches('#');
-            let name = if without_hashes.is_empty() {
+            let trimmed = rest.trim();
+            let without_hashes = trimmed.trim_end_matches('#');
+            let title = if without_hashes.is_empty() {
                 without_hashes
             } else if without_hashes.ends_with(char::is_whitespace) {
                 without_hashes.trim_end()
             } else {
-                name
+                trimmed
             };
+            let title_start =
+                pos.offset() + indentation + level + rest.len() - rest.trim_start().len();
             Ok(MarkdownHeading {
                 level,
-                name: name.to_owned(),
+                title: Located::new(
+                    title.to_owned(),
+                    SourceSpan::new(pos.line(), title_start..title_start + title.len()),
+                ),
                 pos,
-                span: SourceSpan::new(pos.line(), pos.offset()..end),
             })
         })
         .ok()
@@ -366,6 +608,18 @@ mod tests {
             .expect("section should contain opaque prose")
     }
 
+    fn itemised(section: &Section) -> &ItemisedSection {
+        section.as_itemised().expect("section should contain items")
+    }
+
+    fn compact(item: &Item) -> &CompactItem {
+        item.as_compact().expect("item should use compact form")
+    }
+
+    fn itemised_config(name: &str) -> ParserConfig {
+        ParserConfig::new(vec![SectionConfig::new(name, SectionType::Itemised)])
+    }
+
     mod component_parsers {
         use super::*;
 
@@ -375,6 +629,7 @@ mod tests {
                 cursor: Cursor::new(source),
                 diagnostics: vec![],
                 code_block: None,
+                config: ParserConfig::default(),
             }
         }
 
@@ -382,7 +637,7 @@ mod tests {
         fn markdown_heading_consumes_success_and_rewinds_failure() {
             let mut heading = context("# Title\nbody");
             let parsed = p_markdown_heading(&mut heading).expect("heading should parse");
-            assert_eq!(parsed.name, "Title");
+            assert_eq!(parsed.title.text(), "Title");
             assert_eq!(heading.cursor.position().line(), 2);
 
             let mut not_heading = context("plain text\n");
@@ -483,6 +738,11 @@ Arbitrary prose.\n
             assert_eq!(artifact.title(), "Example");
             assert_eq!(artifact.sections().len(), 1);
             assert_eq!(artifact.sections()[0].name(), "Details");
+            assert_eq!(artifact.sections()[0].title().text(), "Details");
+            assert_eq!(
+                &source[artifact.sections()[0].title().span().range()],
+                "Details"
+            );
             assert!(prose(&artifact.sections()[0])
                 .body()
                 .contains("> ## A quoted heading is prose"));
@@ -508,6 +768,217 @@ Arbitrary prose.\n
                 parse("# Example\n## Details\n").expect("empty metadata should be valid");
 
             assert!(artifact.metadata().is_empty());
+        }
+    }
+
+    mod configured_itemised_sections {
+        use super::*;
+
+        #[test]
+        fn dispatches_exact_configured_names_only() {
+            let source = concat!(
+                "# Example\n",
+                "## Items\n",
+                "- G-AC1: configured\n",
+                "## Other\n",
+                "- G-AC2: opaque\n",
+            );
+
+            let default_artifact = parse(source).expect("default parsing should succeed");
+            assert!(default_artifact
+                .sections()
+                .iter()
+                .all(|section| section.as_prose().is_some()));
+
+            let config = ParserConfig::new(vec![
+                SectionConfig::new("Items", SectionType::Itemised),
+                SectionConfig::new("Other", SectionType::Prose),
+            ]);
+            let artifact =
+                parse_with_config(source, &config).expect("configured parsing should succeed");
+
+            assert_eq!(itemised(&artifact.sections()[0]).items().len(), 1);
+            assert!(artifact.sections()[1].as_prose().is_some());
+        }
+
+        #[test]
+        fn preserves_compact_components_and_malformed_candidates() {
+            let source = concat!(
+                "# Example\n",
+                "## Items\n",
+                "  - G-AC1 :   α  \n",
+                "             continuation\n",
+                "             - nested\n",
+                "  - [ ] Bad checkbox: retained\n",
+                "  - missing identifier\n",
+                "  - : empty identifier\n",
+                "  - G-AC5:\n",
+                "## Tail\n",
+                "opaque\n",
+            );
+            let artifact = parse_with_config(source, &itemised_config("Items"))
+                .expect("compact items should parse");
+            let section = itemised(&artifact.sections()[0]);
+            let items = section.items();
+
+            assert_eq!(items.len(), 5);
+            assert_eq!(
+                section.located_items().span(),
+                artifact.sections()[0].body_span()
+            );
+            let first_item = &items[0];
+            let first = compact(first_item);
+            assert_eq!(first.marker().text(), "  - ");
+            assert_eq!(first_item.identifier().unwrap().text(), "G-AC1");
+            assert_eq!(first.delimiter().unwrap().text(), " :   ");
+            assert_eq!(first_item.content().text(), "α  ");
+            assert!(first.body().text().contains("- nested"));
+            assert_eq!(
+                &source[first.marker().span().range()],
+                first.marker().text()
+            );
+            assert_eq!(
+                &source[first_item.identifier().unwrap().span().range()],
+                "G-AC1"
+            );
+            assert_eq!(&source[first.delimiter().unwrap().span().range()], " :   ");
+            assert_eq!(
+                &source[first_item.content().span().range()],
+                first_item.content().text()
+            );
+            assert_eq!(&source[first.body().span().range()], first.body().text());
+            assert_eq!(
+                &source[first_item.span().range()],
+                concat!(
+                    "  - G-AC1 :   α  \n",
+                    "             continuation\n",
+                    "             - nested\n",
+                )
+            );
+
+            assert_eq!(items[1].identifier().unwrap().text(), "[ ] Bad checkbox");
+            assert!(items[2].identifier().is_none());
+            assert!(compact(&items[2]).delimiter().is_none());
+            assert_eq!(items[2].content().text(), "missing identifier");
+            assert_eq!(items[3].identifier().unwrap().text(), "");
+            assert_eq!(items[4].identifier().unwrap().text(), "G-AC5");
+            assert_eq!(items[4].content().text(), "");
+            assert_eq!(artifact.sections()[1].name(), "Tail");
+        }
+
+        #[test]
+        fn keeps_fences_and_nested_markers_in_the_current_item() {
+            let source = concat!(
+                "# Example\n",
+                "## Items\n",
+                "- G-AC1: first\n",
+                "````markdown\n",
+                "- not a peer\n",
+                "## not a section\n",
+                "````\n",
+                "  - nested\n",
+                "\ttab-indented prose\n",
+                "\t- tab-indented nested item\n",
+                "- G-AC2: second\n",
+            );
+            let artifact = parse_with_config(source, &itemised_config("Items"))
+                .expect("fenced content should parse");
+            let items = itemised(&artifact.sections()[0]).items();
+
+            assert_eq!(items.len(), 2);
+            assert!(compact(&items[0]).body().text().contains("- not a peer"));
+            assert!(compact(&items[0]).body().text().contains("  - nested"));
+            assert!(compact(&items[0])
+                .body()
+                .text()
+                .contains("\ttab-indented prose"));
+            assert!(compact(&items[0])
+                .body()
+                .text()
+                .contains("\t- tab-indented nested item"));
+            assert_eq!(items[1].identifier().unwrap().text(), "G-AC2");
+        }
+
+        #[test]
+        fn tracks_components_under_every_supported_line_ending() {
+            for ending in ["\n", "\r\n", "\r"] {
+                let source = ["# Example", "## Items", "- G-α: 値", ""].join(ending);
+                let artifact = parse_with_config(&source, &itemised_config("Items"))
+                    .expect("item should parse");
+                let item = &itemised(&artifact.sections()[0]).items()[0];
+
+                assert_eq!(item.span().start_line(), 3);
+                assert_eq!(item.identifier().unwrap().text(), "G-α");
+                assert_eq!(&source[item.identifier().unwrap().span().range()], "G-α");
+                assert_eq!(
+                    &source[item.span().range()],
+                    &source[source.find("- G-α").unwrap()..]
+                );
+                assert_eq!(artifact.serialize(), source);
+            }
+        }
+
+        #[test]
+        fn accepts_zero_through_three_spaces_of_item_indentation() {
+            for marker in ["- ", " - ", "  - ", "   - "] {
+                let source = format!("# Example\n## Items\n{marker}G-AC1: value\n");
+                let artifact = parse_with_config(&source, &itemised_config("Items"))
+                    .expect("item should parse");
+                let item = &itemised(&artifact.sections()[0]).items()[0];
+
+                assert_eq!(compact(item).marker().text(), marker);
+                assert_eq!(item.identifier().unwrap().text(), "G-AC1");
+            }
+        }
+
+        #[test]
+        fn reports_bare_content_but_accepts_empty_sections() {
+            let invalid = concat!(
+                "# Example\n",
+                "## Items\n",
+                "bare before\n",
+                "- G-AC1: item\n",
+                "bare after\n",
+            );
+            let diagnostics = parse_with_config(invalid, &itemised_config("Items"))
+                .expect_err("bare content should fail");
+            assert_eq!(
+                diagnostics
+                    .iter()
+                    .filter(|diagnostic| diagnostic.message().contains("expected a compact item"))
+                    .count(),
+                2
+            );
+
+            let empty = "# Example\n## Items\n\n";
+            let artifact = parse_with_config(empty, &itemised_config("Items"))
+                .expect("empty itemised section should parse");
+            assert!(itemised(&artifact.sections()[0]).items().is_empty());
+        }
+
+        #[test]
+        fn metadata_changes_do_not_reformat_compact_items() {
+            let source = concat!(
+                "# Example\r\n",
+                "- Status: drafting\r\n",
+                "## Items\r\n",
+                "- G-AC1: value  \r\n",
+            );
+            let mut artifact =
+                parse_with_config(source, &itemised_config("Items")).expect("item should parse");
+            artifact.metadata_mut()[0]
+                .set_value("accepted")
+                .expect("value should be valid");
+
+            assert_eq!(
+                artifact.serialize(),
+                concat!(
+                    "# Example\r\n",
+                    "- Status: accepted\r\n",
+                    "## Items\r\n",
+                    "- G-AC1: value  \r\n",
+                )
+            );
         }
     }
 
@@ -537,21 +1008,31 @@ Arbitrary prose.\n
                 let first = &artifact.sections()[0];
                 let second = &artifact.sections()[1];
                 let first_start = source.find("## α").unwrap();
+                let first_title = source.find('α').unwrap();
                 let first_body = source.find("first").unwrap();
                 let second_start = source.find("## Two").unwrap();
+                let second_title = source.find("Two").unwrap();
                 let second_body = source.find('二').unwrap();
 
-                assert_eq!(first.heading_span().start_line(), 2);
-                assert_eq!(first.heading_span().range(), first_start..first_body);
+                assert_eq!(first.title().span().start_line(), 2);
+                assert_eq!(
+                    first.title().span().range(),
+                    first_title..first_title + "α".len()
+                );
                 assert_eq!(first.body_span().start_line(), 3);
                 assert_eq!(first.body_span().range(), first_body..second_start);
                 assert_eq!(first.span().range(), first_start..second_start);
 
-                assert_eq!(second.heading_span().start_line(), 4);
-                assert_eq!(second.heading_span().range(), second_start..second_body);
+                assert_eq!(second.title().span().start_line(), 4);
+                assert_eq!(
+                    second.title().span().range(),
+                    second_title..second_title + "Two".len()
+                );
                 assert_eq!(second.body_span().start_line(), 5);
                 assert_eq!(second.body_span().range(), second_body..source.len());
                 assert_eq!(second.span().range(), second_start..source.len());
+                assert_eq!(&source[first.title().span().range()], "α");
+                assert_eq!(&source[second.title().span().range()], "Two");
                 assert_eq!(&source[first.body_span().range()], prose(first).body());
                 assert_eq!(&source[second.body_span().range()], prose(second).body());
                 assert_eq!(artifact.serialize(), source);

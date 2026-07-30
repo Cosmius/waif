@@ -133,87 +133,186 @@ impl SourceSpan {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Section {
-    Prose(ProseSection),
+    Prose(Located<ProseSection>),
+    Itemised(Located<ItemisedSection>),
 }
 
 #[allow(dead_code)]
 impl Section {
     pub fn name(&self) -> &str {
         match self {
-            Self::Prose(section) => section.name(),
+            Self::Prose(section) => section.value.title.text(),
+            Self::Itemised(section) => section.value.title.text(),
         }
     }
 
-    pub fn heading_span(&self) -> &SourceSpan {
+    pub fn title(&self) -> &Located<String> {
         match self {
-            Self::Prose(section) => section.heading_span(),
+            Self::Prose(section) => &section.value.title,
+            Self::Itemised(section) => &section.value.title,
         }
     }
 
     pub fn body_span(&self) -> &SourceSpan {
         match self {
-            Self::Prose(section) => section.body_span(),
+            Self::Prose(section) => section.value.body.span(),
+            Self::Itemised(section) => section.value.items.span(),
         }
     }
 
     pub fn span(&self) -> &SourceSpan {
         match self {
             Self::Prose(section) => section.span(),
+            Self::Itemised(section) => section.span(),
         }
     }
 
     pub fn as_prose(&self) -> Option<&ProseSection> {
         match self {
-            Self::Prose(section) => Some(section),
+            Self::Prose(section) => Some(section.value()),
+            Self::Itemised(_) => None,
+        }
+    }
+
+    pub fn as_itemised(&self) -> Option<&ItemisedSection> {
+        match self {
+            Self::Prose(_) => None,
+            Self::Itemised(section) => Some(section.value()),
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProseSection {
-    name: String,
-    body: String,
-    heading_span: SourceSpan,
-    body_span: SourceSpan,
-    span: SourceSpan,
+    title: Located<String>,
+    body: Located<String>,
 }
 
 #[allow(dead_code)]
 impl ProseSection {
-    pub(crate) fn new(
-        name: String,
-        body: String,
-        heading_span: SourceSpan,
-        body_span: SourceSpan,
-        span: SourceSpan,
-    ) -> Self {
-        Self {
-            name,
-            body,
-            heading_span,
-            body_span,
-            span,
-        }
+    pub(crate) fn new(title: Located<String>, body: Located<String>) -> Self {
+        Self { title, body }
     }
 
     pub fn name(&self) -> &str {
-        &self.name
+        self.title.text()
     }
 
     pub fn body(&self) -> &str {
+        self.body.text()
+    }
+
+    pub fn title(&self) -> &Located<String> {
+        &self.title
+    }
+
+    pub fn located_body(&self) -> &Located<String> {
         &self.body
     }
+}
 
-    pub fn heading_span(&self) -> &SourceSpan {
-        &self.heading_span
+#[derive(Debug, PartialEq, Eq)]
+pub struct ItemisedSection {
+    pub(crate) title: Located<String>,
+    pub(crate) items: Located<Vec<Item>>,
+}
+
+#[allow(dead_code)]
+impl ItemisedSection {
+    pub fn items(&self) -> &[Item] {
+        self.items.value()
     }
 
-    pub fn body_span(&self) -> &SourceSpan {
-        &self.body_span
+    pub fn title(&self) -> &Located<String> {
+        &self.title
+    }
+
+    pub fn located_items(&self) -> &Located<Vec<Item>> {
+        &self.items
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Item {
+    Compact(Located<CompactItem>),
+}
+
+#[allow(dead_code)]
+impl Item {
+    pub fn identifier(&self) -> Option<&Located<String>> {
+        match self {
+            Self::Compact(item) => item.value.identifier.as_ref(),
+        }
+    }
+
+    pub fn content(&self) -> &Located<String> {
+        match self {
+            Self::Compact(item) => &item.value.content,
+        }
+    }
+
+    pub fn span(&self) -> &SourceSpan {
+        match self {
+            Self::Compact(item) => item.span(),
+        }
+    }
+
+    pub fn as_compact(&self) -> Option<&CompactItem> {
+        match self {
+            Self::Compact(item) => Some(item.value()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CompactItem {
+    pub(crate) marker: Located<String>,
+    pub(crate) identifier: Option<Located<String>>,
+    pub(crate) delimiter: Option<Located<String>>,
+    pub(crate) content: Located<String>,
+    pub(crate) body: Located<String>,
+}
+
+#[allow(dead_code)]
+impl CompactItem {
+    pub fn marker(&self) -> &Located<String> {
+        &self.marker
+    }
+
+    pub fn delimiter(&self) -> Option<&Located<String>> {
+        self.delimiter.as_ref()
+    }
+
+    pub fn body(&self) -> &Located<String> {
+        &self.body
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Located<T> {
+    value: T,
+    span: SourceSpan,
+}
+
+#[allow(dead_code)]
+impl<T> Located<T> {
+    pub(crate) fn new(value: T, span: SourceSpan) -> Self {
+        Self { value, span }
+    }
+
+    pub fn value(&self) -> &T {
+        &self.value
     }
 
     pub fn span(&self) -> &SourceSpan {
         &self.span
+    }
+}
+
+#[allow(dead_code)]
+impl Located<String> {
+    pub fn text(&self) -> &str {
+        &self.value
     }
 }
 
