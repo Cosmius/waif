@@ -1,5 +1,5 @@
 use self::cursor::{Cursor, Position};
-use crate::artifact::{Artifact, Metadata, ProseSection};
+use crate::artifact::{Artifact, Metadata, ProseSection, Section, SourceSpan};
 use std::fmt;
 
 mod cursor;
@@ -151,7 +151,7 @@ fn p_metadata(ctx: &mut ParsingContext) -> Vec<Metadata> {
     metadata
 }
 
-fn p_sections(ctx: &mut ParsingContext) -> Vec<ProseSection> {
+fn p_sections(ctx: &mut ParsingContext) -> Vec<Section> {
     let mut sections = Vec::new();
     while let Some(section) = p_section(ctx) {
         sections.push(section);
@@ -159,7 +159,7 @@ fn p_sections(ctx: &mut ParsingContext) -> Vec<ProseSection> {
     sections
 }
 
-fn p_section(ctx: &mut ParsingContext) -> Option<ProseSection> {
+fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
     let pos = ctx.cursor.position();
     let heading = p_markdown_heading(ctx)?;
     if heading.level != 2 {
@@ -172,7 +172,7 @@ fn p_section(ctx: &mut ParsingContext) -> Option<ProseSection> {
             "level-two section name must not be empty",
         ));
     }
-    let body_start = ctx.cursor.position().offset();
+    let body_start = ctx.cursor.position();
     let body_end = loop {
         let Some((_, line)) = ctx.cursor.peek_line() else {
             break ctx.source.len();
@@ -195,10 +195,13 @@ fn p_section(ctx: &mut ParsingContext) -> Option<ProseSection> {
         ctx.cursor.take_line();
     };
 
-    Some(ProseSection::new(
+    Some(Section::Prose(ProseSection::new(
         heading.name,
-        ctx.source[body_start..body_end].to_owned(),
-    ))
+        ctx.source[body_start.offset()..body_end].to_owned(),
+        heading.span,
+        SourceSpan::new(body_start.line(), body_start.offset()..body_end),
+        SourceSpan::new(heading.pos.line(), heading.pos.offset()..body_end),
+    )))
 }
 
 fn report_additional_title(ctx: &mut ParsingContext, position: Position) {
@@ -216,6 +219,7 @@ struct MarkdownHeading {
     level: usize,
     name: String,
     pos: Position,
+    span: SourceSpan,
 }
 
 fn p_markdown_heading(ctx: &mut ParsingContext) -> Option<MarkdownHeading> {
@@ -223,6 +227,7 @@ fn p_markdown_heading(ctx: &mut ParsingContext) -> Option<MarkdownHeading> {
         .try_(|cursor| {
             let pos = cursor.position();
             let (_, line) = cursor.take_line().ok_or(())?;
+            let end = cursor.position().offset();
             let candidate = line.trim_start_matches(' ');
             let indentation = line.len() - candidate.len();
             if indentation > 3 {
@@ -239,6 +244,7 @@ fn p_markdown_heading(ctx: &mut ParsingContext) -> Option<MarkdownHeading> {
                     level,
                     name: String::new(),
                     pos,
+                    span: SourceSpan::new(pos.line(), pos.offset()..end),
                 });
             }
             if !rest.starts_with([' ', '\t']) {
@@ -258,6 +264,7 @@ fn p_markdown_heading(ctx: &mut ParsingContext) -> Option<MarkdownHeading> {
                 level,
                 name: name.to_owned(),
                 pos,
+                span: SourceSpan::new(pos.line(), pos.offset()..end),
             })
         })
         .ok()
@@ -353,6 +360,12 @@ fn p_metadata_line(ctx: &mut ParsingContext) -> Option<Metadata> {
 mod tests {
     use super::*;
 
+    fn prose(section: &Section) -> &ProseSection {
+        section
+            .as_prose()
+            .expect("section should contain opaque prose")
+    }
+
     mod component_parsers {
         use super::*;
 
@@ -419,9 +432,9 @@ mod tests {
 
             assert_eq!(artifact.sections().len(), 2);
             assert_eq!(artifact.sections()[0].name(), "One");
-            assert_eq!(artifact.sections()[0].body(), "one\n");
+            assert_eq!(prose(&artifact.sections()[0]).body(), "one\n");
             assert_eq!(artifact.sections()[1].name(), "Two");
-            assert_eq!(artifact.sections()[1].body(), "two\n");
+            assert_eq!(prose(&artifact.sections()[1]).body(), "two\n");
         }
 
         #[test]
@@ -449,7 +462,9 @@ Arbitrary prose.\n
                 "A value: with another colon"
             );
             assert_eq!(artifact.sections()[0].name(), "Overview");
-            assert!(artifact.sections()[0].body().contains("### A subsection"));
+            assert!(prose(&artifact.sections()[0])
+                .body()
+                .contains("### A subsection"));
         }
 
         #[test]
@@ -468,7 +483,7 @@ Arbitrary prose.\n
             assert_eq!(artifact.title(), "Example");
             assert_eq!(artifact.sections().len(), 1);
             assert_eq!(artifact.sections()[0].name(), "Details");
-            assert!(artifact.sections()[0]
+            assert!(prose(&artifact.sections()[0])
                 .body()
                 .contains("> ## A quoted heading is prose"));
         }
@@ -483,7 +498,7 @@ Arbitrary prose.\n
 
             let artifact = parse(source).expect("unrecognized prose should parse");
 
-            assert!(artifact.sections()[0].body().contains(":::waif"));
+            assert!(prose(&artifact.sections()[0]).body().contains(":::waif"));
             assert_eq!(artifact.serialize(), source);
         }
 
@@ -510,8 +525,37 @@ Arbitrary prose.\n
             let artifact = parse(source).expect("artifact should parse");
 
             assert_eq!(artifact.source(), source);
-            assert_eq!(artifact.sections()[0].body(), "\r\nText\r\n");
+            assert_eq!(prose(&artifact.sections()[0]).body(), "\r\nText\r\n");
             assert_eq!(artifact.serialize(), source);
+        }
+
+        #[test]
+        fn records_section_spans_for_utf8_and_supported_line_endings() {
+            for line_ending in ["\n", "\r\n", "\r"] {
+                let source = ["# Example", "## α", "first", "## Two", "二", ""].join(line_ending);
+                let artifact = parse(&source).expect("artifact should parse");
+                let first = &artifact.sections()[0];
+                let second = &artifact.sections()[1];
+                let first_start = source.find("## α").unwrap();
+                let first_body = source.find("first").unwrap();
+                let second_start = source.find("## Two").unwrap();
+                let second_body = source.find('二').unwrap();
+
+                assert_eq!(first.heading_span().start_line(), 2);
+                assert_eq!(first.heading_span().range(), first_start..first_body);
+                assert_eq!(first.body_span().start_line(), 3);
+                assert_eq!(first.body_span().range(), first_body..second_start);
+                assert_eq!(first.span().range(), first_start..second_start);
+
+                assert_eq!(second.heading_span().start_line(), 4);
+                assert_eq!(second.heading_span().range(), second_start..second_body);
+                assert_eq!(second.body_span().start_line(), 5);
+                assert_eq!(second.body_span().range(), second_body..source.len());
+                assert_eq!(second.span().range(), second_start..source.len());
+                assert_eq!(&source[first.body_span().range()], prose(first).body());
+                assert_eq!(&source[second.body_span().range()], prose(second).body());
+                assert_eq!(artifact.serialize(), source);
+            }
         }
 
         #[test]
@@ -543,6 +587,7 @@ Arbitrary prose.\n
                 "Untouched prose.\r\n",
             );
             let mut artifact = parse(source).expect("artifact should parse");
+            let section_span = artifact.sections()[0].span().clone();
 
             artifact.metadata_mut()[0]
                 .set_value("accepted")
@@ -562,6 +607,7 @@ Arbitrary prose.\n
                     "Untouched prose.\r\n",
                 )
             );
+            assert_eq!(artifact.sections()[0].span(), &section_span);
             assert_eq!(artifact.source(), source);
         }
 

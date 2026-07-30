@@ -6,7 +6,7 @@ pub struct Artifact {
     source: String,
     title: String,
     metadata: Vec<Metadata>,
-    sections: Vec<ProseSection>,
+    sections: Vec<Section>,
 }
 
 // This is the structured artifact API. The check command currently only needs
@@ -17,7 +17,7 @@ impl Artifact {
         source: String,
         title: String,
         metadata: Vec<Metadata>,
-        sections: Vec<ProseSection>,
+        sections: Vec<Section>,
     ) -> Self {
         Self {
             source,
@@ -49,7 +49,7 @@ impl Artifact {
         &mut self.metadata
     }
 
-    pub fn sections(&self) -> &[ProseSection] {
+    pub fn sections(&self) -> &[Section] {
         &self.sections
     }
 
@@ -109,16 +109,91 @@ impl fmt::Display for InvalidValue {
 
 impl std::error::Error for InvalidValue {}
 
+/// A half-open UTF-8 byte range and its one-based starting line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceSpan {
+    start_line: usize,
+    range: Range<usize>,
+}
+
+#[allow(dead_code)]
+impl SourceSpan {
+    pub(crate) fn new(start_line: usize, range: Range<usize>) -> Self {
+        Self { start_line, range }
+    }
+
+    pub fn start_line(&self) -> usize {
+        self.start_line
+    }
+
+    pub fn range(&self) -> Range<usize> {
+        self.range.clone()
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Section {
+    Prose(ProseSection),
+}
+
+#[allow(dead_code)]
+impl Section {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Prose(section) => section.name(),
+        }
+    }
+
+    pub fn heading_span(&self) -> &SourceSpan {
+        match self {
+            Self::Prose(section) => section.heading_span(),
+        }
+    }
+
+    pub fn body_span(&self) -> &SourceSpan {
+        match self {
+            Self::Prose(section) => section.body_span(),
+        }
+    }
+
+    pub fn span(&self) -> &SourceSpan {
+        match self {
+            Self::Prose(section) => section.span(),
+        }
+    }
+
+    pub fn as_prose(&self) -> Option<&ProseSection> {
+        match self {
+            Self::Prose(section) => Some(section),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProseSection {
     name: String,
     body: String,
+    heading_span: SourceSpan,
+    body_span: SourceSpan,
+    span: SourceSpan,
 }
 
 #[allow(dead_code)]
 impl ProseSection {
-    pub(crate) fn new(name: String, body: String) -> Self {
-        Self { name, body }
+    pub(crate) fn new(
+        name: String,
+        body: String,
+        heading_span: SourceSpan,
+        body_span: SourceSpan,
+        span: SourceSpan,
+    ) -> Self {
+        Self {
+            name,
+            body,
+            heading_span,
+            body_span,
+            span,
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -127,6 +202,18 @@ impl ProseSection {
 
     pub fn body(&self) -> &str {
         &self.body
+    }
+
+    pub fn heading_span(&self) -> &SourceSpan {
+        &self.heading_span
+    }
+
+    pub fn body_span(&self) -> &SourceSpan {
+        &self.body_span
+    }
+
+    pub fn span(&self) -> &SourceSpan {
+        &self.span
     }
 }
 
