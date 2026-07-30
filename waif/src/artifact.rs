@@ -235,31 +235,63 @@ impl ItemisedSection {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Item {
     Compact(Located<CompactItem>),
+    Expanded(Located<ExpandedItem>),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemForm {
+    Compact,
+    Expanded,
 }
 
 #[allow(dead_code)]
 impl Item {
+    pub fn form(&self) -> ItemForm {
+        match self {
+            Self::Compact(_) => ItemForm::Compact,
+            Self::Expanded(_) => ItemForm::Expanded,
+        }
+    }
+
     pub fn identifier(&self) -> Option<&Located<String>> {
         match self {
             Self::Compact(item) => item.value.identifier.as_ref(),
+            Self::Expanded(item) => item.value.identifier.as_ref(),
         }
     }
 
     pub fn content(&self) -> &Located<String> {
         match self {
             Self::Compact(item) => &item.value.content,
+            Self::Expanded(item) => &item.value.content,
+        }
+    }
+
+    pub fn body(&self) -> &Located<String> {
+        match self {
+            Self::Compact(item) => &item.value.body,
+            Self::Expanded(item) => &item.value.body,
         }
     }
 
     pub fn span(&self) -> &SourceSpan {
         match self {
             Self::Compact(item) => item.span(),
+            Self::Expanded(item) => item.span(),
         }
     }
 
     pub fn as_compact(&self) -> Option<&CompactItem> {
         match self {
             Self::Compact(item) => Some(item.value()),
+            Self::Expanded(_) => None,
+        }
+    }
+
+    pub fn as_expanded(&self) -> Option<&ExpandedItem> {
+        match self {
+            Self::Compact(_) => None,
+            Self::Expanded(item) => Some(item.value()),
         }
     }
 }
@@ -275,6 +307,30 @@ pub struct CompactItem {
 
 #[allow(dead_code)]
 impl CompactItem {
+    pub fn marker(&self) -> &Located<String> {
+        &self.marker
+    }
+
+    pub fn delimiter(&self) -> Option<&Located<String>> {
+        self.delimiter.as_ref()
+    }
+
+    pub fn body(&self) -> &Located<String> {
+        &self.body
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExpandedItem {
+    pub(crate) marker: Located<String>,
+    pub(crate) identifier: Option<Located<String>>,
+    pub(crate) delimiter: Option<Located<String>>,
+    pub(crate) content: Located<String>,
+    pub(crate) body: Located<String>,
+}
+
+#[allow(dead_code)]
+impl ExpandedItem {
     pub fn marker(&self) -> &Located<String> {
         &self.marker
     }

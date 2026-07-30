@@ -1,9 +1,10 @@
 use self::cursor::{Cursor, Position};
 use crate::artifact::{
-    Artifact, CompactItem, Item, ItemisedSection, Located, Metadata, ProseSection, Section,
-    SourceSpan,
+    Artifact, CompactItem, ExpandedItem, Item, ItemisedSection, Located, Metadata, ProseSection,
+    Section, SourceSpan,
 };
 use std::fmt;
+use std::ops::Range;
 
 mod cursor;
 
@@ -240,7 +241,7 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
         SectionType::Itemised => {
             ctx.cursor.rewind(body_start);
             ctx.code_block = None;
-            let items = p_compact_items(ctx, body_end);
+            let items = p_itemised_items(ctx, body_end);
             Some(Section::Itemised(Located::new(
                 ItemisedSection {
                     title: heading.title,
@@ -276,6 +277,60 @@ fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
     }
 }
 
+fn p_itemised_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
+    let mut leading_content = Vec::new();
+
+    while ctx.cursor.position().offset() < body_end {
+        let start = ctx.cursor.position();
+        let (_, line) = ctx.cursor.peek_line().expect("body has a line");
+        let in_code_block = is_code_block_line(line, &mut ctx.code_block);
+
+        if !in_code_block {
+            if compact_marker(line).is_some() {
+                report_leading_item_content(ctx, &leading_content, "compact", "- ID: content");
+                return p_compact_items(ctx, body_end);
+            }
+            if heading_level(ctx) == Some(3) {
+                report_leading_item_content(ctx, &leading_content, "expanded", "### ID: title");
+                return p_expanded_items(ctx, body_end);
+            }
+        }
+
+        if !line.trim().is_empty() {
+            leading_content.push(start.line());
+        }
+        ctx.cursor.take_line();
+    }
+    for line in leading_content {
+        ctx.diagnostics.push(Diagnostic::new(
+            line,
+            "expected an item in `- ID: content` or `### ID: title` form",
+        ));
+    }
+    Vec::new()
+}
+
+fn report_leading_item_content(
+    ctx: &mut ParsingContext,
+    lines: &[usize],
+    form: &str,
+    syntax: &str,
+) {
+    for line in lines {
+        ctx.diagnostics.push(Diagnostic::new(
+            *line,
+            format!("expected a {form} item in `{syntax}` form"),
+        ));
+    }
+}
+
+fn heading_level(ctx: &mut ParsingContext) -> Option<usize> {
+    let start = ctx.cursor.position();
+    let level = p_markdown_heading(ctx).map(|heading| heading.level);
+    ctx.cursor.rewind(start);
+    level
+}
+
 // A compact item whose body end is not known until the next peer or section.
 struct OpenCompactItem {
     start: Position,
@@ -297,6 +352,15 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         let (_, line) = ctx.cursor.peek_line().expect("body has a line");
         let in_code_block = is_code_block_line(line, &mut ctx.code_block);
         let marker = (!in_code_block).then(|| compact_marker(line)).flatten();
+
+        if !in_code_block && heading_level(ctx) == Some(3) {
+            ctx.diagnostics.push(Diagnostic::new(
+                start.line(),
+                "itemised section cannot mix compact and expanded items",
+            ));
+            ctx.cursor.take_line();
+            continue;
+        }
 
         if let Some((indentation, _)) = marker {
             let peer = *peer_indentation.get_or_insert(indentation);
@@ -327,6 +391,95 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         items.push(finish_compact_item(ctx.source, item, ctx.cursor.position()));
     }
     items
+}
+
+// An expanded item whose body end is not known until the next peer or section.
+struct OpenExpandedItem {
+    start: Position,
+    body_start: Position,
+    marker: Located<String>,
+    identifier: Option<Located<String>>,
+    delimiter: Option<Located<String>>,
+    content: Located<String>,
+}
+
+fn p_expanded_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
+    let mut items = Vec::new();
+    let mut open = None;
+
+    while ctx.cursor.position().offset() < body_end {
+        let start = ctx.cursor.position();
+        let (_, line) = ctx.cursor.peek_line().expect("body has a line");
+        let in_code_block = is_code_block_line(line, &mut ctx.code_block);
+
+        if !in_code_block && heading_level(ctx) == Some(3) {
+            if let Some(item) = open.take() {
+                items.push(finish_expanded_item(ctx.source, item, start));
+            }
+            open = Some(p_expanded_item_opening(ctx));
+            continue;
+        }
+
+        if open.is_none() && !line.trim().is_empty() {
+            ctx.diagnostics.push(Diagnostic::new(
+                start.line(),
+                "expected an expanded item in `### ID: title` form",
+            ));
+        }
+        ctx.cursor.take_line();
+    }
+
+    if let Some(item) = open {
+        items.push(finish_expanded_item(
+            ctx.source,
+            item,
+            ctx.cursor.position(),
+        ));
+    }
+    items
+}
+
+fn p_expanded_item_opening(ctx: &mut ParsingContext) -> OpenExpandedItem {
+    let start = ctx.cursor.position();
+    let heading = p_markdown_heading(ctx).expect("item has a heading");
+    debug_assert_eq!(heading.level, 3);
+    let title_range = heading.title.span().range();
+    let title = heading.title.text();
+    let marker = located_source_range(ctx.source, start.line(), start.offset()..title_range.start);
+    let ranges = item_opening_ranges(title).offset(title_range.start);
+    let identifier = ranges
+        .identifier
+        .map(|range| located_source_range(ctx.source, start.line(), range));
+    let delimiter = ranges
+        .delimiter
+        .map(|range| located_source_range(ctx.source, start.line(), range));
+    let content = located_source_range(ctx.source, start.line(), ranges.content);
+
+    OpenExpandedItem {
+        start,
+        body_start: ctx.cursor.position(),
+        marker,
+        identifier,
+        delimiter,
+        content,
+    }
+}
+
+fn finish_expanded_item(source: &str, open: OpenExpandedItem, end: Position) -> Item {
+    Item::Expanded(Located::new(
+        ExpandedItem {
+            marker: open.marker,
+            identifier: open.identifier,
+            delimiter: open.delimiter,
+            content: open.content,
+            body: located_source_range(
+                source,
+                open.body_start.line(),
+                open.body_start.offset()..end.offset(),
+            ),
+        },
+        SourceSpan::new(open.start.line(), open.start.offset()..end.offset()),
+    ))
 }
 
 // Return a compact marker's indentation and end offset.
@@ -369,30 +522,18 @@ fn p_compact_item_opening(ctx: &mut ParsingContext) -> OpenCompactItem {
     // without advancing the cursor, so both operations must succeed.
     let (_, line) = ctx.cursor.take_line().expect("item has an opening line");
     let (_, marker_end) = compact_marker(line).expect("item has a marker");
-    let content_start = marker_end;
-    let remainder = &line[content_start..];
-    let marker = located_text(line, start, 0..marker_end);
+    let remainder = &line[marker_end..];
+    let marker = located_line_range(line, start, 0..marker_end);
 
     // For `G-AC1 :  value`, retain `G-AC1` as the identifier, ` :  ` as the
     // delimiter, and begin content at `value`.
-    let (identifier, delimiter, content_offset) = if let Some(colon) = remainder.find(':') {
-        let candidate = &remainder[..colon];
-        let identifier_text = candidate.trim();
-        let leading = candidate.len() - candidate.trim_start().len();
-        let identifier_start = content_start + leading;
-        let identifier_end = identifier_start + identifier_text.len();
-        let mut content_offset = content_start + colon + 1;
-        while line[content_offset..].starts_with([' ', '\t']) {
-            content_offset += 1;
-        }
-        (
-            Some(located_text(line, start, identifier_start..identifier_end)),
-            Some(located_text(line, start, identifier_end..content_offset)),
-            content_offset,
-        )
-    } else {
-        (None, None, content_start)
-    };
+    let ranges = item_opening_ranges(remainder).offset(marker_end);
+    let identifier = ranges
+        .identifier
+        .map(|range| located_line_range(line, start, range));
+    let delimiter = ranges
+        .delimiter
+        .map(|range| located_line_range(line, start, range));
 
     OpenCompactItem {
         start,
@@ -400,22 +541,69 @@ fn p_compact_item_opening(ctx: &mut ParsingContext) -> OpenCompactItem {
         marker,
         identifier,
         delimiter,
-        content: located_text(line, start, content_offset..line.len()),
+        content: located_line_range(line, start, ranges.content),
     }
 }
 
+struct ItemOpeningRanges {
+    identifier: Option<Range<usize>>,
+    delimiter: Option<Range<usize>>,
+    content: Range<usize>,
+}
+
+impl ItemOpeningRanges {
+    fn offset(self, offset: usize) -> Self {
+        Self {
+            identifier: self.identifier.map(|range| offset_range(range, offset)),
+            delimiter: self.delimiter.map(|range| offset_range(range, offset)),
+            content: offset_range(self.content, offset),
+        }
+    }
+}
+
+fn item_opening_ranges(text: &str) -> ItemOpeningRanges {
+    let Some(colon) = text.find(':') else {
+        return ItemOpeningRanges {
+            identifier: None,
+            delimiter: None,
+            content: 0..text.len(),
+        };
+    };
+
+    let candidate = &text[..colon];
+    let identifier = candidate.trim();
+    let identifier_start = candidate.len() - candidate.trim_start().len();
+    let identifier_end = identifier_start + identifier.len();
+    let mut content_start = colon + 1;
+    while text[content_start..].starts_with([' ', '\t']) {
+        content_start += 1;
+    }
+    ItemOpeningRanges {
+        identifier: Some(identifier_start..identifier_end),
+        delimiter: Some(identifier_end..content_start),
+        content: content_start..text.len(),
+    }
+}
+
+fn offset_range(range: Range<usize>, offset: usize) -> Range<usize> {
+    range.start + offset..range.end + offset
+}
+
 // Copy a line range while translating it to an artifact source span.
-fn located_text(
-    line: &str,
-    line_start: Position,
-    range: std::ops::Range<usize>,
-) -> Located<String> {
+fn located_line_range(line: &str, line_start: Position, range: Range<usize>) -> Located<String> {
     Located::new(
         line[range.clone()].to_owned(),
         SourceSpan::new(
             line_start.line(),
             line_start.offset() + range.start..line_start.offset() + range.end,
         ),
+    )
+}
+
+fn located_source_range(source: &str, start_line: usize, range: Range<usize>) -> Located<String> {
+    Located::new(
+        source[range.clone()].to_owned(),
+        SourceSpan::new(start_line, range),
     )
 }
 
@@ -614,6 +802,10 @@ mod tests {
 
     fn compact(item: &Item) -> &CompactItem {
         item.as_compact().expect("item should use compact form")
+    }
+
+    fn expanded(item: &Item) -> &ExpandedItem {
+        item.as_expanded().expect("item should use expanded form")
     }
 
     fn itemised_config(name: &str) -> ParserConfig {
@@ -867,6 +1059,158 @@ Arbitrary prose.\n
         }
 
         #[test]
+        fn preserves_expanded_components_and_malformed_candidates() {
+            let source = concat!(
+                "# Example\n",
+                "## Items\n",
+                " ### G-REV1 :  α ###\n",
+                "opaque body\n",
+                "#### A deeper heading\n",
+                "- Before: ordinary revision-body prose\n",
+                "- G-AC1: compact-looking body prose\n",
+                "- malformed compact-looking body prose\n",
+                "    - nested list\n",
+                "### missing delimiter\n",
+                "second body\n",
+                "### : empty identifier\n",
+                "### G-REV4:\n",
+                "## Tail\n",
+                "opaque\n",
+            );
+            let artifact = parse_with_config(source, &itemised_config("Items"))
+                .expect("expanded items should parse");
+            let section = itemised(&artifact.sections()[0]);
+            let items = section.items();
+
+            assert_eq!(items.len(), 4);
+            let first_item = &items[0];
+            let first = expanded(first_item);
+            assert_eq!(first_item.form(), crate::artifact::ItemForm::Expanded);
+            assert_eq!(first.marker().text(), " ### ");
+            assert_eq!(first_item.identifier().unwrap().text(), "G-REV1");
+            assert_eq!(first.delimiter().unwrap().text(), " :  ");
+            assert_eq!(first_item.content().text(), "α");
+            assert!(first_item.body().text().contains("opaque body"));
+            assert!(first.body().text().contains("#### A deeper heading"));
+            assert!(first.body().text().contains("- Before:"));
+            assert!(first.body().text().contains("- G-AC1:"));
+            assert!(first.body().text().contains("- malformed compact-looking"));
+            assert!(first.body().text().contains("- nested list"));
+            assert_eq!(
+                &source[first.marker().span().range()],
+                first.marker().text()
+            );
+            assert_eq!(
+                &source[first_item.identifier().unwrap().span().range()],
+                "G-REV1"
+            );
+            assert_eq!(&source[first.delimiter().unwrap().span().range()], " :  ");
+            assert_eq!(
+                &source[first_item.content().span().range()],
+                first_item.content().text()
+            );
+            assert_eq!(&source[first.body().span().range()], first.body().text());
+            assert_eq!(
+                &source[first_item.span().range()],
+                concat!(
+                    " ### G-REV1 :  α ###\n",
+                    "opaque body\n",
+                    "#### A deeper heading\n",
+                    "- Before: ordinary revision-body prose\n",
+                    "- G-AC1: compact-looking body prose\n",
+                    "- malformed compact-looking body prose\n",
+                    "    - nested list\n",
+                )
+            );
+
+            assert!(items[1].identifier().is_none());
+            assert!(expanded(&items[1]).delimiter().is_none());
+            assert_eq!(items[1].content().text(), "missing delimiter");
+            assert_eq!(items[2].identifier().unwrap().text(), "");
+            assert_eq!(items[3].identifier().unwrap().text(), "G-REV4");
+            assert_eq!(items[3].content().text(), "");
+            assert_eq!(artifact.sections()[1].name(), "Tail");
+        }
+
+        #[test]
+        fn exposes_common_fields_for_both_item_forms() {
+            let compact_source = "# Example\n## Items\n- G-AC1: compact\n  body\n";
+            let compact_artifact = parse_with_config(compact_source, &itemised_config("Items"))
+                .expect("compact item should parse");
+            let compact_item = &itemised(&compact_artifact.sections()[0]).items()[0];
+
+            let expanded_source = "# Example\n## Items\n### G-AC1: expanded\nbody\n";
+            let expanded_artifact = parse_with_config(expanded_source, &itemised_config("Items"))
+                .expect("expanded item should parse");
+            let expanded_item = &itemised(&expanded_artifact.sections()[0]).items()[0];
+
+            assert_eq!(compact_item.form(), crate::artifact::ItemForm::Compact);
+            assert_eq!(compact_item.identifier().unwrap().text(), "G-AC1");
+            assert_eq!(compact_item.content().text(), "compact");
+            assert_eq!(compact_item.body().text(), "  body\n");
+            assert_eq!(expanded_item.form(), crate::artifact::ItemForm::Expanded);
+            assert_eq!(expanded_item.identifier().unwrap().text(), "G-AC1");
+            assert_eq!(expanded_item.content().text(), "expanded");
+            assert_eq!(expanded_item.body().text(), "body\n");
+        }
+
+        #[test]
+        fn keeps_fences_and_deeper_headings_in_expanded_bodies() {
+            let source = concat!(
+                "# Example\n",
+                "## Items\n",
+                "### G-REV1: first\n",
+                "````markdown\n",
+                "### not a peer\n",
+                "- not a mixed form\n",
+                "````\n",
+                "#### deeper heading\n",
+                "### G-REV2: second\n",
+            );
+            let artifact = parse_with_config(source, &itemised_config("Items"))
+                .expect("fenced content should parse");
+            let items = itemised(&artifact.sections()[0]).items();
+
+            assert_eq!(items.len(), 2);
+            assert!(items[0].body().text().contains("### not a peer"));
+            assert!(items[0].body().text().contains("- not a mixed form"));
+            assert!(items[0].body().text().contains("#### deeper heading"));
+            assert_eq!(items[1].identifier().unwrap().text(), "G-REV2");
+        }
+
+        #[test]
+        fn rejects_bare_leading_content_and_compact_then_expanded_forms() {
+            for source in [
+                "# Example\n## Items\nbare\n### G-REV1: item\n",
+                "# Example\n## Items\n- G-AC1: compact\n### G-REV1: expanded\n",
+            ] {
+                let diagnostics = parse_with_config(source, &itemised_config("Items"))
+                    .expect_err("invalid itemised section should fail");
+                assert!(!diagnostics.is_empty());
+            }
+        }
+
+        #[test]
+        fn tracks_expanded_components_under_supported_line_endings() {
+            for ending in ["\n", "\r\n", "\r"] {
+                let source = ["# Example", "## Items", "### G-α: 値", "本文", ""].join(ending);
+                let artifact = parse_with_config(&source, &itemised_config("Items"))
+                    .expect("expanded item should parse");
+                let item = &itemised(&artifact.sections()[0]).items()[0];
+
+                assert_eq!(item.span().start_line(), 3);
+                assert_eq!(item.identifier().unwrap().text(), "G-α");
+                assert_eq!(&source[item.identifier().unwrap().span().range()], "G-α");
+                assert_eq!(item.content().text(), "値");
+                assert_eq!(
+                    &source[item.span().range()],
+                    &source[source.find("### G-α").unwrap()..]
+                );
+                assert_eq!(artifact.serialize(), source);
+            }
+        }
+
+        #[test]
         fn keeps_fences_and_nested_markers_in_the_current_item() {
             let source = concat!(
                 "# Example\n",
@@ -977,6 +1321,33 @@ Arbitrary prose.\n
                     "- Status: accepted\r\n",
                     "## Items\r\n",
                     "- G-AC1: value  \r\n",
+                )
+            );
+        }
+
+        #[test]
+        fn metadata_changes_do_not_reformat_expanded_items() {
+            let source = concat!(
+                "# Example\r\n",
+                "- Status: drafting\r\n",
+                "## Items\r\n",
+                "### G-REV1: title ###\r\n",
+                "opaque body  \r\n",
+            );
+            let mut artifact =
+                parse_with_config(source, &itemised_config("Items")).expect("item should parse");
+            artifact.metadata_mut()[0]
+                .set_value("accepted")
+                .expect("value should be valid");
+
+            assert_eq!(
+                artifact.serialize(),
+                concat!(
+                    "# Example\r\n",
+                    "- Status: accepted\r\n",
+                    "## Items\r\n",
+                    "### G-REV1: title ###\r\n",
+                    "opaque body  \r\n",
                 )
             );
         }
