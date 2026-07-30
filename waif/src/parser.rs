@@ -1,7 +1,7 @@
 use self::cursor::{Cursor, Position};
 use crate::artifact::{
-    Artifact, CompactItem, ExpandedItem, Item, ItemisedSection, Located, Metadata, ProseSection,
-    Section, SourceSpan,
+    Artifact, CompactItem, ExpandedItem, Item, ItemForm, ItemisedSection, Located, Metadata,
+    ProseSection, Section, SourceSpan,
 };
 use std::fmt;
 use std::ops::Range;
@@ -12,18 +12,40 @@ mod cursor;
 // Diagnostics
 // ============================================================================
 
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Severity {
+    Error,
+    Warning,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Diagnostic {
+    severity: Severity,
     line: usize,
     message: String,
 }
 
+#[allow(dead_code)]
 impl Diagnostic {
-    fn new(line: usize, message: impl Into<String>) -> Self {
+    pub(crate) fn error(line: usize, message: impl Into<String>) -> Self {
+        Self::with_severity(Severity::Error, line, message)
+    }
+
+    pub(crate) fn warning(line: usize, message: impl Into<String>) -> Self {
+        Self::with_severity(Severity::Warning, line, message)
+    }
+
+    fn with_severity(severity: Severity, line: usize, message: impl Into<String>) -> Self {
         Self {
+            severity,
             line,
             message: message.into(),
         }
+    }
+
+    pub fn severity(&self) -> Severity {
+        self.severity
     }
 
     pub fn line(&self) -> usize {
@@ -56,14 +78,24 @@ pub enum SectionType {
 pub struct SectionConfig {
     name: String,
     section_type: SectionType,
+    required_item_form: Option<ItemForm>,
 }
 
 #[allow(dead_code)]
 impl SectionConfig {
-    pub fn new(name: impl Into<String>, section_type: SectionType) -> Self {
+    pub fn prose(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            section_type,
+            section_type: SectionType::Prose,
+            required_item_form: None,
+        }
+    }
+
+    pub fn itemised(name: impl Into<String>, required_item_form: Option<ItemForm>) -> Self {
+        Self {
+            name: name.into(),
+            section_type: SectionType::Itemised,
+            required_item_form,
         }
     }
 }
@@ -84,6 +116,13 @@ impl ParserConfig {
             .iter()
             .find(|section| section.name == name)
             .map_or(SectionType::Prose, |section| section.section_type)
+    }
+
+    fn required_item_form(&self, name: &str) -> Option<ItemForm> {
+        self.sections
+            .iter()
+            .find(|section| section.name == name)
+            .and_then(|section| section.required_item_form)
     }
 }
 
@@ -138,7 +177,7 @@ fn p_title_line(ctx: &mut ParsingContext) -> String {
     let pos = ctx.cursor.position();
     if ctx.cursor.is_eof() {
         ctx.diagnostics
-            .push(Diagnostic::new(pos.line(), "missing level-one title"));
+            .push(Diagnostic::error(pos.line(), "missing level-one title"));
         return String::new();
     }
 
@@ -146,14 +185,14 @@ fn p_title_line(ctx: &mut ParsingContext) -> String {
         level: 1, title, ..
     }) = p_markdown_heading(ctx)
     else {
-        ctx.diagnostics.push(Diagnostic::new(
+        ctx.diagnostics.push(Diagnostic::error(
             pos.line(),
             "first non-whitespace line must be a level-one Markdown heading",
         ));
         return String::new();
     };
     if title.text().is_empty() {
-        ctx.diagnostics.push(Diagnostic::new(
+        ctx.diagnostics.push(Diagnostic::error(
             pos.line(),
             "level-one title must not be empty",
         ));
@@ -182,7 +221,7 @@ fn p_metadata(ctx: &mut ParsingContext) -> Vec<Metadata> {
                 report_additional_title(ctx, start);
                 continue;
             }
-            ctx.diagnostics.push(Diagnostic::new(
+            ctx.diagnostics.push(Diagnostic::error(
                 start.line(),
                 "expected metadata in `- Key: value` form or a \
                  level-two section",
@@ -190,7 +229,7 @@ fn p_metadata(ctx: &mut ParsingContext) -> Vec<Metadata> {
             continue;
         }
 
-        ctx.diagnostics.push(Diagnostic::new(
+        ctx.diagnostics.push(Diagnostic::error(
             start.line(),
             "expected metadata in `- Key: value` form or a \
              level-two section",
@@ -216,7 +255,7 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
         return None;
     }
     if heading.title.text().is_empty() {
-        ctx.diagnostics.push(Diagnostic::new(
+        ctx.diagnostics.push(Diagnostic::error(
             heading.pos.line(),
             "level-two section name must not be empty",
         ));
@@ -227,7 +266,9 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
     let heading_line = heading.pos.line();
     let section_span = SourceSpan::new(heading_line, heading.pos.offset()..body_end);
     let body_span = SourceSpan::new(body_start.line(), body_start.offset()..body_end);
-    match ctx.config.section_type(heading.title.text()) {
+    let section_type = ctx.config.section_type(heading.title.text());
+    let required_item_form = ctx.config.required_item_form(heading.title.text());
+    match section_type {
         SectionType::Prose => Some(Section::Prose(Located::new(
             ProseSection::new(
                 heading.title,
@@ -242,6 +283,7 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
             ctx.cursor.rewind(body_start);
             ctx.code_block = None;
             let items = p_itemised_items(ctx, body_end);
+            report_item_form_constraint(ctx, heading.title.text(), required_item_form, &items);
             Some(Section::Itemised(Located::new(
                 ItemisedSection {
                     title: heading.title,
@@ -251,6 +293,32 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
             )))
         }
     }
+}
+
+fn report_item_form_constraint(
+    ctx: &mut ParsingContext,
+    section_name: &str,
+    required_form: Option<ItemForm>,
+    items: &[Item],
+) {
+    let Some((required_form, first_item)) = required_form.zip(items.first()) else {
+        return;
+    };
+    if first_item.form() == required_form {
+        return;
+    }
+
+    let (form_name, syntax) = match required_form {
+        ItemForm::Compact => ("compact", "- ID: content"),
+        ItemForm::Expanded => ("expanded", "### ID: title"),
+    };
+    ctx.diagnostics.push(Diagnostic::error(
+        first_item.span().start_line(),
+        format!(
+            "section `{section_name}` requires {form_name} items in \
+             `{syntax}` form"
+        ),
+    ));
 }
 
 fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
@@ -302,7 +370,7 @@ fn p_itemised_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         ctx.cursor.take_line();
     }
     for line in leading_content {
-        ctx.diagnostics.push(Diagnostic::new(
+        ctx.diagnostics.push(Diagnostic::error(
             line,
             "expected an item in `- ID: content` or `### ID: title` form",
         ));
@@ -317,7 +385,7 @@ fn report_leading_item_content(
     syntax: &str,
 ) {
     for line in lines {
-        ctx.diagnostics.push(Diagnostic::new(
+        ctx.diagnostics.push(Diagnostic::error(
             *line,
             format!("expected a {form} item in `{syntax}` form"),
         ));
@@ -354,7 +422,7 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         let marker = (!in_code_block).then(|| compact_marker(line)).flatten();
 
         if !in_code_block && heading_level(ctx) == Some(3) {
-            ctx.diagnostics.push(Diagnostic::new(
+            ctx.diagnostics.push(Diagnostic::error(
                 start.line(),
                 "itemised section cannot mix compact and expanded items",
             ));
@@ -379,7 +447,7 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         let outside_item = open.is_none()
             || (!in_code_block && leading_indentation_columns(line) <= peer_indentation.unwrap());
         if !line.trim().is_empty() && outside_item {
-            ctx.diagnostics.push(Diagnostic::new(
+            ctx.diagnostics.push(Diagnostic::error(
                 start.line(),
                 "expected a compact item in `- ID: content` form",
             ));
@@ -421,7 +489,7 @@ fn p_expanded_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         }
 
         if open.is_none() && !line.trim().is_empty() {
-            ctx.diagnostics.push(Diagnostic::new(
+            ctx.diagnostics.push(Diagnostic::error(
                 start.line(),
                 "expected an expanded item in `### ID: title` form",
             ));
@@ -628,7 +696,7 @@ fn finish_compact_item(source: &str, open: OpenCompactItem, end: Position) -> It
 }
 
 fn report_additional_title(ctx: &mut ParsingContext, position: Position) {
-    ctx.diagnostics.push(Diagnostic::new(
+    ctx.diagnostics.push(Diagnostic::error(
         position.line(),
         "artifact must contain exactly one level-one heading",
     ));
@@ -809,7 +877,11 @@ mod tests {
     }
 
     fn itemised_config(name: &str) -> ParserConfig {
-        ParserConfig::new(vec![SectionConfig::new(name, SectionType::Itemised)])
+        ParserConfig::new(vec![SectionConfig::itemised(name, None)])
+    }
+
+    fn constrained_itemised_config(name: &str, form: ItemForm) -> ParserConfig {
+        ParserConfig::new(vec![SectionConfig::itemised(name, Some(form))])
     }
 
     mod component_parsers {
@@ -983,8 +1055,8 @@ Arbitrary prose.\n
                 .all(|section| section.as_prose().is_some()));
 
             let config = ParserConfig::new(vec![
-                SectionConfig::new("Items", SectionType::Itemised),
-                SectionConfig::new("Other", SectionType::Prose),
+                SectionConfig::itemised("Items", None),
+                SectionConfig::prose("Other"),
             ]);
             let artifact =
                 parse_with_config(source, &config).expect("configured parsing should succeed");
@@ -1298,6 +1370,69 @@ Arbitrary prose.\n
             let artifact = parse_with_config(empty, &itemised_config("Items"))
                 .expect("empty itemised section should parse");
             assert!(itemised(&artifact.sections()[0]).items().is_empty());
+        }
+
+        #[test]
+        fn enforces_required_item_forms_at_the_first_item() {
+            let compact = "# Example\n## Items\n- G-AC1: compact\n";
+            parse_with_config(
+                compact,
+                &constrained_itemised_config("Items", ItemForm::Compact),
+            )
+            .expect("required compact form should parse");
+            let diagnostics = parse_with_config(
+                compact,
+                &constrained_itemised_config("Items", ItemForm::Expanded),
+            )
+            .expect_err("compact form should violate an expanded constraint");
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].severity(), Severity::Error);
+            assert_eq!(diagnostics[0].line(), 3);
+            assert!(diagnostics[0]
+                .message()
+                .contains("requires expanded items in `### ID: title` form"));
+
+            let expanded = "# Example\n## Items\n### G-AC1: expanded\n";
+            parse_with_config(
+                expanded,
+                &constrained_itemised_config("Items", ItemForm::Expanded),
+            )
+            .expect("required expanded form should parse");
+            let diagnostics = parse_with_config(
+                expanded,
+                &constrained_itemised_config("Items", ItemForm::Compact),
+            )
+            .expect_err("expanded form should violate a compact constraint");
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].severity(), Severity::Error);
+            assert_eq!(diagnostics[0].line(), 3);
+            assert!(diagnostics[0]
+                .message()
+                .contains("requires compact items in `- ID: content` form"));
+        }
+
+        #[test]
+        fn accepts_empty_sections_under_either_item_form_constraint() {
+            let source = "# Example\n## Items\n\n";
+            for form in [ItemForm::Compact, ItemForm::Expanded] {
+                let artifact =
+                    parse_with_config(source, &constrained_itemised_config("Items", form))
+                        .expect("an empty section has no source form to reject");
+                assert!(itemised(&artifact.sections()[0]).items().is_empty());
+            }
+        }
+
+        #[test]
+        fn diagnostics_represent_error_and_warning_severities() {
+            let errors = parse("").expect_err("an empty artifact should fail");
+            assert!(errors
+                .iter()
+                .all(|diagnostic| diagnostic.severity() == Severity::Error));
+
+            let warning = Diagnostic::warning(4, "section is empty");
+            assert_eq!(warning.severity(), Severity::Warning);
+            assert_eq!(warning.line(), 4);
+            assert_eq!(warning.message(), "section is empty");
         }
 
         #[test]
