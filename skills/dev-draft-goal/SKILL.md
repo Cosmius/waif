@@ -56,15 +56,13 @@ operations, not approval gates. Do not edit `.gitignore`.
 
 ## Acceptance Criteria
 
-- [ ] G-AC1: <Observable, technology-independent result>
+- G-AC1: <Observable, technology-independent result>
 
-## Scope
-
-### In Scope
+## In Scope
 
 - G-IN1: <Included behavior>
 
-### Out of Scope
+## Out of Scope
 
 - G-OUT1: <Explicit exclusion>
 
@@ -78,22 +76,22 @@ operations, not approval gates. Do not edit `.gitignore`.
 
 ## Revisions
 
-### G-REV1 - YYYY-MM-DDTHH:MM:SS+HH:MM - <amendment title>
+### G-REV1: YYYY-MM-DDTHH:MM:SS+HH:MM - <amendment title>
 
 - Before: <What the accepted goal said before this amendment.>
 - Changed:
   - <Change made during this amendment cycle.>
 ```
 
-`Outcome` and `Acceptance Criteria` are required. Omit empty optional sections
-and empty `In Scope` or `Out of Scope` subsections.
+`Outcome` and `Acceptance Criteria` are required. Omit other empty sections.
+Preserve IDs and never reuse retired IDs.
 
-Use monotonically increasing IDs:
-- preserve IDs;
-- never reuse retired IDs.
+`waif check` handles structural validation. The AI agent owns semantic review:
+keep `In Scope` substantive and put exclusions and non-goals in
+`Out of Scope`.
 
-Statuses are `drafting`, `accepted`, and `amending`. Do not accept a goal with
-blocking `Open Questions`. Follow shared amendment and revision rules.
+Do not accept a goal with blocking `Open Questions`. Follow shared amendment
+and revision rules.
 
 ## Guardrails
 

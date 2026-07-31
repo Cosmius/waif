@@ -72,7 +72,7 @@ A numbered itemised section contains stable, uniquely identified items in one
 of two forms:
 
 - List form: `- ID: content`
-- Subsection form: `### ID - title`
+- Subsection form: `### ID: title`
 
 A list item's content is unrestricted Markdown and may span indented lines;
 nested lists remain part of that item. A subsection body ends at the next
@@ -142,7 +142,8 @@ An artifact contract must define:
 - permitted metadata keys, order, values, and requiredness;
 - predefined section names, types, order, and cardinality;
 - numbered-item ID syntax and uniqueness scope;
-- both disjoint ID namespaces for every predefined mixed section; and
+- permitted or required item source forms, including disjoint ID namespaces
+  and source ordering for mixed sections; and
 - plan-item title, metadata, and prose constraints for `Plan Items`.
 
 Names and IDs are case-sensitive unless the contract says otherwise. Content
@@ -150,3 +151,55 @@ not permitted by this document or the applicable contract MUST NEVER appear.
 A parser must reject violations in structured sections. Programmatic filling
 and modification operate only on metadata and item IDs; prose is preserved
 without interpretation.
+
+## Goal Contract
+
+A checked file named exactly `goal.md` receives the goal-specific contract in
+addition to the common artifact envelope. Goal-specific checking does not
+constrain title content or metadata and section ordering.
+
+The required metadata is:
+
+```text
+Status      drafting | accepted | amending
+Created     valid RFC 3339 timestamp with Z or a numeric UTC offset
+Updated     valid RFC 3339 timestamp with Z or a numeric UTC offset
+```
+
+Every metadata key is unique. Additional unique metadata keys are allowed.
+
+The required level-two sections are:
+
+```text
+Outcome                 prose
+Acceptance Criteria     itemised; G-AC<n>
+```
+
+The optional level-two sections are:
+
+```text
+In Scope                itemised; G-IN<n>
+Out of Scope            itemised; G-OUT<n>
+Open Questions          itemised; G-Q<n>
+Assumptions             itemised; G-A<n>
+Revisions               expanded itemised; G-REV<n>
+```
+
+Every section name is unique, including names unknown to the goal contract. A
+uniquely named unknown section is opaque prose. Empty sections produce
+warnings and do not invalidate the artifact.
+
+Ordinary itemised sections accept either compact or expanded items, with one
+form per section. `Revisions` accepts only expanded items. Expanded headings
+use `### <ID>: <title>`.
+
+Every item ID uses the family declared for its section. Its `<n>` component is
+a positive decimal integer matching `[1-9][0-9]*`, and its numeric value is
+unique within that reference-ID namespace. List-form items use
+`- G-<family><n>: content`. Item content, including empty content after a valid
+ID and colon, and expanded item bodies are opaque to goal-specific validation.
+
+These are structural rules only. The authoring AI agent, not `waif check`, is
+responsible for the semantic quality, feasibility, and completeness of goal
+content and for distinguishing substantive included behavior from exclusions
+and non-goals.

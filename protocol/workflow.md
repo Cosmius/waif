@@ -288,7 +288,7 @@ Example:
 ```markdown
 ## Revisions
 
-### G-REV1 - 2026-06-14T18:30:00+09:00 - Extend timeout scope
+### G-REV1: 2026-06-14T18:30:00+09:00 - Extend timeout scope
 
 - Before: The goal covered configurable timeouts for browser sessions only.
 - Changed:
