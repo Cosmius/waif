@@ -13,6 +13,12 @@ struct MetadataValidator {
 
 type Validator = fn(&str) -> Result<(), &'static str>;
 
+#[derive(Clone, Copy)]
+struct ItemValidator {
+    section_name: &'static str,
+    prefix: &'static str,
+}
+
 const REQUIRED_METADATA: [MetadataValidator; 3] = [
     MetadataValidator {
         name: "Status",
@@ -28,6 +34,32 @@ const REQUIRED_METADATA: [MetadataValidator; 3] = [
     },
 ];
 const REQUIRED_SECTIONS: [&str; 2] = ["Outcome", "Acceptance Criteria"];
+const ITEM_VALIDATORS: [ItemValidator; 6] = [
+    ItemValidator {
+        section_name: "Acceptance Criteria",
+        prefix: "G-AC",
+    },
+    ItemValidator {
+        section_name: "In Scope",
+        prefix: "G-IN",
+    },
+    ItemValidator {
+        section_name: "Out of Scope",
+        prefix: "G-OUT",
+    },
+    ItemValidator {
+        section_name: "Open Questions",
+        prefix: "G-Q",
+    },
+    ItemValidator {
+        section_name: "Assumptions",
+        prefix: "G-A",
+    },
+    ItemValidator {
+        section_name: "Revisions",
+        prefix: "G-REV",
+    },
+];
 
 fn valid_status(value: &str) -> Result<(), &'static str> {
     if matches!(value, "drafting" | "accepted" | "amending") {
@@ -113,6 +145,7 @@ fn validate_metadata(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
 
 fn validate_sections(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
     let mut seen = HashSet::new();
+    let mut seen_item_ids = HashSet::new();
 
     for section in artifact.sections() {
         let name = section.name();
@@ -129,6 +162,13 @@ fn validate_sections(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
                 format!("section `{name}` is empty"),
             ));
         }
+
+        if let Some(validator) = ITEM_VALIDATORS
+            .iter()
+            .find(|validator| validator.section_name == name)
+        {
+            validate_items(section, *validator, &mut seen_item_ids, diagnostics);
+        }
     }
 
     for name in REQUIRED_SECTIONS {
@@ -139,6 +179,63 @@ fn validate_sections(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
             ));
         }
     }
+}
+
+fn validate_items<'a>(
+    section: &'a Section,
+    validator: ItemValidator,
+    seen: &mut HashSet<(&'static str, &'a str)>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(section) = section.as_itemised() else {
+        return;
+    };
+
+    for item in section.items() {
+        let Some(identifier) = item.identifier() else {
+            diagnostics.push(Diagnostic::error(
+                item.span().start_line(),
+                format!(
+                    "item in section `{}` is missing an identifier; expected \
+                     `{}<number>`",
+                    validator.section_name, validator.prefix
+                ),
+            ));
+            continue;
+        };
+
+        let identifier_text = identifier.text();
+        let Some(number) = valid_item_number(identifier_text, validator.prefix) else {
+            diagnostics.push(Diagnostic::error(
+                identifier.span().start_line(),
+                format!(
+                    "item identifier `{identifier_text}` in section `{}` must use \
+                     `{}<number>`, where number is a positive decimal integer",
+                    validator.section_name, validator.prefix
+                ),
+            ));
+            continue;
+        };
+
+        if !seen.insert((validator.prefix, number)) {
+            diagnostics.push(Diagnostic::error(
+                identifier.span().start_line(),
+                format!(
+                    "duplicate item identifier `{identifier_text}` in section `{}`",
+                    validator.section_name
+                ),
+            ));
+        }
+    }
+}
+
+fn valid_item_number<'a>(identifier: &'a str, prefix: &str) -> Option<&'a str> {
+    let number = identifier.strip_prefix(prefix)?;
+    let mut bytes = number.bytes();
+    if !matches!(bytes.next(), Some(b'1'..=b'9')) {
+        return None;
+    }
+    bytes.all(|byte| byte.is_ascii_digit()).then_some(number)
 }
 
 fn section_is_empty(section: &Section) -> bool {
@@ -287,6 +384,169 @@ mod tests {
     }
 
     #[test]
+    fn accepts_every_item_namespace_and_opaque_content() {
+        let source = concat!(
+            "# Goal\n",
+            "- Status: accepted\n",
+            "- Created: 2026-07-31T12:00:00Z\n",
+            "- Updated: 2026-07-31T12:00:00Z\n",
+            "## Outcome\ntext\n",
+            "## Acceptance Criteria\n### G-AC1:\n",
+            "## In Scope\n- G-IN2: [ ] content is opaque\n",
+            "## Out of Scope\n",
+            "- G-OUT999999999999999999999999999999999999: large\n",
+            "## Open Questions\n### G-Q3: question\nopaque body\n",
+            "## Assumptions\n- G-A4:\n",
+            "## Revisions\n### G-REV5: revision\n",
+            "- [x] nested body content\n",
+            "#### G-REV0 is an opaque deeper heading\n",
+        );
+
+        assert_eq!(messages(source), []);
+    }
+
+    #[test]
+    fn reports_malformed_and_duplicate_item_identifiers() {
+        let source = concat!(
+            "# Goal\n",
+            "- Status: accepted\n",
+            "- Created: 2026-07-31T12:00:00Z\n",
+            "- Updated: 2026-07-31T12:00:00Z\n",
+            "## Outcome\ntext\n",
+            "## Acceptance Criteria\n",
+            "- missing delimiter\n",
+            "- : empty identifier\n",
+            "- G-IN1: wrong family\n",
+            "- G-AC: empty suffix\n",
+            "- G-AC0: zero\n",
+            "- G-AC01: leading zero\n",
+            "- G-AC+1: sign\n",
+            "- G-AC-1: sign\n",
+            "- G-AC1a: nondigit\n",
+            "- G-AC2: first valid ID\n",
+            "- G-AC2: duplicate valid ID\n",
+        );
+        let diagnostics = messages(source);
+
+        assert_eq!(diagnostics.len(), 10);
+        assert_eq!(
+            diagnostics.iter().map(|entry| entry.1).collect::<Vec<_>>(),
+            [8, 9, 10, 11, 12, 13, 14, 15, 16, 18]
+        );
+        assert!(diagnostics.iter().all(|entry| {
+            entry.0 == Severity::Error
+                && entry.2.contains("Acceptance Criteria")
+                && (entry.2.contains("G-AC<number>")
+                    || entry.2.contains("duplicate item identifier"))
+        }));
+    }
+
+    #[test]
+    fn enforces_the_exact_family_for_every_itemised_section() {
+        let source = concat!(
+            "# Goal\n",
+            "- Status: accepted\n",
+            "- Created: 2026-07-31T12:00:00Z\n",
+            "- Updated: 2026-07-31T12:00:00Z\n",
+            "## Outcome\ntext\n",
+            "## Acceptance Criteria\n- G-IN1: wrong\n",
+            "## In Scope\n- G-OUT1: wrong\n",
+            "## Out of Scope\n- G-Q1: wrong\n",
+            "## Open Questions\n- G-A1: wrong\n",
+            "## Assumptions\n- G-REV1: wrong\n",
+            "## Revisions\n### G-AC1: wrong\n",
+        );
+        let diagnostics = messages(source);
+
+        assert_eq!(diagnostics.len(), 6);
+        for (section, prefix) in [
+            ("Acceptance Criteria", "G-AC<number>"),
+            ("In Scope", "G-IN<number>"),
+            ("Out of Scope", "G-OUT<number>"),
+            ("Open Questions", "G-Q<number>"),
+            ("Assumptions", "G-A<number>"),
+            ("Revisions", "G-REV<number>"),
+        ] {
+            assert!(diagnostics
+                .iter()
+                .any(|entry| entry.2.contains(section) && entry.2.contains(prefix)));
+        }
+    }
+
+    #[test]
+    fn reports_checkbox_items_as_invalid_identifiers() {
+        let source = concat!(
+            "# Goal\n",
+            "- Status: accepted\n",
+            "- Created: 2026-07-31T12:00:00Z\n",
+            "- Updated: 2026-07-31T12:00:00Z\n",
+            "## Outcome\ntext\n",
+            "## Acceptance Criteria\n",
+            "- [ ] G-AC1: unchecked\n",
+            "- [x] G-AC2: checked\n",
+            "- [X] G-AC3\n",
+            "- G-AC4: [ ] content is opaque\n",
+            "  - [x] nested body is opaque\n",
+            "  ```text\n",
+            "  - [X] fenced body is opaque\n",
+            "  ```\n",
+            "## In Scope\n",
+            "### G-IN1: expanded\n",
+            "[ ] expanded body is opaque\n",
+        );
+        let diagnostics = messages(source);
+
+        assert_eq!(diagnostics.len(), 3);
+        assert_eq!(
+            diagnostics.iter().map(|entry| entry.1).collect::<Vec<_>>(),
+            [8, 9, 10]
+        );
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|entry| entry.2.contains("must use `G-AC<number>`"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|entry| entry.2.contains("is missing an identifier"))
+                .count(),
+            1
+        );
+        assert!(diagnostics
+            .iter()
+            .all(|entry| { entry.0 == Severity::Error && !entry.2.contains("checkbox") }));
+    }
+
+    #[test]
+    fn accumulates_section_and_namespace_duplicates() {
+        let source = format!("{VALID}## Acceptance Criteria\n- G-AC1: duplicate across sections\n");
+        let diagnostics = messages(&source);
+
+        assert_eq!(diagnostics.len(), 2);
+        assert_eq!(
+            diagnostics[0],
+            (
+                Severity::Error,
+                9,
+                "duplicate section `Acceptance Criteria`".into(),
+            )
+        );
+        assert_eq!(
+            diagnostics[1],
+            (
+                Severity::Error,
+                10,
+                "duplicate item identifier `G-AC1` in section \
+                 `Acceptance Criteria`"
+                    .into(),
+            )
+        );
+    }
+
+    #[test]
     fn reports_empty_sections_as_non_failing_warnings() {
         let source = concat!(
             "# Goal\n",
@@ -338,5 +598,34 @@ mod tests {
         ] {
             assert!(diagnostics.iter().any(|entry| entry.2.contains(expected)));
         }
+    }
+
+    #[test]
+    fn accumulates_metadata_topology_item_errors_and_warnings() {
+        let source = concat!(
+            "# Goal\n",
+            "- Status: invalid\n",
+            "- Created: 2026-07-31T12:00:00Z\n",
+            "## Outcome\n\n",
+            "## Outcome\ntext\n",
+            "## Acceptance Criteria\n",
+            "- G-IN0: wrong family and zero\n",
+            "- [ ] G-AC1: checkbox\n",
+        );
+        let diagnostics = messages(source);
+
+        for expected in [
+            "metadata `Status` must be",
+            "missing required metadata `Updated`",
+            "section `Outcome` is empty",
+            "duplicate section `Outcome`",
+            "item identifier `G-IN0`",
+            "item identifier `[ ] G-AC1`",
+        ] {
+            assert!(diagnostics.iter().any(|entry| entry.2.contains(expected)));
+        }
+        assert!(diagnostics.iter().any(|entry| {
+            entry.0 == Severity::Warning && entry.2 == "section `Outcome` is empty"
+        }));
     }
 }
