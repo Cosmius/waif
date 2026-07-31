@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,7 +7,8 @@ use std::path::{Path, PathBuf};
 use clap::Args;
 
 use super::relative_path;
-use crate::parser;
+use crate::goal;
+use crate::parser::{self, Severity};
 use crate::protocol::WorkflowDir;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -29,19 +31,30 @@ impl CheckCommand {
         for path in &paths {
             let display_path = relative_path(&workspace_dir, path);
             match fs::read_to_string(path) {
-                Ok(content) => match parser::parse(&content) {
-                    Ok(_) => println!("{display_path}: valid"),
-                    Err(diagnostics) => {
-                        bad_artifacts += 1;
-                        for diagnostic in diagnostics {
-                            eprintln!(
-                                "{display_path}:{}: {}",
-                                diagnostic.line(),
-                                diagnostic.message()
-                            );
-                        }
+                Ok(content) => {
+                    let diagnostics = check_diagnostics(path, &content);
+                    let has_errors = diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.severity() == Severity::Error);
+
+                    for diagnostic in diagnostics {
+                        let severity = match diagnostic.severity() {
+                            Severity::Error => "ERROR",
+                            Severity::Warning => "WARNING",
+                        };
+                        eprintln!(
+                            "{display_path}:{}: {severity}: {}",
+                            diagnostic.line(),
+                            diagnostic.message()
+                        );
                     }
-                },
+
+                    if has_errors {
+                        bad_artifacts += 1;
+                    } else {
+                        println!("{display_path}: valid");
+                    }
+                }
                 Err(error) => {
                     bad_artifacts += 1;
                     eprintln!("{display_path}: {error}");
@@ -71,6 +84,14 @@ impl fmt::Display for CheckFailed {
 }
 
 impl Error for CheckFailed {}
+
+fn check_diagnostics(path: &Path, content: &str) -> Vec<parser::Diagnostic> {
+    if path.file_name() == Some(OsStr::new("goal.md")) {
+        goal::check(content)
+    } else {
+        parser::parse(content).err().unwrap_or_default()
+    }
+}
 
 fn current_task_artifact_paths(workspace_dir: &Path) -> Result<Vec<PathBuf>> {
     let workflow_dir = WorkflowDir::for_workspace(workspace_dir.to_owned());
