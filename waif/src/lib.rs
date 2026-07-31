@@ -4,6 +4,7 @@ use clap::Parser;
 
 mod artifact;
 mod commands;
+mod goal;
 mod parser;
 mod protocol;
 #[cfg(test)]

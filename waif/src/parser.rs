@@ -91,7 +91,19 @@ impl SectionConfig {
         }
     }
 
-    pub fn itemised(name: impl Into<String>, required_item_form: Option<ItemForm>) -> Self {
+    pub fn itemised(name: impl Into<String>) -> Self {
+        Self::itemised_with_form(name, None)
+    }
+
+    pub fn compact_itemised(name: impl Into<String>) -> Self {
+        Self::itemised_with_form(name, Some(ItemForm::Compact))
+    }
+
+    pub fn expanded_itemised(name: impl Into<String>) -> Self {
+        Self::itemised_with_form(name, Some(ItemForm::Expanded))
+    }
+
+    fn itemised_with_form(name: impl Into<String>, required_item_form: Option<ItemForm>) -> Self {
         Self {
             name: name.into(),
             section_type: SectionType::Itemised,
@@ -200,7 +212,7 @@ fn p_title_line(ctx: &mut ParsingContext) -> String {
     title.value().to_owned()
 }
 
-fn p_metadata(ctx: &mut ParsingContext) -> Vec<Metadata> {
+fn p_metadata(ctx: &mut ParsingContext) -> Vec<Located<Metadata>> {
     let mut metadata = Vec::new();
     while {
         ctx.cursor.skip_whitespace_lines();
@@ -829,9 +841,10 @@ fn is_code_block_line(line: &str, code_block: &mut Option<(char, usize)>) -> boo
 // Metadata lines
 // ============================================================================
 
-fn p_metadata_line(ctx: &mut ParsingContext) -> Option<Metadata> {
+fn p_metadata_line(ctx: &mut ParsingContext) -> Option<Located<Metadata>> {
     ctx.cursor
         .try_(|cursor| {
+            let start = cursor.position();
             cursor.skip_whitespaces_inline();
             cursor.take_if(|ch| ch == '-').ok_or(())?;
             if cursor.take_while(|ch| ch == ' ' || ch == '\t').is_empty() {
@@ -845,10 +858,16 @@ fn p_metadata_line(ctx: &mut ParsingContext) -> Option<Metadata> {
             cursor.take_while(|ch| ch == ' ' || ch == '\t');
             let value_start = cursor.position().offset();
             let value = cursor.take_line().map_or("", |(_, value)| value.trim_end());
-            Ok(Metadata::new(
-                key.to_owned(),
-                value.to_owned(),
-                value_start..value_start + value.len(),
+            let end = cursor.position().offset();
+            Ok(Located::new(
+                Metadata::new(
+                    key.to_owned(),
+                    Located::new(
+                        value.to_owned(),
+                        SourceSpan::new(start.line(), value_start..value_start + value.len()),
+                    ),
+                ),
+                SourceSpan::new(start.line(), start.offset()..end),
             ))
         })
         .ok()
@@ -877,11 +896,15 @@ mod tests {
     }
 
     fn itemised_config(name: &str) -> ParserConfig {
-        ParserConfig::new(vec![SectionConfig::itemised(name, None)])
+        ParserConfig::new(vec![SectionConfig::itemised(name)])
     }
 
     fn constrained_itemised_config(name: &str, form: ItemForm) -> ParserConfig {
-        ParserConfig::new(vec![SectionConfig::itemised(name, Some(form))])
+        let section = match form {
+            ItemForm::Compact => SectionConfig::compact_itemised(name),
+            ItemForm::Expanded => SectionConfig::expanded_itemised(name),
+        };
+        ParserConfig::new(vec![section])
     }
 
     mod component_parsers {
@@ -914,7 +937,7 @@ mod tests {
         fn metadata_line_consumes_success_and_rewinds_failures() {
             let mut metadata = context("- Status: proposed\nbody");
             let parsed = p_metadata_line(&mut metadata).expect("metadata should parse");
-            assert_eq!(parsed.value(), "proposed");
+            assert_eq!(parsed.value().value(), "proposed");
             assert_eq!(metadata.cursor.position().line(), 2);
 
             let mut not_metadata = context("plain text\n");
@@ -975,15 +998,39 @@ Arbitrary prose.\n
 
             assert_eq!(artifact.title(), "Example");
             assert_eq!(artifact.source(), artifact_source);
-            assert_eq!(artifact.metadata()[1].key(), "Purpose");
+            assert_eq!(artifact.metadata()[1].value().key(), "Purpose");
             assert_eq!(
-                artifact.metadata()[1].value(),
+                artifact.metadata()[1].value().value(),
                 "A value: with another colon"
+            );
+            assert_eq!(artifact.metadata()[1].span().start_line(), 7);
+            assert_eq!(
+                &artifact_source[artifact.metadata()[1].span().range()],
+                "- Purpose: A value: with another colon\n"
             );
             assert_eq!(artifact.sections()[0].name(), "Overview");
             assert!(prose(&artifact.sections()[0])
                 .body()
                 .contains("### A subsection"));
+        }
+
+        #[test]
+        fn tracks_metadata_spans_for_utf8_and_supported_line_endings() {
+            for ending in ["\n", "\r\n", "\r"] {
+                let source = ["# α", "  - Status: 値", "## Details", "text", ""].join(ending);
+                let artifact = parse(&source).expect("artifact should parse");
+                let metadata = &artifact.metadata()[0];
+                let start = source.find("  - Status").unwrap();
+                let end = source.find("## Details").unwrap();
+
+                assert_eq!(metadata.span().start_line(), 2);
+                assert_eq!(metadata.span().range(), start..end);
+                assert_eq!(&source[metadata.span().range()], &source[start..end]);
+                assert_eq!(metadata.value().value(), "値");
+                let value = metadata.value().located_value();
+                assert_eq!(&source[value.span().range()], "値");
+                assert_eq!(artifact.serialize(), source);
+            }
         }
 
         #[test]
@@ -1055,7 +1102,7 @@ Arbitrary prose.\n
                 .all(|section| section.as_prose().is_some()));
 
             let config = ParserConfig::new(vec![
-                SectionConfig::itemised("Items", None),
+                SectionConfig::itemised("Items"),
                 SectionConfig::prose("Other"),
             ]);
             let artifact =
@@ -1446,6 +1493,7 @@ Arbitrary prose.\n
             let mut artifact =
                 parse_with_config(source, &itemised_config("Items")).expect("item should parse");
             artifact.metadata_mut()[0]
+                .value_mut()
                 .set_value("accepted")
                 .expect("value should be valid");
 
@@ -1472,6 +1520,7 @@ Arbitrary prose.\n
             let mut artifact =
                 parse_with_config(source, &itemised_config("Items")).expect("item should parse");
             artifact.metadata_mut()[0]
+                .value_mut()
                 .set_value("accepted")
                 .expect("value should be valid");
 
@@ -1551,6 +1600,7 @@ Arbitrary prose.\n
             let mut artifact = parse(source).expect("artifact should parse");
 
             artifact.metadata_mut()[0]
+                .value_mut()
                 .set_value("accepted")
                 .expect("value should be valid");
 
@@ -1577,6 +1627,7 @@ Arbitrary prose.\n
             let section_span = artifact.sections()[0].span().clone();
 
             artifact.metadata_mut()[0]
+                .value_mut()
                 .set_value("accepted")
                 .expect("value should be valid");
 
@@ -1611,7 +1662,10 @@ Arbitrary prose.\n
             let entries: Vec<_> = artifact
                 .metadata()
                 .iter()
-                .map(|entry| (entry.key(), entry.value()))
+                .map(|entry| {
+                    let metadata = entry.value();
+                    (metadata.key(), metadata.value())
+                })
                 .collect();
             assert_eq!(
                 entries,
@@ -1619,6 +1673,7 @@ Arbitrary prose.\n
             );
 
             artifact.metadata_mut()[0]
+                .value_mut()
                 .set_value("updated")
                 .expect("value should be valid");
             assert_eq!(

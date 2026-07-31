@@ -160,6 +160,7 @@ impl TaskArtifact {
         self.artifact
             .metadata()
             .iter()
+            .map(|metadata| metadata.value())
             .find(|metadata| metadata.key() == key)
             .map(|metadata| metadata.value())
     }

@@ -5,7 +5,7 @@ use std::ops::Range;
 pub struct Artifact {
     source: String,
     title: String,
-    metadata: Vec<Metadata>,
+    metadata: Vec<Located<Metadata>>,
     sections: Vec<Section>,
 }
 
@@ -16,7 +16,7 @@ impl Artifact {
     pub(crate) fn new(
         source: String,
         title: String,
-        metadata: Vec<Metadata>,
+        metadata: Vec<Located<Metadata>>,
         sections: Vec<Section>,
     ) -> Self {
         Self {
@@ -36,7 +36,7 @@ impl Artifact {
         &self.title
     }
 
-    pub fn metadata(&self) -> &[Metadata] {
+    pub fn metadata(&self) -> &[Located<Metadata>] {
         &self.metadata
     }
 
@@ -45,7 +45,7 @@ impl Artifact {
     /// The slice cannot add, remove, or reorder entries. Use
     /// [`Metadata::set_value`] to change an existing value. Keys and ordering
     /// are controlled by the applicable artifact contract.
-    pub fn metadata_mut(&mut self) -> &mut [Metadata] {
+    pub fn metadata_mut(&mut self) -> &mut [Located<Metadata>] {
         &mut self.metadata
     }
 
@@ -62,18 +62,13 @@ impl Artifact {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Metadata {
     key: String,
-    value: String,
-    value_range: Range<usize>,
+    value: Located<String>,
 }
 
 #[allow(dead_code)]
 impl Metadata {
-    pub(crate) fn new(key: String, value: String, value_range: Range<usize>) -> Self {
-        Self {
-            key,
-            value,
-            value_range,
-        }
+    pub(crate) fn new(key: String, value: Located<String>) -> Self {
+        Self { key, value }
     }
 
     pub fn key(&self) -> &str {
@@ -81,6 +76,10 @@ impl Metadata {
     }
 
     pub fn value(&self) -> &str {
+        self.value.text()
+    }
+
+    pub fn located_value(&self) -> &Located<String> {
         &self.value
     }
 
@@ -93,7 +92,7 @@ impl Metadata {
         if value.contains(['\r', '\n']) {
             return Err(InvalidValue);
         }
-        self.value = value;
+        self.value.value = value;
         Ok(())
     }
 }
@@ -360,6 +359,10 @@ impl<T> Located<T> {
         &self.value
     }
 
+    pub fn value_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+
     pub fn span(&self) -> &SourceSpan {
         &self.span
     }
@@ -379,16 +382,19 @@ pub fn serialize(artifact: &Artifact) -> String {
         .metadata
         .iter()
         .fold(artifact.source.len(), |capacity, entry| {
-            capacity - entry.value_range.len() + entry.value.len()
+            let metadata = entry.value();
+            capacity - metadata.value.span().range().len() + metadata.value().len()
         });
     let mut output = String::with_capacity(capacity);
     let mut copied_until = 0;
 
     for entry in &artifact.metadata {
-        let unchanged = &artifact.source[copied_until..entry.value_range.start];
+        let metadata = entry.value();
+        let value_range = metadata.value.span().range();
+        let unchanged = &artifact.source[copied_until..value_range.start];
         output.push_str(unchanged);
-        output.push_str(&entry.value);
-        copied_until = entry.value_range.end;
+        output.push_str(metadata.value());
+        copied_until = value_range.end;
     }
     output.push_str(&artifact.source[copied_until..]);
     output
@@ -408,8 +414,7 @@ mod tests {
     fn rejects_multiline_metadata_replacements() {
         let mut metadata = Metadata {
             key: "Status".into(),
-            value: "proposed".into(),
-            value_range: 20..28,
+            value: Located::new("proposed".into(), SourceSpan::new(2, 20..28)),
         };
 
         let error = metadata
@@ -424,6 +429,7 @@ mod tests {
         let source = "# Example\r\n- Status: proposed\r\n";
         let mut artifact = crate::parser::parse(source).expect("artifact should parse");
         artifact.metadata_mut()[0]
+            .value_mut()
             .set_value("accepted")
             .expect("value should be valid");
 
