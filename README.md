@@ -91,6 +91,12 @@ memory.
 
 Start in the repository where the source change should happen.
 
+Optionally create or revise the project charter:
+
+```text
+Use dev-draft-charter to require tests for every behavior change.
+```
+
 Draft the goal:
 
 ```text
@@ -155,9 +161,16 @@ Use dev-conclude-task to document the completed task for other contributors.
 Task artifacts live in the workflow directory located at
 `<workspace-dir>/.waif`.
 
-`dev-draft-goal` is the only skill that establishes the workflow directory.
-Later skills expect the workflow directory and `tasks/current` symlink to
-already exist.
+The workflow directory may also contain a human-authored `charter.md` with
+project rules that apply to every task. Every waif skill reads the charter
+when it exists. A charter rule prevails when it conflicts with a skill, while
+the canonical workflow protocol still governs workflow state and artifact
+structure. Skills do not modify the charter unless the user explicitly asks
+for that change.
+
+`dev-draft-charter` and `dev-draft-goal` may establish the workflow directory.
+Task-lifecycle skills after `dev-draft-goal` expect the workflow directory and
+`tasks/current` symlink to already exist.
 
 When the workflow directory is initialized as its own Git repository, that Git
 repository is only a convenience for humans to audit artifact changes. Waif
@@ -167,6 +180,7 @@ workflow protocol state.
 ## Repository Contents
 
 - `protocol/workflow.md` is the canonical workflow specification.
+- `skills/dev-draft-charter/` creates or revises project-wide rules.
 - `skills/dev-draft-goal/` drafts or revises the task goal.
 - `skills/dev-draft-plan/` drafts or revises the technical plan.
 - `skills/dev-plan-step/` drafts one implementation step.

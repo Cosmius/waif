@@ -6,6 +6,7 @@ use crate::{copy_whitelist, write_json, Metadata, PackageTargetImpl, Result, Sta
 
 const PACKAGE_FILES: &[&str] = &[
     "protocol/workflow.md",
+    "skills/dev-draft-charter/SKILL.md",
     "skills/dev-draft-goal/SKILL.md",
     "skills/dev-draft-plan/SKILL.md",
     "skills/dev-plan-step/SKILL.md",
