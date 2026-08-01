@@ -108,7 +108,6 @@ fn check_reports_all_goal_errors_with_explicit_severity() {
     assert_eq!(output.status.code(), Some(1));
     for expected in [
         "goal.md:2: ERROR: metadata `Status` must be",
-        "goal.md:4: ERROR: duplicate metadata key `Extra`",
         "goal.md:1: ERROR: missing required metadata `Created`",
         "goal.md:1: ERROR: missing required metadata `Updated`",
         "goal.md:8: ERROR: item identifier `WRONG1`",

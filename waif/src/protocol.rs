@@ -143,7 +143,9 @@ pub struct TaskArtifact {
 impl TaskArtifact {
     pub fn read(path: PathBuf) -> Result<Self> {
         let content = fs::read_to_string(&path)?;
-        let artifact = parser::parse(&content).map_err(|diagnostics| {
+        let config =
+            parser::ParserConfig::new(vec![]).with_known_metadata(["Status", "Created", "Updated"]);
+        let artifact = parser::parse_with_config(&content, &config).map_err(|diagnostics| {
             Box::new(InvalidTaskArtifact {
                 path: path.clone(),
                 diagnostics,

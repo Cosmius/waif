@@ -6,6 +6,7 @@ pub struct Artifact {
     source: String,
     title: String,
     metadata: Vec<Located<Metadata>>,
+    pre_section_prose: Located<String>,
     sections: Vec<Section>,
 }
 
@@ -17,12 +18,14 @@ impl Artifact {
         source: String,
         title: String,
         metadata: Vec<Located<Metadata>>,
+        pre_section_prose: Located<String>,
         sections: Vec<Section>,
     ) -> Self {
         Self {
             source,
             title,
             metadata,
+            pre_section_prose,
             sections,
         }
     }
@@ -47,6 +50,15 @@ impl Artifact {
     /// are controlled by the applicable artifact contract.
     pub fn metadata_mut(&mut self) -> &mut [Located<Metadata>] {
         &mut self.metadata
+    }
+
+    /// Opaque source between structured metadata and the first section.
+    pub fn pre_section_prose(&self) -> &str {
+        self.pre_section_prose.text()
+    }
+
+    pub fn located_pre_section_prose(&self) -> &Located<String> {
+        &self.pre_section_prose
     }
 
     pub fn sections(&self) -> &[Section] {
@@ -427,7 +439,9 @@ mod tests {
     #[test]
     fn serializes_metadata_changes_without_reformatting_source() {
         let source = "# Example\r\n- Status: proposed\r\n";
-        let mut artifact = crate::parser::parse(source).expect("artifact should parse");
+        let config = crate::parser::ParserConfig::new(vec![]).with_known_metadata(["Status"]);
+        let mut artifact =
+            crate::parser::parse_with_config(source, &config).expect("artifact should parse");
         artifact.metadata_mut()[0]
             .value_mut()
             .set_value("accepted")
@@ -436,5 +450,18 @@ mod tests {
         assert_eq!(serialize(&artifact), "# Example\r\n- Status: accepted\r\n");
         assert_eq!(artifact.to_string(), "# Example\r\n- Status: accepted\r\n");
         assert_eq!(artifact.source(), "# Example\r\n- Status: proposed\r\n");
+    }
+
+    #[test]
+    fn exposes_empty_pre_section_prose_with_a_source_span() {
+        let source = "# Example\n- Status: proposed\n## Details\n";
+        let config = crate::parser::ParserConfig::new(vec![]).with_known_metadata(["Status"]);
+        let artifact =
+            crate::parser::parse_with_config(source, &config).expect("artifact should parse");
+        let prose = artifact.located_pre_section_prose();
+
+        assert_eq!(prose.text(), "");
+        assert_eq!(prose.span().range(), 29..29);
+        assert_eq!(prose.span().start_line(), 3);
     }
 }

@@ -114,13 +114,33 @@ impl SectionConfig {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ParserConfig {
+    known_metadata: Vec<String>,
     sections: Vec<SectionConfig>,
 }
 
 #[allow(dead_code)]
 impl ParserConfig {
     pub fn new(sections: Vec<SectionConfig>) -> Self {
-        Self { sections }
+        Self {
+            known_metadata: Vec::new(),
+            sections,
+        }
+    }
+
+    /// Declare the metadata keys recognized by this artifact contract.
+    pub fn with_known_metadata<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.known_metadata = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    fn recognizes_metadata(&self, name: &str) -> bool {
+        self.known_metadata
+            .iter()
+            .any(|candidate| candidate == name)
     }
 
     fn section_type(&self, name: &str) -> SectionType {
@@ -181,8 +201,15 @@ fn p_artifact(ctx: &mut ParsingContext) -> Artifact {
     ctx.cursor.skip_whitespace_lines();
     let title = p_title_line(ctx);
     let metadata = p_metadata(ctx);
+    let pre_section_prose = p_pre_section_prose(ctx);
     let sections = p_sections(ctx);
-    Artifact::new(ctx.source.to_owned(), title, metadata, sections)
+    Artifact::new(
+        ctx.source.to_owned(),
+        title,
+        metadata,
+        pre_section_prose,
+        sections,
+    )
 }
 
 fn p_title_line(ctx: &mut ParsingContext) -> String {
@@ -214,41 +241,63 @@ fn p_title_line(ctx: &mut ParsingContext) -> String {
 
 fn p_metadata(ctx: &mut ParsingContext) -> Vec<Located<Metadata>> {
     let mut metadata = Vec::new();
-    while {
+    loop {
+        let before_whitespace = ctx.cursor.position();
         ctx.cursor.skip_whitespace_lines();
-        !ctx.cursor.is_eof()
-    } {
-        let start = ctx.cursor.position();
+        if ctx.cursor.is_eof() {
+            ctx.cursor.rewind(before_whitespace);
+            break;
+        }
         if let Some(entry) = p_metadata_line(ctx) {
-            metadata.push(entry);
-            continue;
+            if ctx.config.recognizes_metadata(entry.value().key()) {
+                metadata.push(entry);
+                continue;
+            }
+            ctx.cursor.rewind(before_whitespace);
+            break;
         }
 
         if let Some(heading) = p_markdown_heading(ctx) {
             if heading.level == 2 {
-                ctx.cursor.rewind(start);
-                return metadata;
+                ctx.cursor.rewind(before_whitespace);
+                break;
             }
-            if heading.level == 1 {
-                report_additional_title(ctx, start);
-                continue;
-            }
-            ctx.diagnostics.push(Diagnostic::error(
-                start.line(),
-                "expected metadata in `- Key: value` form or a \
-                 level-two section",
-            ));
-            continue;
         }
-
-        ctx.diagnostics.push(Diagnostic::error(
-            start.line(),
-            "expected metadata in `- Key: value` form or a \
-             level-two section",
-        ));
-        ctx.cursor.take_line();
+        ctx.cursor.rewind(before_whitespace);
+        break;
     }
     metadata
+}
+
+fn p_pre_section_prose(ctx: &mut ParsingContext) -> Located<String> {
+    let start = ctx.cursor.position();
+    ctx.code_block = None;
+    loop {
+        let Some((_, line)) = ctx.cursor.peek_line() else {
+            break;
+        };
+        let line_start = ctx.cursor.position();
+        if !is_code_block_line(line, &mut ctx.code_block) {
+            match p_markdown_heading(ctx) {
+                Some(heading) if heading.level == 1 => {
+                    report_additional_title(ctx, line_start);
+                    continue;
+                }
+                Some(heading) if heading.level == 2 => {
+                    ctx.cursor.rewind(line_start);
+                    break;
+                }
+                Some(_) => continue,
+                None => {}
+            }
+        }
+        ctx.cursor.take_line();
+    }
+    let end = ctx.cursor.position();
+    Located::new(
+        ctx.source[start.offset()..end.offset()].to_owned(),
+        SourceSpan::new(start.line(), start.offset()..end.offset()),
+    )
 }
 
 fn p_sections(ctx: &mut ParsingContext) -> Vec<Section> {
@@ -896,7 +945,11 @@ mod tests {
     }
 
     fn itemised_config(name: &str) -> ParserConfig {
-        ParserConfig::new(vec![SectionConfig::itemised(name)])
+        ParserConfig::new(vec![SectionConfig::itemised(name)]).with_known_metadata(["Status"])
+    }
+
+    fn metadata_config(names: &[&str]) -> ParserConfig {
+        ParserConfig::new(vec![]).with_known_metadata(names.iter().copied())
     }
 
     fn constrained_itemised_config(name: &str, form: ItemForm) -> ParserConfig {
@@ -904,7 +957,7 @@ mod tests {
             ItemForm::Compact => SectionConfig::compact_itemised(name),
             ItemForm::Expanded => SectionConfig::expanded_itemised(name),
         };
-        ParserConfig::new(vec![section])
+        ParserConfig::new(vec![section]).with_known_metadata(["Status"])
     }
 
     mod component_parsers {
@@ -955,6 +1008,7 @@ mod tests {
         #[test]
         fn metadata_rewinds_before_the_first_section() {
             let mut ctx = context("- Status: proposed\n## Details\nbody");
+            ctx.config = metadata_config(&["Status"]);
 
             let metadata = p_metadata(&mut ctx);
 
@@ -994,7 +1048,9 @@ Arbitrary prose.\n
 ### A subsection\n
 \n
 - An unstructured list\n";
-            let artifact = parse(artifact_source).expect("artifact should parse");
+            let artifact =
+                parse_with_config(artifact_source, &metadata_config(&["Status", "Purpose"]))
+                    .expect("artifact should parse");
 
             assert_eq!(artifact.title(), "Example");
             assert_eq!(artifact.source(), artifact_source);
@@ -1018,7 +1074,8 @@ Arbitrary prose.\n
         fn tracks_metadata_spans_for_utf8_and_supported_line_endings() {
             for ending in ["\n", "\r\n", "\r"] {
                 let source = ["# α", "  - Status: 値", "## Details", "text", ""].join(ending);
-                let artifact = parse(&source).expect("artifact should parse");
+                let artifact = parse_with_config(&source, &metadata_config(&["Status"]))
+                    .expect("artifact should parse");
                 let metadata = &artifact.metadata()[0];
                 let start = source.find("  - Status").unwrap();
                 let end = source.find("## Details").unwrap();
@@ -1079,6 +1136,97 @@ Arbitrary prose.\n
                 parse("# Example\n## Details\n").expect("empty metadata should be valid");
 
             assert!(artifact.metadata().is_empty());
+        }
+
+        #[test]
+        fn preserves_pre_section_prose_after_declared_metadata() {
+            let source = concat!(
+                "# Example\r\n",
+                "- Updated: later\r\n",
+                "- Status: drafting\r\n",
+                "\r\n",
+                "Opaque α.\r\n",
+                "- Status: accepted\r\n",
+                "## Details\r\n",
+                "body\r\n",
+            );
+            let artifact = parse_with_config(source, &metadata_config(&["Status", "Updated"]))
+                .expect("pre-section prose should be valid");
+
+            assert_eq!(artifact.metadata().len(), 2);
+            assert_eq!(artifact.metadata()[0].value().key(), "Updated");
+            assert_eq!(
+                artifact.pre_section_prose(),
+                "\r\nOpaque α.\r\n- Status: accepted\r\n"
+            );
+            let prose = artifact.located_pre_section_prose();
+            assert_eq!(prose.span().start_line(), 4);
+            assert_eq!(&source[prose.span().range()], prose.text());
+            assert_eq!(artifact.sections()[0].name(), "Details");
+            assert_eq!(artifact.serialize(), source);
+        }
+
+        #[test]
+        fn preserves_fenced_headings_and_prose_during_metadata_edits() {
+            let source = concat!(
+                "# Example\r\n",
+                "- Status: drafting\r\n",
+                "```markdown\r\n",
+                "## Not a section α\r\n",
+                "```\r\n",
+                "opaque tail\r\n",
+                "## Details\r\n",
+                "body\r\n",
+            );
+            let mut artifact = parse_with_config(source, &metadata_config(&["Status"]))
+                .expect("fenced headings should remain pre-section prose");
+
+            assert_eq!(
+                artifact.pre_section_prose(),
+                "```markdown\r\n## Not a section α\r\n```\r\nopaque tail\r\n"
+            );
+            assert_eq!(artifact.sections().len(), 1);
+            assert_eq!(artifact.sections()[0].name(), "Details");
+
+            artifact.metadata_mut()[0]
+                .value_mut()
+                .set_value("accepted")
+                .expect("metadata value should be valid");
+            assert_eq!(
+                artifact.serialize(),
+                source.replacen("drafting", "accepted", 1)
+            );
+        }
+
+        #[test]
+        fn unknown_metadata_starts_opaque_prose_for_a_contract() {
+            let source = concat!(
+                "# Example\n",
+                "- Status: drafting\n",
+                "- Extra: opaque\n",
+                "- Updated: hidden\n",
+            );
+            let artifact = parse_with_config(source, &metadata_config(&["Status", "Updated"]))
+                .expect("unknown metadata should start prose");
+
+            assert_eq!(artifact.metadata().len(), 1);
+            assert_eq!(
+                artifact.pre_section_prose(),
+                "- Extra: opaque\n- Updated: hidden\n"
+            );
+            assert!(artifact.sections().is_empty());
+        }
+
+        #[test]
+        fn default_config_produces_no_metadata() {
+            let source = "# Example\n- Custom: value\nplain prose\n";
+            let artifact = parse(source).expect("default parsing should succeed");
+
+            assert!(artifact.metadata().is_empty());
+            assert_eq!(
+                artifact.pre_section_prose(),
+                "- Custom: value\nplain prose\n"
+            );
         }
     }
 
@@ -1597,7 +1745,8 @@ Arbitrary prose.\n
         #[test]
         fn preserves_standalone_carriage_return_line_endings() {
             let source = "# Example\r- Status: proposed\r## Details\rText\r";
-            let mut artifact = parse(source).expect("artifact should parse");
+            let mut artifact = parse_with_config(source, &metadata_config(&["Status"]))
+                .expect("artifact should parse");
 
             artifact.metadata_mut()[0]
                 .value_mut()
@@ -1623,7 +1772,8 @@ Arbitrary prose.\n
                 "\r\n",
                 "Untouched prose.\r\n",
             );
-            let mut artifact = parse(source).expect("artifact should parse");
+            let mut artifact = parse_with_config(source, &metadata_config(&["Status", "Purpose"]))
+                .expect("artifact should parse");
             let section_span = artifact.sections()[0].span().clone();
 
             artifact.metadata_mut()[0]
@@ -1657,7 +1807,9 @@ Arbitrary prose.\n
                 "     - Second : two\n",
                 "- Third:three\n",
             );
-            let mut artifact = parse(source).expect("artifact should parse");
+            let mut artifact =
+                parse_with_config(source, &metadata_config(&["First", "Second", "Third"]))
+                    .expect("artifact should parse");
 
             let entries: Vec<_> = artifact
                 .metadata()
@@ -1713,7 +1865,7 @@ bare preamble\n
             )
             .expect_err("artifact should be invalid");
 
-            assert!(diagnostics.len() >= 5);
+            assert!(diagnostics.len() >= 2);
             assert!(diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.message().contains("first non-whitespace")));

@@ -97,6 +97,7 @@ fn parser_config() -> ParserConfig {
         SectionConfig::itemised("Assumptions"),
         SectionConfig::expanded_itemised("Revisions"),
     ])
+    .with_known_metadata(["Status", "Created", "Updated"])
 }
 
 fn validate(artifact: &Artifact) -> Vec<Diagnostic> {
@@ -275,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_valid_metadata_variants_and_unique_additions() {
+    fn accepts_valid_metadata_variants_and_trailing_opaque_prose() {
         for (created, updated) in [
             ("2026-07-31T12:00:00Z", "2026-07-31T21:00:00+09:00"),
             (
@@ -284,8 +285,8 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "# Goal\n- Extra: yes\n- Updated: {updated}\n\
-                 - Status: drafting\n- Created: {created}\n\
+                "# Goal\n- Updated: {updated}\n\
+                 - Status: drafting\n- Created: {created}\n- Extra: opaque\n\
                  ## Acceptance Criteria\n### G-AC1: expanded\n\
                  ## Outcome\ntext\n"
             );
@@ -300,8 +301,8 @@ mod tests {
             "- Status: unknown\n",
             "- Status: accepted\n",
             "- Created: 2026-07-31T12:00:00\n",
-            "- Extra: one\n",
-            "- Extra: two\n",
+            "- Extra: opaque\n",
+            "- Updated: hidden in prose\n",
             "## Outcome\ntext\n",
             "## Acceptance Criteria\n- G-AC1: one\n",
         );
@@ -316,9 +317,6 @@ mod tests {
         assert!(diagnostics
             .iter()
             .any(|entry| { entry.1 == 4 && entry.2.contains("`Created` must be an RFC 3339") }));
-        assert!(diagnostics
-            .iter()
-            .any(|entry| { entry.1 == 6 && entry.2 == "duplicate metadata key `Extra`" }));
         assert!(diagnostics
             .iter()
             .any(|entry| { entry.1 == 1 && entry.2 == "missing required metadata `Updated`" }));
