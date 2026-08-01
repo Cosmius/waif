@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use chrono::DateTime;
 
-use crate::artifact::{Artifact, Section};
+use crate::artifact::{Artifact, ItemForm, Section};
 use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
 
 #[derive(Clone, Copy)]
@@ -17,6 +17,7 @@ type Validator = fn(&str) -> Result<(), &'static str>;
 struct ItemValidator {
     section_name: &'static str,
     prefix: &'static str,
+    required_form: Option<ItemForm>,
 }
 
 const REQUIRED_METADATA: [MetadataValidator; 3] = [
@@ -38,26 +39,32 @@ const ITEM_VALIDATORS: [ItemValidator; 6] = [
     ItemValidator {
         section_name: "Acceptance Criteria",
         prefix: "G-AC",
+        required_form: None,
     },
     ItemValidator {
         section_name: "In Scope",
         prefix: "G-IN",
+        required_form: None,
     },
     ItemValidator {
         section_name: "Out of Scope",
         prefix: "G-OUT",
+        required_form: None,
     },
     ItemValidator {
         section_name: "Open Questions",
         prefix: "G-Q",
+        required_form: None,
     },
     ItemValidator {
         section_name: "Assumptions",
         prefix: "G-A",
+        required_form: None,
     },
     ItemValidator {
         section_name: "Revisions",
         prefix: "G-REV",
+        required_form: Some(ItemForm::Expanded),
     },
 ];
 
@@ -95,7 +102,7 @@ fn parser_config() -> ParserConfig {
         SectionConfig::itemised("Out of Scope"),
         SectionConfig::itemised("Open Questions"),
         SectionConfig::itemised("Assumptions"),
-        SectionConfig::expanded_itemised("Revisions"),
+        SectionConfig::itemised("Revisions"),
     ])
     .with_known_metadata(["Status", "Created", "Updated"])
 }
@@ -192,6 +199,8 @@ fn validate_items<'a>(
         return;
     };
 
+    validate_item_forms(section.items(), validator, diagnostics);
+
     for item in section.items() {
         let Some(identifier) = item.identifier() else {
             diagnostics.push(Diagnostic::error(
@@ -227,6 +236,42 @@ fn validate_items<'a>(
                 ),
             ));
         }
+    }
+}
+
+fn validate_item_forms(
+    items: &[crate::artifact::Item],
+    validator: ItemValidator,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(first) = items.first() else {
+        return;
+    };
+    let required = validator.required_form.unwrap_or_else(|| first.form());
+    let Some(conflicting) = items.iter().find(|item| item.form() != required) else {
+        return;
+    };
+
+    if validator.required_form.is_some() {
+        let (form, syntax) = match required {
+            ItemForm::Compact => ("compact", "- ID: content"),
+            ItemForm::Expanded => ("expanded", "### ID: title"),
+        };
+        diagnostics.push(Diagnostic::error(
+            conflicting.span().start_line(),
+            format!(
+                "section `{}` requires {form} items in `{syntax}` form",
+                validator.section_name
+            ),
+        ));
+    } else {
+        diagnostics.push(Diagnostic::error(
+            conflicting.span().start_line(),
+            format!(
+                "itemised section `{}` cannot mix compact and expanded items",
+                validator.section_name
+            ),
+        ));
     }
 }
 
@@ -379,6 +424,17 @@ mod tests {
         ] {
             assert_eq!(messages(&format!("{VALID}{revisions}")), []);
         }
+    }
+
+    #[test]
+    fn rejects_mixed_forms_in_an_ordinary_itemised_section() {
+        let source = format!("{VALID}## In Scope\n- G-IN1: compact\n### G-IN2: expanded\n");
+        let diagnostics = messages(&source);
+
+        assert!(diagnostics.iter().any(|entry| {
+            entry.1 == 11
+                && entry.2 == "itemised section `In Scope` cannot mix compact and expanded items"
+        }));
     }
 
     #[test]

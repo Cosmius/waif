@@ -1,7 +1,7 @@
 use self::cursor::{Cursor, Position};
 use crate::artifact::{
-    Artifact, CompactItem, ExpandedItem, Item, ItemForm, ItemisedSection, Located, Metadata,
-    ProseSection, Section, SourceSpan,
+    Artifact, CompactItem, ExpandedItem, Item, ItemisedSection, Located, Metadata, ProseSection,
+    Section, SourceSpan,
 };
 use std::fmt;
 use std::ops::Range;
@@ -78,7 +78,6 @@ pub enum SectionType {
 pub struct SectionConfig {
     name: String,
     section_type: SectionType,
-    required_item_form: Option<ItemForm>,
 }
 
 #[allow(dead_code)]
@@ -87,27 +86,13 @@ impl SectionConfig {
         Self {
             name: name.into(),
             section_type: SectionType::Prose,
-            required_item_form: None,
         }
     }
 
     pub fn itemised(name: impl Into<String>) -> Self {
-        Self::itemised_with_form(name, None)
-    }
-
-    pub fn compact_itemised(name: impl Into<String>) -> Self {
-        Self::itemised_with_form(name, Some(ItemForm::Compact))
-    }
-
-    pub fn expanded_itemised(name: impl Into<String>) -> Self {
-        Self::itemised_with_form(name, Some(ItemForm::Expanded))
-    }
-
-    fn itemised_with_form(name: impl Into<String>, required_item_form: Option<ItemForm>) -> Self {
         Self {
             name: name.into(),
             section_type: SectionType::Itemised,
-            required_item_form,
         }
     }
 }
@@ -148,13 +133,6 @@ impl ParserConfig {
             .iter()
             .find(|section| section.name == name)
             .map_or(SectionType::Prose, |section| section.section_type)
-    }
-
-    fn required_item_form(&self, name: &str) -> Option<ItemForm> {
-        self.sections
-            .iter()
-            .find(|section| section.name == name)
-            .and_then(|section| section.required_item_form)
     }
 }
 
@@ -328,7 +306,6 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
     let section_span = SourceSpan::new(heading_line, heading.pos.offset()..body_end);
     let body_span = SourceSpan::new(body_start.line(), body_start.offset()..body_end);
     let section_type = ctx.config.section_type(heading.title.text());
-    let required_item_form = ctx.config.required_item_form(heading.title.text());
     match section_type {
         SectionType::Prose => Some(Section::Prose(Located::new(
             ProseSection::new(
@@ -344,7 +321,6 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
             ctx.cursor.rewind(body_start);
             ctx.code_block = None;
             let items = p_itemised_items(ctx, body_end);
-            report_item_form_constraint(ctx, heading.title.text(), required_item_form, &items);
             Some(Section::Itemised(Located::new(
                 ItemisedSection {
                     title: heading.title,
@@ -354,32 +330,6 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
             )))
         }
     }
-}
-
-fn report_item_form_constraint(
-    ctx: &mut ParsingContext,
-    section_name: &str,
-    required_form: Option<ItemForm>,
-    items: &[Item],
-) {
-    let Some((required_form, first_item)) = required_form.zip(items.first()) else {
-        return;
-    };
-    if first_item.form() == required_form {
-        return;
-    }
-
-    let (form_name, syntax) = match required_form {
-        ItemForm::Compact => ("compact", "- ID: content"),
-        ItemForm::Expanded => ("expanded", "### ID: title"),
-    };
-    ctx.diagnostics.push(Diagnostic::error(
-        first_item.span().start_line(),
-        format!(
-            "section `{section_name}` requires {form_name} items in \
-             `{syntax}` form"
-        ),
-    ));
 }
 
 fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
@@ -407,50 +357,11 @@ fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
 }
 
 fn p_itemised_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
-    let mut leading_content = Vec::new();
-
-    while ctx.cursor.position().offset() < body_end {
-        let start = ctx.cursor.position();
-        let (_, line) = ctx.cursor.peek_line().expect("body has a line");
-        let in_code_block = is_code_block_line(line, &mut ctx.code_block);
-
-        if !in_code_block {
-            if compact_marker(line).is_some() {
-                report_leading_item_content(ctx, &leading_content, "compact", "- ID: content");
-                return p_compact_items(ctx, body_end);
-            }
-            if heading_level(ctx) == Some(3) {
-                report_leading_item_content(ctx, &leading_content, "expanded", "### ID: title");
-                return p_expanded_items(ctx, body_end);
-            }
-        }
-
-        if !line.trim().is_empty() {
-            leading_content.push(start.line());
-        }
-        ctx.cursor.take_line();
+    let mut items = p_compact_items(ctx, body_end);
+    if ctx.cursor.position().offset() < body_end {
+        items.extend(p_expanded_items(ctx, body_end));
     }
-    for line in leading_content {
-        ctx.diagnostics.push(Diagnostic::error(
-            line,
-            "expected an item in `- ID: content` or `### ID: title` form",
-        ));
-    }
-    Vec::new()
-}
-
-fn report_leading_item_content(
-    ctx: &mut ParsingContext,
-    lines: &[usize],
-    form: &str,
-    syntax: &str,
-) {
-    for line in lines {
-        ctx.diagnostics.push(Diagnostic::error(
-            *line,
-            format!("expected a {form} item in `{syntax}` form"),
-        ));
-    }
+    items
 }
 
 fn heading_level(ctx: &mut ParsingContext) -> Option<usize> {
@@ -470,7 +381,7 @@ struct OpenCompactItem {
     content: Located<String>,
 }
 
-// Parse compact peer items up to the known section-body boundary.
+// Parse compact peer items up to the section boundary or expanded phase.
 fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
     let mut items = Vec::new();
     let mut peer_indentation = None;
@@ -483,12 +394,10 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         let marker = (!in_code_block).then(|| compact_marker(line)).flatten();
 
         if !in_code_block && heading_level(ctx) == Some(3) {
-            ctx.diagnostics.push(Diagnostic::error(
-                start.line(),
-                "itemised section cannot mix compact and expanded items",
-            ));
-            ctx.cursor.take_line();
-            continue;
+            if let Some(item) = open.take() {
+                items.push(finish_compact_item(ctx.source, item, start));
+            }
+            break;
         }
 
         if let Some((indentation, _)) = marker {
@@ -925,6 +834,7 @@ fn p_metadata_line(ctx: &mut ParsingContext) -> Option<Located<Metadata>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::artifact::ItemForm;
 
     fn prose(section: &Section) -> &ProseSection {
         section
@@ -952,12 +862,8 @@ mod tests {
         ParserConfig::new(vec![]).with_known_metadata(names.iter().copied())
     }
 
-    fn constrained_itemised_config(name: &str, form: ItemForm) -> ParserConfig {
-        let section = match form {
-            ItemForm::Compact => SectionConfig::compact_itemised(name),
-            ItemForm::Expanded => SectionConfig::expanded_itemised(name),
-        };
-        ParserConfig::new(vec![section]).with_known_metadata(["Status"])
+    fn mixed_itemised_config(name: &str) -> ParserConfig {
+        itemised_config(name)
     }
 
     mod component_parsers {
@@ -1446,15 +1352,11 @@ Arbitrary prose.\n
         }
 
         #[test]
-        fn rejects_bare_leading_content_and_compact_then_expanded_forms() {
-            for source in [
-                "# Example\n## Items\nbare\n### G-REV1: item\n",
-                "# Example\n## Items\n- G-AC1: compact\n### G-REV1: expanded\n",
-            ] {
-                let diagnostics = parse_with_config(source, &itemised_config("Items"))
-                    .expect_err("invalid itemised section should fail");
-                assert!(!diagnostics.is_empty());
-            }
+        fn rejects_bare_leading_content() {
+            let source = "# Example\n## Items\nbare\n### G-REV1: item\n";
+            let diagnostics = parse_with_config(source, &itemised_config("Items"))
+                .expect_err("bare leading content should fail");
+            assert!(!diagnostics.is_empty());
         }
 
         #[test]
@@ -1568,53 +1470,30 @@ Arbitrary prose.\n
         }
 
         #[test]
-        fn enforces_required_item_forms_at_the_first_item() {
+        fn parses_both_item_forms_with_the_same_configuration() {
             let compact = "# Example\n## Items\n- G-AC1: compact\n";
-            parse_with_config(
-                compact,
-                &constrained_itemised_config("Items", ItemForm::Compact),
-            )
-            .expect("required compact form should parse");
-            let diagnostics = parse_with_config(
-                compact,
-                &constrained_itemised_config("Items", ItemForm::Expanded),
-            )
-            .expect_err("compact form should violate an expanded constraint");
-            assert_eq!(diagnostics.len(), 1);
-            assert_eq!(diagnostics[0].severity(), Severity::Error);
-            assert_eq!(diagnostics[0].line(), 3);
-            assert!(diagnostics[0]
-                .message()
-                .contains("requires expanded items in `### ID: title` form"));
+            let artifact = parse_with_config(compact, &itemised_config("Items"))
+                .expect("compact form should parse");
+            assert_eq!(
+                itemised(&artifact.sections()[0]).items()[0].form(),
+                ItemForm::Compact
+            );
 
             let expanded = "# Example\n## Items\n### G-AC1: expanded\n";
-            parse_with_config(
-                expanded,
-                &constrained_itemised_config("Items", ItemForm::Expanded),
-            )
-            .expect("required expanded form should parse");
-            let diagnostics = parse_with_config(
-                expanded,
-                &constrained_itemised_config("Items", ItemForm::Compact),
-            )
-            .expect_err("expanded form should violate a compact constraint");
-            assert_eq!(diagnostics.len(), 1);
-            assert_eq!(diagnostics[0].severity(), Severity::Error);
-            assert_eq!(diagnostics[0].line(), 3);
-            assert!(diagnostics[0]
-                .message()
-                .contains("requires compact items in `- ID: content` form"));
+            let artifact = parse_with_config(expanded, &itemised_config("Items"))
+                .expect("expanded form should parse");
+            assert_eq!(
+                itemised(&artifact.sections()[0]).items()[0].form(),
+                ItemForm::Expanded
+            );
         }
 
         #[test]
-        fn accepts_empty_sections_under_either_item_form_constraint() {
+        fn accepts_empty_itemised_sections() {
             let source = "# Example\n## Items\n\n";
-            for form in [ItemForm::Compact, ItemForm::Expanded] {
-                let artifact =
-                    parse_with_config(source, &constrained_itemised_config("Items", form))
-                        .expect("an empty section has no source form to reject");
-                assert!(itemised(&artifact.sections()[0]).items().is_empty());
-            }
+            let artifact = parse_with_config(source, &itemised_config("Items"))
+                .expect("empty itemised section should parse");
+            assert!(itemised(&artifact.sections()[0]).items().is_empty());
         }
 
         #[test]
@@ -1682,6 +1561,167 @@ Arbitrary prose.\n
                     "opaque body  \r\n",
                 )
             );
+        }
+    }
+
+    mod mixed_itemised_sections {
+        use super::*;
+
+        #[test]
+        fn accepts_each_phase_alone_or_empty() {
+            for (body, forms) in [
+                ("", vec![]),
+                ("- P-D1: compact\n", vec![ItemForm::Compact]),
+                ("### P-DD1: expanded\nbody\n", vec![ItemForm::Expanded]),
+            ] {
+                let source = format!("# Plan\n## Decisions\n{body}");
+                let artifact = parse_with_config(&source, &mixed_itemised_config("Decisions"))
+                    .expect("mixed section phase should parse");
+                let actual: Vec<_> = itemised(&artifact.sections()[0])
+                    .items()
+                    .iter()
+                    .map(Item::form)
+                    .collect();
+                assert_eq!(actual, forms);
+            }
+        }
+
+        #[test]
+        fn parses_compact_then_expanded_with_exact_spans_and_endings() {
+            for ending in ["\n", "\r\n", "\r"] {
+                let source = [
+                    "# Plan",
+                    "- Status: drafting",
+                    "## Decisions",
+                    "- P-D1: compact α",
+                    "  compact body",
+                    "### P-DD1: expanded β",
+                    "expanded body",
+                    "",
+                ]
+                .join(ending);
+                let mut artifact = parse_with_config(&source, &mixed_itemised_config("Decisions"))
+                    .expect("mixed section should parse");
+                let items = itemised(&artifact.sections()[0]).items();
+
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0].form(), ItemForm::Compact);
+                assert_eq!(items[1].form(), ItemForm::Expanded);
+                assert_eq!(
+                    &source[items[0].span().range()],
+                    concat!("- P-D1: compact α", "\n", "  compact body", "\n",)
+                        .replace('\n', ending)
+                );
+                assert_eq!(items[1].identifier().unwrap().text(), "P-DD1");
+
+                artifact.metadata_mut()[0]
+                    .value_mut()
+                    .set_value("accepted")
+                    .expect("metadata should be mutable");
+                assert_eq!(
+                    artifact.serialize(),
+                    source.replacen("drafting", "accepted", 1)
+                );
+            }
+        }
+
+        #[test]
+        fn keeps_compact_shaped_lines_in_expanded_item_bodies() {
+            let source = concat!(
+                "# Plan\n",
+                "## Decisions\n",
+                "### P-DD1: expanded\n",
+                "body\n",
+                "- P-D1: too late\n",
+            );
+            let artifact = parse_with_config(source, &mixed_itemised_config("Decisions"))
+                .expect("compact-shaped lines should remain opaque body prose");
+            let items = itemised(&artifact.sections()[0]).items();
+
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].form(), ItemForm::Expanded);
+            assert_eq!(items[0].body().text(), "body\n- P-D1: too late\n");
+        }
+
+        #[test]
+        fn preserves_ordinary_bullets_in_expanded_item_bodies() {
+            let source = concat!(
+                "# Plan\n",
+                "## Decisions\n",
+                "### P-DD1: rationale\n",
+                "- first reason\n",
+                "  - nested reason\n",
+                "- prose label: still opaque\n",
+                "- rationale-note: also opaque\n",
+            );
+            let artifact = parse_with_config(source, &mixed_itemised_config("Decisions"))
+                .expect("ordinary bullets should remain opaque body prose");
+            let items = itemised(&artifact.sections()[0]).items();
+
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].form(), ItemForm::Expanded);
+            assert_eq!(
+                items[0].body().text(),
+                "- first reason\n  - nested reason\n- prose label: still opaque\n\
+                 - rationale-note: also opaque\n"
+            );
+        }
+
+        #[test]
+        fn rejects_bare_content_before_the_first_item() {
+            let source = concat!(
+                "# Plan\n",
+                "## Decisions\n",
+                "bare content\n",
+                "### P-DD1: expanded\n",
+            );
+            let diagnostics = parse_with_config(source, &mixed_itemised_config("Decisions"))
+                .expect_err("bare leading content should fail");
+
+            assert!(diagnostics.iter().any(|diagnostic| {
+                diagnostic.line() == 3 && diagnostic.message().contains("expected a compact item")
+            }));
+        }
+
+        #[test]
+        fn ignores_item_markers_inside_fenced_bodies() {
+            let source = concat!(
+                "# Plan\n",
+                "## Decisions\n",
+                "- P-D1: compact\n",
+                "```markdown\n",
+                "### Not expanded\n",
+                "```\n",
+                "### P-DD1: expanded\n",
+                "~~~markdown\n",
+                "- P-D2: not compact\n",
+                "~~~\n",
+            );
+            let artifact = parse_with_config(source, &mixed_itemised_config("Decisions"))
+                .expect("fenced markers should remain item bodies");
+            let items = itemised(&artifact.sections()[0]).items();
+
+            assert_eq!(items.len(), 2);
+            assert!(items[0].body().text().contains("### Not expanded"));
+            assert!(items[1].body().text().contains("- P-D2: not compact"));
+        }
+
+        #[test]
+        fn every_itemised_section_parses_mixed_forms() {
+            let source = concat!(
+                "# Example\n",
+                "## Items\n",
+                "- ID1: compact\n",
+                "### ID2: expanded\n",
+            );
+            let artifact = parse_with_config(source, &itemised_config("Items"))
+                .expect("item form policy belongs to schema validation");
+            let forms: Vec<_> = itemised(&artifact.sections()[0])
+                .items()
+                .iter()
+                .map(Item::form)
+                .collect();
+            assert_eq!(forms, [ItemForm::Compact, ItemForm::Expanded]);
         }
     }
 
