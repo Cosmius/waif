@@ -152,6 +152,22 @@ pub fn parse(source: &str) -> Result<Artifact, Vec<Diagnostic>> {
 }
 
 pub fn parse_with_config(source: &str, config: &ParserConfig) -> Result<Artifact, Vec<Diagnostic>> {
+    let (artifact, diagnostics) = parse_with_diagnostics(source, config);
+    if diagnostics.is_empty() {
+        Ok(artifact)
+    } else {
+        Err(diagnostics)
+    }
+}
+
+/// Parse all recoverable structure and return it with every parser diagnostic.
+///
+/// Schema checkers use this entry point when independent contract violations
+/// remain meaningful despite a malformed structural fragment.
+pub(crate) fn parse_with_diagnostics(
+    source: &str,
+    config: &ParserConfig,
+) -> (Artifact, Vec<Diagnostic>) {
     let diagnostics = Vec::new();
     let cursor = Cursor::new(source);
     let mut ctx = ParsingContext {
@@ -162,11 +178,7 @@ pub fn parse_with_config(source: &str, config: &ParserConfig) -> Result<Artifact
         config: config.clone(),
     };
     let artifact = p_artifact(&mut ctx);
-    if ctx.diagnostics.is_empty() {
-        Ok(artifact)
-    } else {
-        Err(ctx.diagnostics)
-    }
+    (artifact, ctx.diagnostics)
 }
 
 struct ParsingContext<'a> {

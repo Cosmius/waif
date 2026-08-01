@@ -18,6 +18,24 @@ const VALID_GOAL: &str = concat!(
     "- G-AC1: The outcome is checked.\n",
 );
 
+const VALID_PLAN: &str = concat!(
+    "# Plan\n",
+    "- Status: accepted\n",
+    "- Goal: ./goal.md\n",
+    "- Branch: waif/example\n",
+    "- Base branch: main\n",
+    "- Base commit: 0123456789abcdef0123456789abcdef01234567\n",
+    "- Created: 2026-07-31T12:00:00Z\n",
+    "- Updated: 2026-07-31T21:00:00+09:00\n",
+    "## Technical Summary\nText.\n",
+    "## Decisions\n- P-D1: Decision.\n",
+    "## Current System\nText.\n",
+    "## Plan Items\n### P1: Item\n- Status: pending\n",
+    "- Goal criteria: opaque\n",
+    "## Risks\n- P-R1: Risk.\n",
+    "## Cross-Cutting Validation\n- P-V1: Test.\n",
+);
+
 #[test]
 fn check_reports_every_bad_artifact_before_exiting_one() {
     let directory = TestDir::new("all-errors");
@@ -81,6 +99,47 @@ fn check_accepts_an_explicit_valid_goal_with_optional_sections() {
     assert!(output.stderr.is_empty());
     assert!(stdout.contains("goal.md: valid"));
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
+}
+
+#[test]
+fn check_accepts_an_explicit_valid_plan() {
+    let directory = TestDir::new("valid-plan");
+    let artifact = directory.path.join("plan.md");
+    fs::write(&artifact, VALID_PLAN).expect("plan should be written");
+
+    let output = run_check(&directory.path, &[artifact.as_os_str()]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(stdout.contains("plan.md: valid"));
+    assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
+}
+
+#[test]
+fn check_aggregates_plan_schema_errors_with_other_artifacts() {
+    let directory = TestDir::new("plan-schema-errors");
+    let plan = VALID_PLAN
+        .replace("- Status: accepted", "- Status: invalid")
+        .replace(
+            "### P1: Item\n- Status: pending",
+            "### P0: Item\n- Status: blocked",
+        )
+        .replace("## Risks", "## Revisions\n- P-REV1: wrong form\n## Risks");
+    fs::write(directory.path.join("goal.md"), VALID_GOAL).expect("goal should be written");
+    fs::write(directory.path.join("plan.md"), plan).expect("plan should be written");
+
+    let output = run_check(&directory.path, &[directory.path.as_os_str()]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr.contains("plan.md:2: ERROR: metadata `Status`"));
+    assert!(stderr.contains("plan item identifier `P0`"));
+    assert!(stderr.contains("plan-item metadata `Status`"));
+    assert!(stderr.contains("section `Revisions` requires expanded items"));
+    assert!(stdout.contains("goal.md: valid"));
+    assert!(stdout.contains("checked 2 artifact(s); 1 invalid"));
 }
 
 #[test]

@@ -1,98 +1,43 @@
-use chrono::DateTime;
-
-use crate::artifact::Artifact;
 use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
-use crate::schema::{self, ItemForms, ItemRule, MetadataRule, Schema, SectionRule};
+use crate::schema::{self, ItemRule, MetadataRule, Schema, SectionRule};
 
 const METADATA: [MetadataRule; 3] = [
     MetadataRule {
         name: "Status",
-        validator: valid_status,
+        validator: schema::artifact_status,
     },
     MetadataRule {
         name: "Created",
-        validator: valid_timestamp,
+        validator: schema::rfc3339_timestamp,
     },
     MetadataRule {
         name: "Updated",
-        validator: valid_timestamp,
+        validator: schema::rfc3339_timestamp,
     },
 ];
 const SECTIONS: [SectionRule; 7] = [
-    SectionRule {
-        name: "Outcome",
-        required: true,
-        items: None,
-    },
-    SectionRule {
-        name: "Acceptance Criteria",
-        required: true,
-        items: Some(ItemRule {
-            prefix: "G-AC",
-            forms: ItemForms::Consistent,
-        }),
-    },
-    SectionRule {
-        name: "Open Questions",
-        required: false,
-        items: Some(ItemRule {
-            prefix: "G-Q",
-            forms: ItemForms::Consistent,
-        }),
-    },
-    SectionRule {
-        name: "Assumptions",
-        required: false,
-        items: Some(ItemRule {
-            prefix: "G-A",
-            forms: ItemForms::Consistent,
-        }),
-    },
-    SectionRule {
-        name: "In Scope",
-        required: false,
-        items: Some(ItemRule {
-            prefix: "G-IN",
-            forms: ItemForms::Consistent,
-        }),
-    },
-    SectionRule {
-        name: "Out of Scope",
-        required: false,
-        items: Some(ItemRule {
-            prefix: "G-OUT",
-            forms: ItemForms::Consistent,
-        }),
-    },
-    SectionRule {
-        name: "Revisions",
-        required: false,
-        items: Some(ItemRule {
-            prefix: "G-REV",
-            forms: ItemForms::ExpandedOnly,
-        }),
-    },
+    SectionRule::new("Outcome"),
+    SectionRule::new("Acceptance Criteria").with_items(ItemRule::new("G-AC")),
+    SectionRule::new("Open Questions")
+        .optional()
+        .with_items(ItemRule::new("G-Q")),
+    SectionRule::new("Assumptions")
+        .optional()
+        .with_items(ItemRule::new("G-A")),
+    SectionRule::new("In Scope")
+        .optional()
+        .with_items(ItemRule::new("G-IN")),
+    SectionRule::new("Out of Scope")
+        .optional()
+        .with_items(ItemRule::new("G-OUT")),
+    SectionRule::new("Revisions")
+        .optional()
+        .with_items(ItemRule::new("G-REV").expanded_only()),
 ];
 const SCHEMA: Schema = Schema {
     metadata: &METADATA,
     sections: &SECTIONS,
 };
-
-fn valid_status(value: &str) -> Result<(), String> {
-    if matches!(value, "drafting" | "accepted" | "amending") {
-        Ok(())
-    } else {
-        Err(format!(
-            "expected `drafting`, `accepted`, or `amending`, but got `{value}`"
-        ))
-    }
-}
-
-fn valid_timestamp(value: &str) -> Result<(), String> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|_| ())
-        .map_err(|_| format!("expected an RFC 3339 timestamp with a timezone, but got `{value}`"))
-}
 
 /// Parse and validate the structural schema for a goal artifact.
 ///
@@ -101,7 +46,7 @@ fn valid_timestamp(value: &str) -> Result<(), String> {
 #[allow(dead_code)]
 pub(crate) fn check(source: &str) -> Vec<Diagnostic> {
     match parser::parse_with_config(source, &parser_config()) {
-        Ok(artifact) => validate(&artifact),
+        Ok(artifact) => schema::validate(&artifact, &SCHEMA),
         Err(diagnostics) => diagnostics,
     }
 }
@@ -117,10 +62,6 @@ fn parser_config() -> ParserConfig {
         SectionConfig::itemised("Revisions"),
     ])
     .with_known_metadata(["Status", "Created", "Updated"])
-}
-
-fn validate(artifact: &Artifact) -> Vec<Diagnostic> {
-    schema::validate(artifact, &SCHEMA)
 }
 
 #[cfg(test)]

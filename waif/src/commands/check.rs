@@ -9,6 +9,7 @@ use clap::Args;
 use super::relative_path;
 use crate::goal;
 use crate::parser::{self, Severity};
+use crate::plan;
 use crate::protocol::WorkflowDir;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -88,6 +89,8 @@ impl Error for CheckFailed {}
 fn check_diagnostics(path: &Path, content: &str) -> Vec<parser::Diagnostic> {
     if path.file_name() == Some(OsStr::new("goal.md")) {
         goal::check(content)
+    } else if path.file_name() == Some(OsStr::new("plan.md")) {
+        plan::check(content)
     } else {
         parser::parse(content).err().unwrap_or_default()
     }

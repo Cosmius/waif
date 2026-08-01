@@ -6,6 +6,7 @@ mod artifact;
 mod commands;
 mod goal;
 mod parser;
+mod plan;
 mod protocol;
 mod schema;
 #[cfg(test)]
