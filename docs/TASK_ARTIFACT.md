@@ -5,201 +5,210 @@
 
 ## Overview
 
-A task artifact is Markdown containing one title, metadata, and level-two
-sections. An artifact contract supplies its permitted fields, predefined
-sections, and ID formats. This document is itself a valid task artifact.
+A task artifact is Markdown containing one title, structured metadata,
+optional opaque pre-section prose, and level-two sections. An artifact contract
+declares its recognized metadata, known sections, content types, and stable-ID
+families.
 
 ## Authoring and Parser Scope
 
 Task artifacts are generated and maintained by `waif`. Humans may review them,
-but should request changes through `waif` rather than editing the files
-directly.
+but should request changes through `waif` rather than editing files directly.
 
-The artifact parser is not a general-purpose Markdown or CommonMark parser. It
-supports the canonical Markdown emitted by `waif` and preserves that source
-exactly. It recognizes artifact headings and simple fenced code blocks using
-line-oriented rules.
+The parser supports the canonical Markdown emitted by `waif`; it is not a
+general CommonMark parser. It recognizes artifact headings and simple fenced
+code blocks using line-oriented rules and preserves original source exactly.
+Markdown container interactions such as headings or fences inside list items,
+block quotes, or raw HTML are outside the supported format.
 
-Markdown container interactions are outside the supported format. In
-particular, generated artifacts must not place headings or fenced code blocks
-inside list items, block quotes, or raw HTML blocks. Noncanonical or
-hand-edited Markdown may be rejected or interpreted differently from a
-full-featured Markdown renderer.
-
-## Document Structure
+## Common Artifact Envelope
 
 An artifact contains, in order:
 
-1. Exactly one level-one Markdown heading (`#`) with a non-empty, single-line
-   title. It must be the first non-whitespace line.
-2. A possibly empty metadata block whose entries have the logical form
+1. Exactly one level-one heading with a non-empty, single-line title. It is the
+   first non-whitespace line.
+2. A leading structured metadata block whose entries have the logical form
    `- Key: value`.
-3. Zero or more level-two sections (`##`).
+3. Optional opaque prose.
+4. Zero or more level-two sections.
 
-Whitespace-only lines have no artifact-level meaning and may occur before the
-title or between these constructs. Programmatic modifications must preserve
-every existing whitespace character and line ending exactly.
+Whitespace-only lines have no artifact-level meaning. Programmatic changes
+preserve existing whitespace and line endings.
 
-A metadata entry may be indented and must have at least one whitespace
-character between `-` and its key. Extra whitespace around the key, colon, and
-value has no meaning. The first colon separates the key from the value, which
-may contain further colons. Ignoring whitespace-only lines, no other content
-may occur between the title, metadata, and first section. Front matter,
-preambles, comments, footers, and all other unmentioned content are invalid.
+An artifact contract declares every recognized metadata key. Every recognized
+key is required and unique; contracts do not define optional recognized
+metadata. Recognized keys may occur in any relative order while the parser is
+inside structured metadata.
+
+The first ordinary content or unknown metadata-looking entry ends structured
+metadata and begins opaque pre-section prose. It and all following content
+before the first level-two section remain prose, including later
+recognized-key-looking entries. A misspelled key therefore begins prose and
+causes the actual recognized key to be reported missing rather than
+reinterpreting later source.
+
+A metadata entry may be indented and must have whitespace between `-` and its
+key. Extra whitespace around the key, colon, and value is insignificant. The
+first colon separates the key from its single-line value, which may contain
+further colons.
 
 ## Section Types
 
-An artifact contract maps exact level-two section names to three types:
+An artifact contract maps exact level-two section names to these types:
 
 - prose;
-- numbered itemised; or
+- itemised;
+- mixed itemised;
+- expanded itemised; or
 - plan items.
 
-An unknown section name resolves to prose. The `plan items` type is reserved
-for the exact section name `Plan Items`.
-
-Section content ends at the next level-two heading or end of file.
+Unknown sections are prose. Every section name, known or unknown, is unique.
+Known sections have a declared relative order. Optional known sections may be
+omitted, and unknown sections do not affect the order comparison. Empty
+sections produce warnings but do not invalidate an artifact.
 
 ### Prose
 
-A prose section may contain arbitrary Markdown, including unnumbered lists and
-subsections. Structured processing treats the entire section as opaque and
-does not validate, fill, or modify its contents.
+A prose section contains opaque Markdown. Structured processing does not
+validate, fill, or modify its body.
 
-### Numbered Itemised
+### Itemised
 
-A numbered itemised section contains stable, uniquely identified items in one
-of two forms:
+An itemised section contains stable-ID items in either form:
 
-- List form: `- ID: content`
-- Subsection form: `### ID: title`
+- compact: `- ID: content`;
+- expanded: `### ID: title` followed by an opaque body.
 
-A list item's content is unrestricted Markdown and may span indented lines;
-nested lists remain part of that item. A subsection body ends at the next
-level-three or level-two heading and is otherwise opaque prose. No
-non-whitespace content may occur outside the items.
+Ordinary itemised sections use one form consistently. Expanded item bodies end
+at the next level-three or level-two heading. No non-whitespace content may
+occur outside items.
 
-IDs remain attached to their logical items and must not be renumbered, reused,
-or inferred from position. An ordered-list marker such as `1.` is not an ID
-unless the contract explicitly defines it as one. The contract defines every
-ID's syntax and uniqueness scope.
+A mixed itemised section may declare distinct compact and expanded ID families.
+All compact items precede all expanded items. An expanded itemised section
+accepts only expanded items.
 
-A section must use one form. Mixing is allowed only for a limited, predefined
-section whose contract explicitly permits it. The contract must give list and
-subsection items different, disjoint ID namespaces. All list items must precede
-all subsection items.
-
-The plan artifact's `Decisions` section is such an exception:
-
-```markdown
-## Decisions
-
-- P-DD1: Use an idempotency key for every payment request.
-- P-DD2: Store provider request IDs with payment attempts.
-
-### P-D1 - Reconcile an unknown result before retrying
-
-Query the provider with the original idempotency key before issuing another
-request, preventing a duplicate charge when the first request succeeded.
-```
-
-Here list items use `P-DD<N>` and subsections use the disjoint `P-D<N>`
-namespace.
+Stable-ID numeric suffixes are canonical positive decimal integers from 1
+through `2^63 - 1`. Numbers are unique and increasing in document order within
+their family. IDs and names are case-sensitive.
 
 ### Plan Items
 
-The `Plan Items` section contains zero or more plan items. Each plan item is a
-level-three subsection consisting only of:
+The `Plan Items` section contains expanded nested records. Bare content outside
+a record is invalid. Each plan item begins with `### P<number>: <title>` and
+ends at the next plan item, level-two section, or end of file.
 
-1. A title beginning with its stable plan-item ID.
-2. Its `- Key: value` metadata block.
-3. One prose body, which may contain multiple paragraphs and non-heading
-   Markdown.
+Only leading metadata keys recognized by the plan-item contract are structured.
+The first unknown metadata-looking entry or ordinary content begins the opaque
+plan-item prose body; later recognized-key-looking entries remain prose.
 
-No list item or bare prose may occur directly under `Plan Items`. A plan item
-cannot contain a level-four or deeper heading. Its body ends at the next plan
-item, level-two section, or end of file.
-
-```markdown
-## Plan Items
-
-### P1 - Persist payment attempts
-
-- Status: ready
-- Depends on: none
-- Goal criteria: G-AC1, G-AC2
-- Validation: `cargo test payment_attempts`
-
-Store every provider request, response, request ID, and idempotency key with
-the corresponding order.
-```
-
-## Contracts and Validation
-
-An artifact contract must define:
-
-- the title form;
-- permitted metadata keys, order, values, and requiredness;
-- predefined section names, types, order, and cardinality;
-- numbered-item ID syntax and uniqueness scope;
-- permitted or required item source forms, including disjoint ID namespaces
-  and source ordering for mixed sections; and
-- plan-item title, metadata, and prose constraints for `Plan Items`.
-
-Names and IDs are case-sensitive unless the contract says otherwise. Content
-not permitted by this document or the applicable contract MUST NEVER appear.
-A parser must reject violations in structured sections. Programmatic filling
-and modification operate only on metadata and item IDs; prose is preserved
-without interpretation.
+Level-four and deeper headings are permitted in opaque plan-item prose.
+Level-one, level-two, and non-plan-item level-three headings are invalid because
+they break the artifact hierarchy. Fenced heading-like text remains opaque.
 
 ## Goal Contract
 
-A checked file named exactly `goal.md` receives the goal-specific contract in
-addition to the common artifact envelope. Goal-specific checking does not
-constrain title content or metadata and section ordering.
+A checked file named exactly `goal.md` receives this contract.
 
-The required metadata is:
+Required metadata is:
 
 ```text
-Status      drafting | accepted | amending
-Created     valid RFC 3339 timestamp with Z or a numeric UTC offset
-Updated     valid RFC 3339 timestamp with Z or a numeric UTC offset
+Status    drafting | accepted | amending
+Created   RFC 3339 timestamp with Z or a numeric UTC offset
+Updated   RFC 3339 timestamp with Z or a numeric UTC offset
 ```
 
-Every metadata key is unique. Additional unique metadata keys are allowed.
+Known sections have this relative order:
 
-The required level-two sections are:
+| Section             | Type                       | Presence |
+|---------------------|----------------------------|----------|
+| Outcome             | prose                      | required |
+| Acceptance Criteria | itemised; G-AC<n>          | required |
+| Open Questions      | itemised; G-Q<n>           | optional |
+| Assumptions         | itemised; G-A<n>           | optional |
+| In Scope            | itemised; G-IN<n>          | optional |
+| Out of Scope        | itemised; G-OUT<n>         | optional |
+| Revisions           | expanded; G-REV<n>         | optional |
+
+Ordinary goal itemised sections accept compact or expanded items consistently.
+`Revisions` accepts only expanded items. Item content and expanded bodies are
+opaque. Goal checking does not constrain title content or semantic quality.
+
+## Plan Contract
+
+A checked file named exactly `plan.md` receives this contract.
+
+Required metadata is:
 
 ```text
-Outcome                 prose
-Acceptance Criteria     itemised; G-AC<n>
+Status       drafting | accepted | amending
+Goal         ./goal.md
+Branch       non-empty intended task branch
+Base branch  non-empty branch from which the task branch is created
+Base commit  full 40-character hexadecimal Git commit hash
+Created      RFC 3339 timestamp with Z or a numeric UTC offset
+Updated      RFC 3339 timestamp with Z or a numeric UTC offset
 ```
 
-The optional level-two sections are:
+`Branch` is recorded while the plan is drafting and need not exist yet. The
+user may change it before branch creation; after creation it is retained for
+the task. `Base branch` and `Base commit` are immutable authoring provenance.
+Initial plan drafting requires a checked-out base branch and rejects detached
+`HEAD`; that authoring rule does not require `waif check` to inspect repository
+state.
 
-```text
-In Scope                itemised; G-IN<n>
-Out of Scope            itemised; G-OUT<n>
-Open Questions          itemised; G-Q<n>
-Assumptions             itemised; G-A<n>
-Revisions               expanded itemised; G-REV<n>
+Known sections have this relative order:
+
+| Section                  | Type                         | Presence |
+|--------------------------|------------------------------|----------|
+| Technical Summary        | prose                        | required |
+| Decisions                | mixed; P-D<n>, P-DD<n>       | required |
+| Open Questions           | itemised; P-Q<n>             | optional |
+| Assumptions              | itemised; P-A<n>             | optional |
+| Current System           | prose                        | required |
+| Plan Items               | plan items; P<n>             | required |
+| Risks                    | itemised; P-R<n>             | required |
+| Cross-Cutting Validation | itemised; P-V<n>             | required |
+| Revisions                | expanded; P-REV<n>           | optional |
+
+`Decisions` is the only mixed itemised section. Compact decisions use
+`- P-D<number>: content`; expanded decisions use
+`### P-DD<number>: title` and follow all compact decisions. Either form may be
+absent. Other ordinary itemised sections use compact or expanded items
+consistently. `Revisions` is expanded-only.
+
+Each plan item has this authoring form:
+
+```markdown
+### P1: Implement a coherent outcome
+
+- Status: pending
+- Goal criteria: G-AC1, G-AC2
+- Outcome: The technical result.
+- Areas: Affected components.
+- Depends on: none
+- Validation: `cargo test`
+
+Optional explanatory prose.
+
+#### Implementation detail
+
+Deeper headings are valid opaque prose.
 ```
 
-Every section name is unique, including names unknown to the goal contract. A
-uniquely named unknown section is opaque prose. Empty sections produce
-warnings and do not invalidate the artifact.
+`Status` is the only structurally recognized plan-item metadata key. It is
+required and accepts `pending` or `done`. `Goal criteria`, `Outcome`, `Areas`,
+`Depends on`, and `Validation` are semantic author-facing fields inside opaque
+prose. They may span lines and are preserved exactly; deterministic checking
+does not interpret their references or meaning.
 
-Ordinary itemised sections accept either compact or expanded items, with one
-form per section. `Revisions` accepts only expanded items. Expanded headings
-use `### <ID>: <title>`.
+Plan-item IDs use `P<number>`, are unique and increasing, and share the common
+signed-64-bit numeric bound. A plan item must have a non-empty title.
 
-Every item ID uses the family declared for its section. Its `<n>` component is
-a positive decimal integer matching `[1-9][0-9]*`, and its numeric value is
-unique within that reference-ID namespace. List-form items use
-`- G-<family><n>: content`. Item content, including empty content after a valid
-ID and colon, and expanded item bodies are opaque to goal-specific validation.
+Plan checking validates structure, not the technical quality of decisions,
+outcomes, affected areas, risks, dependencies, or validation commands.
 
-These are structural rules only. The authoring AI agent, not `waif check`, is
-responsible for the semantic quality, feasibility, and completeness of goal
-content and for distinguishing substantive included behavior from exclusions
-and non-goals.
+## Source Preservation
+
+Parsing retains source locations for structured content and exact source for
+opaque prose. Lifecycle operations locate metadata and exact plan-item IDs;
+they do not normalize untouched Markdown, whitespace, UTF-8, or line endings.

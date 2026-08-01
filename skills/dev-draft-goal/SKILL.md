@@ -21,12 +21,9 @@ Create the task dir and keep `goal.md` as the product-level contract.
    [`goal.md` Contract](#goalmd-contract).
 4. Keep the goal product-level: outcome, scope, and stable acceptance
    criteria, with no implementation choices.
-5. Keep `Status: drafting` before initial acceptance.
-   When changing an accepted goal:
-   - set `Status: amending`;
-   - maintain one revision subsection for the amendment cycle;
-   - preserve history;
-   - tell the user which downstream artifacts need reassessment.
+5. Keep `Status: drafting` before initial acceptance. When changing an
+   accepted goal, set `Status: amending`, maintain one revision subsection for
+   the current cycle, preserve history, and identify downstream impacts.
 6. Show the `goal.md` path and ask the user to review it.
 7. On explicit acceptance, require no blocking open questions and set
    `Status: accepted`. Treat unqualified `accept`, `approve`, or equivalent as
@@ -58,6 +55,14 @@ operations, not approval gates. Do not edit `.gitignore`.
 
 - G-AC1: <Observable, technology-independent result>
 
+## Open Questions
+
+- G-Q1: <Major issue, why it matters, and options the human can adopt>
+
+## Assumptions
+
+- G-A1: <Minor issue and the best-effort solution adopted>
+
 ## In Scope
 
 - G-IN1: <Included behavior>
@@ -65,14 +70,6 @@ operations, not approval gates. Do not edit `.gitignore`.
 ## Out of Scope
 
 - G-OUT1: <Explicit exclusion>
-
-## Open Questions
-
-- G-Q1: <Major issue, why it matters, and several options the human can adopt>
-
-## Assumptions
-
-- G-A1: <Minor issue and the best-effort solution adopted>
 
 ## Revisions
 

@@ -179,8 +179,9 @@ skill-specific contract defines the required content of the artifacts it owns.
 
 - Use Markdown.
 - Put the title first.
-- Put top-level metadata immediately after the title as unordered-list items
-  in the form `- Field: value`.
+- Put structured top-level metadata after the title as unordered-list items in
+  the form `- Field: value`. Every key recognized by the artifact contract is
+  required and unique.
 - Use the exact field names, section names, allowed values, and ordering
   defined by the owning skill's artifact contract.
 - Omit optional sections when they contain no content.
