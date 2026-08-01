@@ -288,6 +288,7 @@ fn section_is_empty(section: &Section) -> bool {
     match section {
         Section::Prose(section) => section.value().body().trim().is_empty(),
         Section::Itemised(section) => section.value().items().is_empty(),
+        Section::PlanItems(section) => section.value().items().is_empty(),
     }
 }
 

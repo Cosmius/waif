@@ -1,7 +1,7 @@
 use self::cursor::{Cursor, Position};
 use crate::artifact::{
-    Artifact, CompactItem, ExpandedItem, Item, ItemisedSection, Located, Metadata, ProseSection,
-    Section, SourceSpan,
+    Artifact, CompactItem, ExpandedItem, Item, ItemisedSection, Located, Metadata, PlanItem,
+    PlanItemSection, ProseSection, Section, SourceSpan,
 };
 use std::fmt;
 use std::ops::Range;
@@ -72,6 +72,7 @@ impl fmt::Display for Diagnostic {
 pub enum SectionType {
     Prose,
     Itemised,
+    PlanItems,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,6 +94,13 @@ impl SectionConfig {
         Self {
             name: name.into(),
             section_type: SectionType::Itemised,
+        }
+    }
+
+    pub fn plan_items(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            section_type: SectionType::PlanItems,
         }
     }
 }
@@ -329,6 +337,18 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
                 section_span,
             )))
         }
+        SectionType::PlanItems => {
+            ctx.cursor.rewind(body_start);
+            ctx.code_block = None;
+            let items = p_plan_items(ctx, body_end);
+            Some(Section::PlanItems(Located::new(
+                PlanItemSection {
+                    title: heading.title,
+                    items: Located::new(items, body_span),
+                },
+                section_span,
+            )))
+        }
     }
 }
 
@@ -362,6 +382,40 @@ fn p_itemised_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         items.extend(p_expanded_items(ctx, body_end));
     }
     items
+}
+
+fn p_plan_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<PlanItem> {
+    p_expanded_items(ctx, body_end)
+        .into_iter()
+        .map(|item| match item {
+            Item::Expanded(expanded) => p_plan_item(ctx.source, expanded),
+            Item::Compact(_) => unreachable!("expanded parser returned a compact item"),
+        })
+        .collect()
+}
+
+fn p_plan_item(source: &str, expanded: Located<ExpandedItem>) -> PlanItem {
+    let body_span = expanded.value().body().span();
+    let body_range = body_span.range();
+    let body_end = body_range.end;
+    let cursor = Cursor::within(source, body_range);
+    let mut ctx = ParsingContext {
+        source,
+        cursor,
+        diagnostics: Vec::new(),
+        code_block: None,
+        config: ParserConfig::default().with_known_metadata(["Status"]),
+    };
+    let metadata = p_metadata(&mut ctx);
+    let prose_start = ctx.cursor.position();
+    PlanItem {
+        expanded,
+        metadata,
+        prose: Located::new(
+            source[prose_start.offset()..body_end].to_owned(),
+            SourceSpan::new(prose_start.line(), prose_start.offset()..body_end),
+        ),
+    }
 }
 
 fn heading_level(ctx: &mut ParsingContext) -> Option<usize> {
@@ -1919,6 +1973,233 @@ bare preamble\n
             let empty = parse(" \n\t\n").expect_err("empty artifact should fail");
 
             assert_eq!(empty[0].message(), "missing level-one title");
+        }
+    }
+
+    mod plan_items {
+        use super::*;
+
+        fn config() -> ParserConfig {
+            ParserConfig::new(vec![SectionConfig::plan_items("Plan Items")])
+                .with_known_metadata(["Status"])
+        }
+
+        #[test]
+        fn reuses_expanded_items_with_structured_status_and_opaque_prose() {
+            let source = concat!(
+                "# Plan\n",
+                "- Status: accepted\n",
+                "## Plan Items\n",
+                "### P1: First item\n",
+                "\n",
+                "- Status: pending\n",
+                "- Goal criteria: G-AC1, G-AC2\n",
+                "                 G-AC3\n",
+                "- Status: opaque after boundary\n",
+                "#### Details\n",
+                "body\n",
+                "### P2: Second item\n",
+                "- Status: done\n",
+            );
+            let artifact = parse_with_config(source, &config()).expect("plan items should parse");
+            let section = artifact.sections()[0]
+                .as_plan_items()
+                .expect("section should contain plan items");
+
+            assert_eq!(section.items().len(), 2);
+            let first = &section.items()[0];
+            assert_eq!(first.identifier().expect("identifier").text(), "P1");
+            assert_eq!(first.title().text(), "First item");
+            assert_eq!(first.metadata().len(), 1);
+            assert_eq!(first.metadata()[0].value().key(), "Status");
+            assert_eq!(first.metadata()[0].value().value(), "pending");
+            assert!(first.prose().text().contains("- Goal criteria: G-AC1"));
+            assert!(first
+                .prose()
+                .text()
+                .contains("- Status: opaque after boundary"));
+            assert!(first.prose().text().contains("#### Details"));
+            let first_source = &source[first.span().range()];
+            assert!(first_source.starts_with("### P1: First item"));
+            assert!(!first_source.contains("### P2: Second item"));
+        }
+
+        #[test]
+        fn preserves_fenced_peer_headings_inside_plan_item_prose() {
+            let source = concat!(
+                "# Plan\n",
+                "## Plan Items\n",
+                "### P1: First\n",
+                "- Status: pending\n",
+                "- Outcome: prose\n",
+                "```markdown\n",
+                "### P999: fenced example\n",
+                "```\n",
+                "### P2: Second\n",
+                "- Status: done\n",
+            );
+            let artifact = parse_with_config(source, &config()).expect("fences should be honored");
+            let items = artifact.sections()[0]
+                .as_plan_items()
+                .expect("plan items")
+                .items();
+
+            assert_eq!(items.len(), 2);
+            assert!(items[0].prose().text().contains("### P999: fenced example"));
+            assert_eq!(items[1].identifier().expect("identifier").text(), "P2");
+        }
+
+        #[test]
+        fn exact_lookup_and_nested_status_edits_preserve_source() {
+            let source = concat!(
+                "# Plan\r\n",
+                "- Status: accepted\r\n",
+                "## Plan Items\r\n",
+                "### P1: 値\r\n",
+                "- Status: pending\r\n",
+                "- Outcome: untouched\r\n",
+            );
+            let mut artifact = parse_with_config(source, &config()).expect("plan should parse");
+
+            assert!(artifact.plan_item("P").is_none());
+            assert_eq!(
+                artifact.plan_item("P1").expect("exact item").title().text(),
+                "値"
+            );
+            artifact.metadata_mut()[0]
+                .value_mut()
+                .set_value("amending")
+                .expect("top-level status should be mutable");
+            artifact
+                .plan_item_mut("P1")
+                .expect("exact item")
+                .status_mut()
+                .expect("unique status")
+                .set_value("done")
+                .expect("nested status should be mutable");
+
+            assert_eq!(
+                artifact.serialize(),
+                source
+                    .replacen("- Status: accepted", "- Status: amending", 1)
+                    .replacen("- Status: pending", "- Status: done", 1)
+            );
+        }
+
+        #[test]
+        fn ambiguous_item_or_status_lookup_is_not_mutable() {
+            let source = concat!(
+                "# Plan\n",
+                "## Plan Items\n",
+                "### P1: First\n",
+                "- Status: pending\n",
+                "- Status: done\n",
+                "### P1: Duplicate\n",
+                "- Status: pending\n",
+                "### P2: Repeated status\n",
+                "- Status: pending\n",
+                "- Status: done\n",
+            );
+            let mut artifact =
+                parse_with_config(source, &config()).expect("structure should parse");
+
+            assert!(artifact.plan_item("P1").is_none());
+            assert!(artifact.plan_item_mut("P1").is_none());
+            assert!(artifact
+                .plan_item_mut("P2")
+                .expect("unique item")
+                .status_mut()
+                .is_none());
+        }
+
+        #[test]
+        fn preserves_nested_status_edits_under_every_line_ending() {
+            for ending in ["\n", "\r\n", "\r"] {
+                let source = [
+                    "# Plan",
+                    "## Plan Items",
+                    "### P1: Item",
+                    "- Status: pending",
+                    "- Outcome: untouched",
+                    "",
+                ]
+                .join(ending);
+                let mut artifact =
+                    parse_with_config(&source, &config()).expect("plan item should parse");
+                let status = artifact
+                    .plan_item_mut("P1")
+                    .expect("exact item")
+                    .status_mut()
+                    .expect("unique status");
+                status.set_value("done").expect("valid status value");
+
+                assert_eq!(
+                    artifact.serialize(),
+                    source.replacen("- Status: pending", "- Status: done", 1)
+                );
+                assert_eq!(
+                    artifact.plan_item("P1").expect("item").prose().text(),
+                    format!("- Outcome: untouched{ending}")
+                );
+            }
+        }
+
+        #[test]
+        fn exposes_missing_heading_components_and_empty_bodies() {
+            let source = concat!(
+                "# Plan\n",
+                "## Plan Items\n",
+                "### P1: Complete\n",
+                "### Missing delimiter\n",
+                "### : Missing identifier\n",
+            );
+            let artifact = parse_with_config(source, &config()).expect("items should parse");
+            let items = artifact.sections()[0]
+                .as_plan_items()
+                .expect("plan items")
+                .items();
+
+            assert_eq!(items.len(), 3);
+            assert_eq!(items[0].identifier().expect("identifier").text(), "P1");
+            assert_eq!(items[0].prose().text(), "");
+            assert!(items[0].metadata().is_empty());
+            assert!(items[1].identifier().is_none());
+            assert!(items[1].expanded.value().delimiter().is_none());
+            assert_eq!(items[2].identifier().expect("empty identifier").text(), "");
+            assert!(items[2].expanded.value().delimiter().is_some());
+        }
+
+        #[test]
+        fn retains_structural_boundaries_for_later_plan_validation() {
+            let source = concat!(
+                "# Plan\n",
+                "## Plan Items\n",
+                "### P1: Item\n",
+                "- Status: pending\n",
+                "- Outcome: opaque\n",
+                "### Not a plan item\n",
+                "## Following section\n",
+                "body\n",
+            );
+            let artifact = parse_with_config(source, &config()).expect("structure should parse");
+
+            assert_eq!(artifact.sections().len(), 2);
+            let items = artifact.sections()[0]
+                .as_plan_items()
+                .expect("plan items")
+                .items();
+            assert_eq!(items.len(), 2);
+            assert!(items[1].identifier().is_none());
+            assert_eq!(artifact.sections()[1].name(), "Following section");
+
+            let diagnostics = parse_with_config(
+                "# Plan\n## Plan Items\n### P1: Item\n# Broken hierarchy\n",
+                &config(),
+            )
+            .expect_err("level-one heading should remain a parser error");
+            assert!(diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message().contains("exactly one")));
         }
     }
 

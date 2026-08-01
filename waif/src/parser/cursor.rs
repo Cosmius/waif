@@ -24,11 +24,14 @@ impl Position {
     }
 }
 
+use std::ops::Range;
+
 /// A forward-only cursor over UTF-8 source text.
 #[derive(Clone, Debug)]
 pub struct Cursor<'a> {
     source: &'a str,
     position: Position,
+    end_offset: usize,
 }
 
 impl<'a> Cursor<'a> {
@@ -40,7 +43,21 @@ impl<'a> Cursor<'a> {
                 line: 1,
                 column: 1,
             },
+            end_offset: source.len(),
         }
+    }
+
+    pub fn within(source: &'a str, range: Range<usize>) -> Self {
+        assert!(range.start <= range.end);
+        assert!(range.end <= source.len());
+        assert!(source.is_char_boundary(range.start));
+        assert!(source.is_char_boundary(range.end));
+        let mut cursor = Self::new(source);
+        while cursor.position.offset < range.start {
+            cursor.take().expect("range start is within source");
+        }
+        cursor.end_offset = range.end;
+        cursor
     }
 
     /// Return the current source position.
@@ -180,11 +197,11 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn is_eof(&self) -> bool {
-        self.position.offset == self.source.len()
+        self.position.offset == self.end_offset
     }
 
     fn remaining(&self) -> &'a str {
-        &self.source[self.position.offset..]
+        &self.source[self.position.offset..self.end_offset]
     }
 }
 
@@ -258,6 +275,21 @@ mod tests {
             assert_eq!(cursor.position().offset(), 0);
             assert_eq!(cursor.take_if(|ch| ch == ':'), Some(':'));
             assert_eq!(cursor.peek(), Some('v'));
+        }
+
+        #[test]
+        fn bounded_cursor_keeps_absolute_positions_and_stops_at_range_end() {
+            let source = "first\r\n値: body\r\nafter";
+            let start = source.find('値').expect("range start");
+            let end = source.find("\r\nafter").expect("range end");
+            let mut cursor = Cursor::within(source, start..end);
+
+            assert_eq!(cursor.position().offset(), start);
+            assert_eq!(cursor.position().line(), 2);
+            assert_eq!(cursor.take_line(), Some((false, "値: body")));
+            assert_eq!(cursor.position().offset(), end);
+            assert!(cursor.is_eof());
+            assert_eq!(cursor.take(), None);
         }
     }
 

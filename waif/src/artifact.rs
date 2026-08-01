@@ -65,6 +65,38 @@ impl Artifact {
         &self.sections
     }
 
+    pub fn plan_item(&self, identifier: &str) -> Option<&PlanItem> {
+        let mut matches =
+            self.sections
+                .iter()
+                .filter_map(Section::as_plan_items)
+                .flat_map(|section| {
+                    section.items().iter().filter(move |item| {
+                        item.identifier().is_some_and(|id| id.text() == identifier)
+                    })
+                });
+        let item = matches.next()?;
+        matches.next().is_none().then_some(item)
+    }
+
+    pub fn plan_item_mut(&mut self, identifier: &str) -> Option<&mut PlanItem> {
+        let count = self
+            .sections
+            .iter()
+            .filter_map(Section::as_plan_items)
+            .flat_map(PlanItemSection::items)
+            .filter(|item| item.identifier().is_some_and(|id| id.text() == identifier))
+            .count();
+        if count != 1 {
+            return None;
+        }
+        self.sections
+            .iter_mut()
+            .filter_map(Section::as_plan_items_mut)
+            .flat_map(PlanItemSection::items_mut)
+            .find(|item| item.identifier().is_some_and(|id| id.text() == identifier))
+    }
+
     /// Serialize this artifact, preserving untouched source text exactly.
     pub fn serialize(&self) -> String {
         serialize(self)
@@ -146,6 +178,7 @@ impl SourceSpan {
 pub enum Section {
     Prose(Located<ProseSection>),
     Itemised(Located<ItemisedSection>),
+    PlanItems(Located<PlanItemSection>),
 }
 
 #[allow(dead_code)]
@@ -154,6 +187,7 @@ impl Section {
         match self {
             Self::Prose(section) => section.value.title.text(),
             Self::Itemised(section) => section.value.title.text(),
+            Self::PlanItems(section) => section.value.title.text(),
         }
     }
 
@@ -161,6 +195,7 @@ impl Section {
         match self {
             Self::Prose(section) => &section.value.title,
             Self::Itemised(section) => &section.value.title,
+            Self::PlanItems(section) => &section.value.title,
         }
     }
 
@@ -168,6 +203,7 @@ impl Section {
         match self {
             Self::Prose(section) => section.value.body.span(),
             Self::Itemised(section) => section.value.items.span(),
+            Self::PlanItems(section) => section.value.items.span(),
         }
     }
 
@@ -175,20 +211,35 @@ impl Section {
         match self {
             Self::Prose(section) => section.span(),
             Self::Itemised(section) => section.span(),
+            Self::PlanItems(section) => section.span(),
         }
     }
 
     pub fn as_prose(&self) -> Option<&ProseSection> {
         match self {
             Self::Prose(section) => Some(section.value()),
-            Self::Itemised(_) => None,
+            Self::Itemised(_) | Self::PlanItems(_) => None,
         }
     }
 
     pub fn as_itemised(&self) -> Option<&ItemisedSection> {
         match self {
-            Self::Prose(_) => None,
+            Self::Prose(_) | Self::PlanItems(_) => None,
             Self::Itemised(section) => Some(section.value()),
+        }
+    }
+
+    pub fn as_plan_items(&self) -> Option<&PlanItemSection> {
+        match self {
+            Self::PlanItems(section) => Some(section.value()),
+            Self::Prose(_) | Self::Itemised(_) => None,
+        }
+    }
+
+    pub fn as_plan_items_mut(&mut self) -> Option<&mut PlanItemSection> {
+        match self {
+            Self::PlanItems(section) => Some(section.value_mut()),
+            Self::Prose(_) | Self::Itemised(_) => None,
         }
     }
 }
@@ -240,6 +291,74 @@ impl ItemisedSection {
 
     pub fn located_items(&self) -> &Located<Vec<Item>> {
         &self.items
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct PlanItemSection {
+    pub(crate) title: Located<String>,
+    pub(crate) items: Located<Vec<PlanItem>>,
+}
+
+#[allow(dead_code)]
+impl PlanItemSection {
+    pub fn items(&self) -> &[PlanItem] {
+        self.items.value()
+    }
+
+    pub fn items_mut(&mut self) -> &mut [PlanItem] {
+        self.items.value_mut()
+    }
+
+    pub fn title(&self) -> &Located<String> {
+        &self.title
+    }
+
+    pub fn located_items(&self) -> &Located<Vec<PlanItem>> {
+        &self.items
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct PlanItem {
+    // Keep the ordinary expanded-item representation as the source of truth
+    // for heading components and the complete record span. Plan items add only
+    // a structured view over that item's body: leading metadata followed by
+    // opaque prose.
+    pub(crate) expanded: Located<ExpandedItem>,
+    pub(crate) metadata: Vec<Located<Metadata>>,
+    pub(crate) prose: Located<String>,
+}
+
+#[allow(dead_code)]
+impl PlanItem {
+    pub fn identifier(&self) -> Option<&Located<String>> {
+        self.expanded.value.identifier.as_ref()
+    }
+
+    pub fn title(&self) -> &Located<String> {
+        &self.expanded.value.content
+    }
+
+    pub fn metadata(&self) -> &[Located<Metadata>] {
+        &self.metadata
+    }
+
+    pub fn status_mut(&mut self) -> Option<&mut Metadata> {
+        let mut matches = self
+            .metadata
+            .iter_mut()
+            .filter(|entry| entry.value().key() == "Status");
+        let status = matches.next()?;
+        matches.next().is_none().then_some(status.value_mut())
+    }
+
+    pub fn prose(&self) -> &Located<String> {
+        &self.prose
+    }
+
+    pub fn span(&self) -> &SourceSpan {
+        self.expanded.span()
     }
 }
 
@@ -390,8 +509,18 @@ impl Located<String> {
 /// Serialize an artifact while retaining all source text not explicitly
 /// changed through the structured API.
 pub fn serialize(artifact: &Artifact) -> String {
-    let capacity = artifact
-        .metadata
+    let mut entries: Vec<_> = artifact.metadata.iter().collect();
+    entries.extend(
+        artifact
+            .sections
+            .iter()
+            .filter_map(Section::as_plan_items)
+            .flat_map(PlanItemSection::items)
+            .flat_map(|item| item.metadata.iter()),
+    );
+    entries.sort_by_key(|entry| entry.value().located_value().span().range().start);
+
+    let capacity = entries
         .iter()
         .fold(artifact.source.len(), |capacity, entry| {
             let metadata = entry.value();
@@ -400,7 +529,7 @@ pub fn serialize(artifact: &Artifact) -> String {
     let mut output = String::with_capacity(capacity);
     let mut copied_until = 0;
 
-    for entry in &artifact.metadata {
+    for entry in entries {
         let metadata = entry.value();
         let value_range = metadata.value.span().range();
         let unchanged = &artifact.source[copied_until..value_range.start];
