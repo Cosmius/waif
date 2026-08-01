@@ -7,6 +7,7 @@ mod commands;
 mod goal;
 mod parser;
 mod protocol;
+mod schema;
 #[cfg(test)]
 mod test_support;
 

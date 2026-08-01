@@ -1,85 +1,97 @@
-use std::collections::HashSet;
-
 use chrono::DateTime;
 
-use crate::artifact::{Artifact, ItemForm, Section};
+use crate::artifact::Artifact;
 use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
+use crate::schema::{self, ItemForms, ItemRule, MetadataRule, Schema, SectionRule};
 
-#[derive(Clone, Copy)]
-struct MetadataValidator {
-    name: &'static str,
-    validator: Validator,
-}
-
-type Validator = fn(&str) -> Result<(), &'static str>;
-
-#[derive(Clone, Copy)]
-struct ItemValidator {
-    section_name: &'static str,
-    prefix: &'static str,
-    required_form: Option<ItemForm>,
-}
-
-const REQUIRED_METADATA: [MetadataValidator; 3] = [
-    MetadataValidator {
+const METADATA: [MetadataRule; 3] = [
+    MetadataRule {
         name: "Status",
         validator: valid_status,
     },
-    MetadataValidator {
+    MetadataRule {
         name: "Created",
         validator: valid_timestamp,
     },
-    MetadataValidator {
+    MetadataRule {
         name: "Updated",
         validator: valid_timestamp,
     },
 ];
-const REQUIRED_SECTIONS: [&str; 2] = ["Outcome", "Acceptance Criteria"];
-const ITEM_VALIDATORS: [ItemValidator; 6] = [
-    ItemValidator {
-        section_name: "Acceptance Criteria",
-        prefix: "G-AC",
-        required_form: None,
+const SECTIONS: [SectionRule; 7] = [
+    SectionRule {
+        name: "Outcome",
+        required: true,
+        items: None,
     },
-    ItemValidator {
-        section_name: "In Scope",
-        prefix: "G-IN",
-        required_form: None,
+    SectionRule {
+        name: "Acceptance Criteria",
+        required: true,
+        items: Some(ItemRule {
+            prefix: "G-AC",
+            forms: ItemForms::Consistent,
+        }),
     },
-    ItemValidator {
-        section_name: "Out of Scope",
-        prefix: "G-OUT",
-        required_form: None,
+    SectionRule {
+        name: "Open Questions",
+        required: false,
+        items: Some(ItemRule {
+            prefix: "G-Q",
+            forms: ItemForms::Consistent,
+        }),
     },
-    ItemValidator {
-        section_name: "Open Questions",
-        prefix: "G-Q",
-        required_form: None,
+    SectionRule {
+        name: "Assumptions",
+        required: false,
+        items: Some(ItemRule {
+            prefix: "G-A",
+            forms: ItemForms::Consistent,
+        }),
     },
-    ItemValidator {
-        section_name: "Assumptions",
-        prefix: "G-A",
-        required_form: None,
+    SectionRule {
+        name: "In Scope",
+        required: false,
+        items: Some(ItemRule {
+            prefix: "G-IN",
+            forms: ItemForms::Consistent,
+        }),
     },
-    ItemValidator {
-        section_name: "Revisions",
-        prefix: "G-REV",
-        required_form: Some(ItemForm::Expanded),
+    SectionRule {
+        name: "Out of Scope",
+        required: false,
+        items: Some(ItemRule {
+            prefix: "G-OUT",
+            forms: ItemForms::Consistent,
+        }),
+    },
+    SectionRule {
+        name: "Revisions",
+        required: false,
+        items: Some(ItemRule {
+            prefix: "G-REV",
+            forms: ItemForms::ExpandedOnly,
+        }),
     },
 ];
+const SCHEMA: Schema = Schema {
+    metadata: &METADATA,
+    sections: &SECTIONS,
+};
 
-fn valid_status(value: &str) -> Result<(), &'static str> {
+fn valid_status(value: &str) -> Result<(), String> {
     if matches!(value, "drafting" | "accepted" | "amending") {
         Ok(())
     } else {
-        Err("`drafting`, `accepted`, or `amending`")
+        Err(format!(
+            "expected `drafting`, `accepted`, or `amending`, but got `{value}`"
+        ))
     }
 }
 
-fn valid_timestamp(value: &str) -> Result<(), &'static str> {
+fn valid_timestamp(value: &str) -> Result<(), String> {
     DateTime::parse_from_rfc3339(value)
         .map(|_| ())
-        .map_err(|_| "an RFC 3339 timestamp with a timezone")
+        .map_err(|_| format!("expected an RFC 3339 timestamp with a timezone, but got `{value}`"))
 }
 
 /// Parse and validate the structural schema for a goal artifact.
@@ -108,188 +120,7 @@ fn parser_config() -> ParserConfig {
 }
 
 fn validate(artifact: &Artifact) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
-    validate_metadata(artifact, &mut diagnostics);
-    validate_sections(artifact, &mut diagnostics);
-    diagnostics
-}
-
-fn validate_metadata(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
-    let mut seen = HashSet::new();
-
-    for metadata in artifact.metadata() {
-        let line = metadata.span().start_line();
-        let metadata = metadata.value();
-        let key = metadata.key();
-        if !seen.insert(key) {
-            diagnostics.push(Diagnostic::error(
-                line,
-                format!("duplicate metadata key `{key}`"),
-            ));
-        }
-
-        if let Some(metadata_validator) = REQUIRED_METADATA
-            .iter()
-            .find(|metadata_validator| metadata_validator.name == key)
-        {
-            if let Err(message) = (metadata_validator.validator)(metadata.value()) {
-                diagnostics.push(Diagnostic::error(
-                    line,
-                    format!("metadata `{}` must be {message}", metadata_validator.name),
-                ));
-            }
-        }
-    }
-
-    for metadata_validator in REQUIRED_METADATA {
-        if !seen.contains(metadata_validator.name) {
-            diagnostics.push(Diagnostic::error(
-                1,
-                format!("missing required metadata `{}`", metadata_validator.name),
-            ));
-        }
-    }
-}
-
-fn validate_sections(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
-    let mut seen = HashSet::new();
-    let mut seen_item_ids = HashSet::new();
-
-    for section in artifact.sections() {
-        let name = section.name();
-        let line = section.span().start_line();
-        if !seen.insert(name) {
-            diagnostics.push(Diagnostic::error(
-                line,
-                format!("duplicate section `{name}`"),
-            ));
-        }
-        if section_is_empty(section) {
-            diagnostics.push(Diagnostic::warning(
-                line,
-                format!("section `{name}` is empty"),
-            ));
-        }
-
-        if let Some(validator) = ITEM_VALIDATORS
-            .iter()
-            .find(|validator| validator.section_name == name)
-        {
-            validate_items(section, *validator, &mut seen_item_ids, diagnostics);
-        }
-    }
-
-    for name in REQUIRED_SECTIONS {
-        if !seen.contains(name) {
-            diagnostics.push(Diagnostic::error(
-                1,
-                format!("missing required section `{name}`"),
-            ));
-        }
-    }
-}
-
-fn validate_items<'a>(
-    section: &'a Section,
-    validator: ItemValidator,
-    seen: &mut HashSet<(&'static str, &'a str)>,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    let Some(section) = section.as_itemised() else {
-        return;
-    };
-
-    validate_item_forms(section.items(), validator, diagnostics);
-
-    for item in section.items() {
-        let Some(identifier) = item.identifier() else {
-            diagnostics.push(Diagnostic::error(
-                item.span().start_line(),
-                format!(
-                    "item in section `{}` is missing an identifier; expected \
-                     `{}<number>`",
-                    validator.section_name, validator.prefix
-                ),
-            ));
-            continue;
-        };
-
-        let identifier_text = identifier.text();
-        let Some(number) = valid_item_number(identifier_text, validator.prefix) else {
-            diagnostics.push(Diagnostic::error(
-                identifier.span().start_line(),
-                format!(
-                    "item identifier `{identifier_text}` in section `{}` must use \
-                     `{}<number>`, where number is a positive decimal integer",
-                    validator.section_name, validator.prefix
-                ),
-            ));
-            continue;
-        };
-
-        if !seen.insert((validator.prefix, number)) {
-            diagnostics.push(Diagnostic::error(
-                identifier.span().start_line(),
-                format!(
-                    "duplicate item identifier `{identifier_text}` in section `{}`",
-                    validator.section_name
-                ),
-            ));
-        }
-    }
-}
-
-fn validate_item_forms(
-    items: &[crate::artifact::Item],
-    validator: ItemValidator,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    let Some(first) = items.first() else {
-        return;
-    };
-    let required = validator.required_form.unwrap_or_else(|| first.form());
-    let Some(conflicting) = items.iter().find(|item| item.form() != required) else {
-        return;
-    };
-
-    if validator.required_form.is_some() {
-        let (form, syntax) = match required {
-            ItemForm::Compact => ("compact", "- ID: content"),
-            ItemForm::Expanded => ("expanded", "### ID: title"),
-        };
-        diagnostics.push(Diagnostic::error(
-            conflicting.span().start_line(),
-            format!(
-                "section `{}` requires {form} items in `{syntax}` form",
-                validator.section_name
-            ),
-        ));
-    } else {
-        diagnostics.push(Diagnostic::error(
-            conflicting.span().start_line(),
-            format!(
-                "itemised section `{}` cannot mix compact and expanded items",
-                validator.section_name
-            ),
-        ));
-    }
-}
-
-fn valid_item_number<'a>(identifier: &'a str, prefix: &str) -> Option<&'a str> {
-    let number = identifier.strip_prefix(prefix)?;
-    let mut bytes = number.bytes();
-    if !matches!(bytes.next(), Some(b'1'..=b'9')) {
-        return None;
-    }
-    bytes.all(|byte| byte.is_ascii_digit()).then_some(number)
-}
-
-fn section_is_empty(section: &Section) -> bool {
-    match section {
-        Section::Prose(section) => section.value().body().trim().is_empty(),
-        Section::Itemised(section) => section.value().items().is_empty(),
-        Section::PlanItems(section) => section.value().items().is_empty(),
-    }
+    schema::validate(artifact, &SCHEMA)
 }
 
 #[cfg(test)]
@@ -333,8 +164,8 @@ mod tests {
             let source = format!(
                 "# Goal\n- Updated: {updated}\n\
                  - Status: drafting\n- Created: {created}\n- Extra: opaque\n\
-                 ## Acceptance Criteria\n### G-AC1: expanded\n\
-                 ## Outcome\ntext\n"
+                 ## Outcome\ntext\n\
+                 ## Acceptance Criteria\n### G-AC1: expanded\n"
             );
             assert_eq!(messages(&source), []);
         }
@@ -354,15 +185,21 @@ mod tests {
         );
         let diagnostics = messages(source);
 
-        assert!(diagnostics
-            .iter()
-            .any(|entry| entry.1 == 2 && entry.2.contains("`Status` must be")));
+        assert!(diagnostics.iter().any(|entry| {
+            entry.1 == 2
+                && entry.2
+                    == "metadata `Status` expected `drafting`, `accepted`, or \
+                                   `amending`, but got `unknown`"
+        }));
         assert!(diagnostics
             .iter()
             .any(|entry| { entry.1 == 3 && entry.2 == "duplicate metadata key `Status`" }));
-        assert!(diagnostics
-            .iter()
-            .any(|entry| { entry.1 == 4 && entry.2.contains("`Created` must be an RFC 3339") }));
+        assert!(diagnostics.iter().any(|entry| {
+            entry.1 == 4
+                && entry.2
+                    == "metadata `Created` expected an RFC 3339 timestamp with a \
+                                   timezone, but got `2026-07-31T12:00:00`"
+        }));
         assert!(diagnostics
             .iter()
             .any(|entry| { entry.1 == 1 && entry.2 == "missing required metadata `Updated`" }));
@@ -376,13 +213,93 @@ mod tests {
             "- Updated: 2026-07-31T12:00:00Z\n",
             "- Created: 2026-07-31T12:00:00Z\n",
             "- Status: amending\n",
-            "## In Scope\n- G-IN1: direct\n",
-            "## Custom\nopaque\n",
-            "## Acceptance Criteria\n### G-AC1: expanded\nbody\n",
             "## Outcome\ntext\n",
+            "## Acceptance Criteria\n### G-AC1: expanded\nbody\n",
+            "## Custom\nopaque\n",
+            "## In Scope\n- G-IN1: direct\n",
         );
 
         assert_eq!(messages(source), []);
+    }
+
+    #[test]
+    fn schema_enforces_known_section_order_and_ignores_unknown_sections() {
+        let source = concat!(
+            "# Goal\n",
+            "- Status: accepted\n",
+            "- Created: 2026-07-31T12:00:00Z\n",
+            "- Updated: 2026-07-31T12:00:00Z\n",
+            "## Revisions\n### G-REV1: revision\n",
+            "## Custom One\nopaque\n",
+            "## Out of Scope\n- G-OUT1: excluded\n",
+            "## In Scope\n- G-IN1: included\n",
+            "## Assumptions\n- G-A1: assumed\n",
+            "## Custom Two\nopaque\n",
+            "## Open Questions\n- G-Q1: question\n",
+            "## Acceptance Criteria\n- G-AC1: criterion\n",
+            "## Outcome\noutcome\n",
+        );
+        let diagnostics = messages(source);
+        let order_errors = diagnostics
+            .iter()
+            .filter(|entry| entry.2.contains("must appear before section `Revisions`"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(order_errors.len(), 6);
+        assert!(diagnostics.iter().all(|entry| entry.0 == Severity::Error));
+
+        let valid = format!(
+            "{VALID}## Custom\nopaque\n## In Scope\n- G-IN1: included\n\
+             ## Revisions\n### G-REV1: revision\n"
+        );
+        assert_eq!(messages(&valid), []);
+    }
+
+    #[test]
+    fn schema_enforces_increasing_ids_with_signed_64_bit_boundaries() {
+        let source = concat!(
+            "# Goal\n",
+            "- Status: accepted\n",
+            "- Created: 2026-07-31T12:00:00Z\n",
+            "- Updated: 2026-07-31T12:00:00Z\n",
+            "## Outcome\noutcome\n",
+            "## Acceptance Criteria\n",
+            "- G-AC2: two\n",
+            "- G-AC9223372036854775807: maximum\n",
+            "- G-AC9223372036854775808: overflow\n",
+            "- G-AC999999999999999999999999999999999999: larger overflow\n",
+            "- G-AC3: out of order\n",
+            "- G-AC3: duplicate\n",
+            "## Open Questions\n",
+            "### G-Q9223372036854775807: maximum\n",
+            "### G-Q1: out of order\n",
+            "## In Scope\n",
+            "- G-IN2: two\n",
+            "- G-IN1: out of order\n",
+        );
+        let diagnostics = messages(source);
+
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|entry| entry.2.contains("must be greater than"))
+                .count(),
+            3
+        );
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|entry| entry.2.contains("duplicate item identifier `G-AC3`"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|entry| entry.2.contains("from 1 through `2^63 - 1`"))
+                .count(),
+            2
+        );
     }
 
     #[test]
@@ -447,11 +364,11 @@ mod tests {
             "- Updated: 2026-07-31T12:00:00Z\n",
             "## Outcome\ntext\n",
             "## Acceptance Criteria\n### G-AC1:\n",
-            "## In Scope\n- G-IN2: [ ] content is opaque\n",
-            "## Out of Scope\n",
-            "- G-OUT999999999999999999999999999999999999: large\n",
             "## Open Questions\n### G-Q3: question\nopaque body\n",
             "## Assumptions\n- G-A4:\n",
+            "## In Scope\n- G-IN2: [ ] content is opaque\n",
+            "## Out of Scope\n",
+            "- G-OUT9223372036854775807: maximum\n",
             "## Revisions\n### G-REV5: revision\n",
             "- [x] nested body content\n",
             "#### G-REV0 is an opaque deeper heading\n",
@@ -505,10 +422,10 @@ mod tests {
             "- Updated: 2026-07-31T12:00:00Z\n",
             "## Outcome\ntext\n",
             "## Acceptance Criteria\n- G-IN1: wrong\n",
-            "## In Scope\n- G-OUT1: wrong\n",
-            "## Out of Scope\n- G-Q1: wrong\n",
             "## Open Questions\n- G-A1: wrong\n",
             "## Assumptions\n- G-REV1: wrong\n",
+            "## In Scope\n- G-OUT1: wrong\n",
+            "## Out of Scope\n- G-Q1: wrong\n",
             "## Revisions\n### G-AC1: wrong\n",
         );
         let diagnostics = messages(source);
@@ -645,8 +562,8 @@ mod tests {
         let diagnostics = messages(source);
 
         for expected in [
-            "metadata `Status` must be",
-            "metadata `Created` must be",
+            "metadata `Status` expected",
+            "metadata `Created` expected",
             "missing required metadata `Updated`",
             "duplicate section `Outcome`",
             "missing required section `Acceptance Criteria`",
@@ -670,7 +587,7 @@ mod tests {
         let diagnostics = messages(source);
 
         for expected in [
-            "metadata `Status` must be",
+            "metadata `Status` expected",
             "missing required metadata `Updated`",
             "section `Outcome` is empty",
             "duplicate section `Outcome`",

@@ -63,14 +63,14 @@ fn check_accepts_an_explicit_valid_goal_with_optional_sections() {
         "- Updated: 2026-07-31T21:00:00+09:00\n",
         "- Status: drafting\n",
         "- Created: 2026-07-31T12:00:00Z\n",
-        "## In Scope\n",
-        "- G-IN1: Direct scope.\n",
-        "## Custom\n",
-        "Opaque prose.\n",
-        "## Acceptance Criteria\n",
-        "- G-AC1: Checked.\n",
         "## Outcome\n",
         "A checked outcome.\n",
+        "## Acceptance Criteria\n",
+        "- G-AC1: Checked.\n",
+        "## Custom\n",
+        "Opaque prose.\n",
+        "## In Scope\n",
+        "- G-IN1: Direct scope.\n",
     );
     fs::write(&artifact, source).expect("goal should be written");
 
@@ -81,6 +81,37 @@ fn check_accepts_an_explicit_valid_goal_with_optional_sections() {
     assert!(output.stderr.is_empty());
     assert!(stdout.contains("goal.md: valid"));
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
+}
+
+#[test]
+fn check_aggregates_goal_order_and_item_errors_with_other_artifacts() {
+    let directory = TestDir::new("goal-schema-errors");
+    let source = concat!(
+        "# Goal\n",
+        "- Status: accepted\n",
+        "- Created: 2026-07-31T12:00:00Z\n",
+        "- Updated: 2026-07-31T21:00:00+09:00\n",
+        "## Acceptance Criteria\n",
+        "- G-AC2: second\n",
+        "- G-AC1: first\n",
+        "## Outcome\n",
+        "Outcome too late.\n",
+    );
+    fs::write(directory.path.join("goal.md"), source).expect("goal should be written");
+    fs::write(directory.path.join("plan.md"), "not a title\n").expect("plan should be written");
+
+    let output = run_check(&directory.path, &[directory.path.as_os_str()]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr.contains("goal.md:7: ERROR: item identifier `G-AC1`"));
+    assert!(stderr.contains(
+        "goal.md:8: ERROR: section `Outcome` must appear before section \
+         `Acceptance Criteria`"
+    ));
+    assert!(stderr.contains("plan.md:1: ERROR:"));
+    assert!(stdout.contains("checked 2 artifact(s); 2 invalid"));
 }
 
 #[test]
@@ -107,7 +138,8 @@ fn check_reports_all_goal_errors_with_explicit_severity() {
 
     assert_eq!(output.status.code(), Some(1));
     for expected in [
-        "goal.md:2: ERROR: metadata `Status` must be",
+        "goal.md:2: ERROR: metadata `Status` expected `drafting`, `accepted`, or \
+         `amending`, but got `invalid`",
         "goal.md:1: ERROR: missing required metadata `Created`",
         "goal.md:1: ERROR: missing required metadata `Updated`",
         "goal.md:8: ERROR: item identifier `WRONG1`",
@@ -202,7 +234,10 @@ fn check_uses_the_selected_symlink_name_for_goal_dispatch() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr.contains("goal.md:2: ERROR: metadata `Status` must be"));
+    assert!(stderr.contains(
+        "goal.md:2: ERROR: metadata `Status` expected `drafting`, `accepted`, or \
+         `amending`, but got `proposed`"
+    ));
     assert!(stdout.contains("checked 1 artifact(s); 1 invalid"));
 }
 
