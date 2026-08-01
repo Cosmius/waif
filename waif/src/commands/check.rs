@@ -52,8 +52,6 @@ impl CheckCommand {
 
                     if has_errors {
                         bad_artifacts += 1;
-                    } else {
-                        println!("{display_path}: valid");
                     }
                 }
                 Err(error) => {

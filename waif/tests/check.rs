@@ -68,8 +68,7 @@ fn check_accepts_an_explicit_valid_file() {
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
-    assert!(stdout.contains("anything.md: valid"));
-    assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
+    assert_eq!(stdout, "checked 1 artifact(s); 0 invalid\n");
 }
 
 #[test]
@@ -97,7 +96,6 @@ fn check_accepts_an_explicit_valid_goal_with_optional_sections() {
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
-    assert!(stdout.contains("goal.md: valid"));
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
 }
 
@@ -112,7 +110,6 @@ fn check_accepts_an_explicit_valid_plan() {
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
-    assert!(stdout.contains("plan.md: valid"));
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
 }
 
@@ -138,7 +135,6 @@ fn check_aggregates_plan_schema_errors_with_other_artifacts() {
     assert!(stderr.contains("plan item identifier `P0`"));
     assert!(stderr.contains("plan-item metadata `Status`"));
     assert!(stderr.contains("section `Revisions` requires expanded items"));
-    assert!(stdout.contains("goal.md: valid"));
     assert!(stdout.contains("checked 2 artifact(s); 1 invalid"));
 }
 
@@ -230,7 +226,6 @@ fn check_reports_warning_only_goals_as_valid() {
     assert!(output.status.success());
     assert!(stderr.contains("goal.md:5: WARNING: section `Outcome` is empty"));
     assert!(stderr.contains("goal.md:6: WARNING: section `Acceptance Criteria` is empty"));
-    assert!(stdout.contains("goal.md: valid"));
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
 }
 
@@ -256,7 +251,6 @@ fn check_continues_through_mixed_errors_and_warnings() {
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr.contains("goal.md:5: WARNING:"));
     assert!(stderr.contains("plan.md:1: ERROR:"));
-    assert!(stdout.contains("goal.md: valid"));
     assert!(stdout.contains("checked 2 artifact(s); 1 invalid"));
 }
 
@@ -275,7 +269,6 @@ fn check_accepts_symlinked_artifacts_in_a_directory() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(output.status.success());
-    assert!(stdout.contains("goal.md: valid"));
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
 }
 
@@ -345,7 +338,6 @@ fn check_uses_a_symlinked_steps_directory_nominally() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(output.status.success());
-    assert!(stdout.contains("steps/01-example/step.md: valid"));
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
 }
 
@@ -378,7 +370,6 @@ fn check_without_path_uses_the_current_task() {
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr.contains("goal.md:5: WARNING: section `Outcome` is empty"));
     assert!(stderr.contains("steps/01-example/review1.md:1: ERROR:"));
-    assert!(stdout.contains("goal.md: valid"));
     assert!(stdout.contains("checked 2 artifact(s); 1 invalid"));
 }
 
