@@ -2033,20 +2033,59 @@ bare preamble\n
                 "- Status: pending\n",
                 "- Outcome: prose\n",
                 "```markdown\n",
+                "# Fenced title\n",
+                "## Fenced section\n",
                 "### P999: fenced example\n",
                 "```\n",
                 "### P2: Second\n",
                 "- Status: done\n",
             );
             let artifact = parse_with_config(source, &config()).expect("fences should be honored");
+            assert_eq!(artifact.title(), "Plan");
+            assert_eq!(artifact.sections().len(), 1);
             let items = artifact.sections()[0]
                 .as_plan_items()
                 .expect("plan items")
                 .items();
 
             assert_eq!(items.len(), 2);
+            assert!(items[0].prose().text().contains("# Fenced title"));
+            assert!(items[0].prose().text().contains("## Fenced section"));
             assert!(items[0].prose().text().contains("### P999: fenced example"));
             assert_eq!(items[1].identifier().expect("identifier").text(), "P2");
+        }
+
+        #[test]
+        fn locates_nested_metadata_and_prose_under_crlf() {
+            let source = concat!(
+                "# Plan\r\n",
+                "## Plan Items\r\n",
+                "### P1: First\r\n",
+                "- Status: pending\r\n",
+                "- Outcome: opaque\r\n",
+                "### P2: Second\r\n",
+                "- Status: done\r\n",
+            );
+            let artifact = parse_with_config(source, &config()).expect("plan items should parse");
+            let items = artifact.sections()[0]
+                .as_plan_items()
+                .expect("plan items")
+                .items();
+            let first = &items[0];
+
+            let item_start = source.find("### P1: First").expect("first item start");
+            let item_end = source.find("### P2: Second").expect("second item start");
+            assert_eq!(first.span().range(), item_start..item_end);
+            assert_eq!(first.span().start_line(), 3);
+
+            let status_start = source.find("- Status: pending").expect("status start");
+            let status_end = status_start + "- Status: pending\r\n".len();
+            assert_eq!(first.metadata()[0].span().range(), status_start..status_end);
+            assert_eq!(first.metadata()[0].span().start_line(), 4);
+
+            let prose_start = source.find("- Outcome: opaque").expect("prose start");
+            assert_eq!(first.prose().span().range(), prose_start..item_end);
+            assert_eq!(first.prose().span().start_line(), 5);
         }
 
         #[test]
