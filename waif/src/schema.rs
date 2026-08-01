@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::DateTime;
 
-use crate::artifact::{Artifact, Item, ItemForm, PlanItem, Section};
+use crate::artifact::{Artifact, Finding, FindingsBody, Item, ItemForm, PlanItem, Section};
 use crate::parser::Diagnostic;
 
 pub(crate) type ValueValidator = fn(&str) -> Result<(), String>;
@@ -62,11 +62,18 @@ pub(crate) struct PlanItemRule {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) struct FindingsRule {
+    pub(crate) prefix: &'static str,
+}
+
+#[derive(Clone, Copy)]
 pub(crate) struct SectionRule {
     pub(crate) name: &'static str,
     pub(crate) required: bool,
     pub(crate) items: Option<ItemRule>,
     pub(crate) plan_items: Option<PlanItemRule>,
+    pub(crate) findings: Option<FindingsRule>,
 }
 
 impl SectionRule {
@@ -76,6 +83,7 @@ impl SectionRule {
             required: true,
             items: None,
             plan_items: None,
+            findings: None,
         }
     }
 
@@ -91,6 +99,12 @@ impl SectionRule {
 
     pub(crate) const fn with_plan_items(mut self, plan_items: PlanItemRule) -> Self {
         self.plan_items = Some(plan_items);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn with_findings(mut self, findings: FindingsRule) -> Self {
+        self.findings = Some(findings);
         self
     }
 }
@@ -211,6 +225,9 @@ fn validate_sections(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec
         }
         if let Some(plan_item_rule) = rule.plan_items {
             validate_plan_items(section, plan_item_rule, diagnostics);
+        }
+        if let Some(findings_rule) = rule.findings {
+            validate_findings(section, findings_rule, diagnostics);
         }
     }
 
@@ -380,6 +397,77 @@ fn validate_plan_items(section: &Section, rule: PlanItemRule, diagnostics: &mut 
     }
 }
 
+fn validate_findings(section: &Section, rule: FindingsRule, diagnostics: &mut Vec<Diagnostic>) {
+    let section_name = section.name();
+    let section = section
+        .as_findings()
+        .expect("a findings rule requires a findings parser section");
+    let FindingsBody::Items(items) = section.body() else {
+        return;
+    };
+    let mut seen = HashSet::new();
+    let mut last_number = None;
+    for finding in items.value() {
+        validate_finding(
+            section_name,
+            finding,
+            rule.prefix,
+            &mut seen,
+            &mut last_number,
+            diagnostics,
+        );
+    }
+}
+
+fn validate_finding(
+    section_name: &str,
+    finding: &Finding,
+    prefix: &'static str,
+    seen: &mut HashSet<i64>,
+    last_number: &mut Option<i64>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(identifier) = finding.identifier() else {
+        diagnostics.push(Diagnostic::error(
+            finding.span().start_line(),
+            format!("finding in section `{section_name}` is missing an identifier"),
+        ));
+        return;
+    };
+    let Some(number) = valid_item_number(identifier.text(), prefix) else {
+        diagnostics.push(Diagnostic::error(
+            identifier.span().start_line(),
+            format!(
+                "finding identifier `{}` in section `{section_name}` must use \
+                 `{prefix}<number>`, where number is from 1 through `2^63 - 1`",
+                identifier.text()
+            ),
+        ));
+        return;
+    };
+    if !seen.insert(number) {
+        diagnostics.push(Diagnostic::error(
+            identifier.span().start_line(),
+            format!(
+                "duplicate finding identifier `{}` in section `{section_name}`",
+                identifier.text()
+            ),
+        ));
+    } else if last_number.is_some_and(|previous| number < previous) {
+        diagnostics.push(Diagnostic::error(
+            identifier.span().start_line(),
+            format!(
+                "finding identifier `{}` must be greater than `{prefix}{}`",
+                identifier.text(),
+                last_number.expect("previous number exists")
+            ),
+        ));
+    }
+    if last_number.is_none_or(|previous| number > previous) {
+        *last_number = Some(number);
+    }
+}
+
 fn validate_plan_item_heading(
     section_name: &str,
     item: &PlanItem,
@@ -458,5 +546,60 @@ fn section_is_empty(section: &Section) -> bool {
         Section::Prose(section) => section.value().body().trim().is_empty(),
         Section::Itemised(section) => section.value().items().is_empty(),
         Section::PlanItems(section) => section.value().items().is_empty(),
+        Section::Findings(section) => match section.value().body() {
+            FindingsBody::Sentinel(body) => body.text().trim().is_empty(),
+            FindingsBody::Items(items) => items.value().is_empty(),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::{self, ParserConfig, SectionConfig};
+
+    const FINDINGS_SCHEMA: Schema = Schema {
+        metadata: &[],
+        sections: &[SectionRule::new("Findings").with_findings(FindingsRule { prefix: "F" })],
+    };
+
+    fn check(source: &str) -> Vec<Diagnostic> {
+        let config = ParserConfig::new(vec![SectionConfig::findings("Findings")]);
+        let (artifact, mut diagnostics) = parser::parse_with_diagnostics(source, &config);
+        diagnostics.extend(validate(&artifact, &FINDINGS_SCHEMA));
+        diagnostics
+    }
+
+    #[test]
+    fn accepts_sentinel_and_ordered_findings() {
+        assert!(check("# Review\n## Findings\nNo findings.\n").is_empty());
+        assert!(check("# Review\n## Findings\n### F1: First\n\n### F2: Second\n").is_empty());
+    }
+
+    #[test]
+    fn reports_multiple_finding_id_errors() {
+        let diagnostics = check(
+            "# Review\n## Findings\n### F2: First\n\n### F2: Duplicate\n\n### F1: Out of order\n",
+        );
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message()
+                .contains("duplicate finding identifier `F2`")
+        }));
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message()
+                .contains("finding identifier `F1` must be greater than `F2`")
+        }));
+    }
+
+    #[test]
+    fn empty_findings_section_is_warning_only() {
+        let diagnostics = check("# Review\n## Findings\n");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].severity(), crate::parser::Severity::Warning);
+        assert!(diagnostics[0]
+            .message()
+            .contains("section `Findings` is empty"));
     }
 }

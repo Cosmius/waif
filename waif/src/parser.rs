@@ -1,7 +1,8 @@
 use self::cursor::{Cursor, Position};
 use crate::artifact::{
-    Artifact, CompactItem, ExpandedItem, Item, ItemisedSection, Located, Metadata, PlanItem,
-    PlanItemSection, ProseSection, Section, SourceSpan,
+    Artifact, CompactItem, ExpandedItem, Finding, FindingsBody, FindingsSection, Item,
+    ItemisedSection, Located, Metadata, PlanItem, PlanItemSection, ProseSection, Section,
+    SourceSpan,
 };
 use std::fmt;
 use std::ops::Range;
@@ -73,6 +74,7 @@ pub enum SectionType {
     Prose,
     Itemised,
     PlanItems,
+    Findings,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,6 +103,13 @@ impl SectionConfig {
         Self {
             name: name.into(),
             section_type: SectionType::PlanItems,
+        }
+    }
+
+    pub fn findings(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            section_type: SectionType::Findings,
         }
     }
 }
@@ -361,7 +370,42 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
                 section_span,
             )))
         }
+        SectionType::Findings => {
+            ctx.cursor.rewind(body_start);
+            ctx.code_block = None;
+            let body = p_findings_body(ctx, body_end, body_span.clone());
+            Some(Section::Findings(Located::new(
+                FindingsSection {
+                    title: heading.title,
+                    body,
+                },
+                section_span,
+            )))
+        }
     }
+}
+
+fn p_findings_body(
+    ctx: &mut ParsingContext,
+    body_end: usize,
+    body_span: SourceSpan,
+) -> FindingsBody {
+    let body = &ctx.source[body_span.range()];
+    if body.trim() == "No findings." {
+        while ctx.cursor.position().offset() < body_end {
+            ctx.cursor.take_line();
+        }
+        return FindingsBody::Sentinel(Located::new(body.to_owned(), body_span));
+    }
+
+    let items = p_expanded_items(ctx, body_end)
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::Expanded(expanded) => Some(Finding { expanded }),
+            Item::Compact(_) => None,
+        })
+        .collect();
+    FindingsBody::Items(Located::new(items, body_span))
 }
 
 fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
@@ -2301,6 +2345,65 @@ bare preamble\n
             assert!(diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.message().contains("exactly one")));
+        }
+    }
+
+    mod findings {
+        use super::*;
+
+        fn config() -> ParserConfig {
+            ParserConfig::new(vec![SectionConfig::findings("Findings")])
+        }
+
+        #[test]
+        fn parses_the_exact_no_findings_sentinel() {
+            let source = "# Review\n## Findings\nNo findings.\n";
+            let artifact = parse_with_config(source, &config()).expect("should parse");
+            let section = artifact.sections()[0]
+                .as_findings()
+                .expect("findings section should be structured");
+            assert_eq!(section.body().as_sentinel(), Some("No findings.\n"));
+            assert_eq!(section.body().span().start_line(), 3);
+        }
+
+        #[test]
+        fn parses_expanded_findings_and_preserves_opaque_bodies() {
+            let source = concat!(
+                "# Review\n",
+                "## Findings\n",
+                "### F1: High - Example\n",
+                "- Severity: opaque\n",
+                "## Next\n",
+                "text\n",
+            );
+            let artifact = parse_with_config(source, &config()).expect("should parse");
+            let section = artifact.sections()[0]
+                .as_findings()
+                .expect("findings section should be structured");
+            let items = section.body().items().expect("expanded findings");
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].identifier().expect("ID").text(), "F1");
+            assert_eq!(items[0].body().text(), "- Severity: opaque\n");
+            assert_eq!(artifact.sections()[1].name(), "Next");
+        }
+
+        #[test]
+        fn ignores_heading_like_finding_body_text_inside_fences() {
+            let source = concat!(
+                "# Review\n",
+                "## Findings\n",
+                "### F1: Example\n",
+                "```markdown\n",
+                "### Not another finding\n",
+                "```\n",
+                "## Next\n",
+            );
+            let artifact = parse_with_config(source, &config()).expect("should parse");
+            let section = artifact.sections()[0]
+                .as_findings()
+                .expect("findings section should be structured");
+            assert_eq!(section.body().items().expect("items").len(), 1);
+            assert_eq!(artifact.sections()[1].name(), "Next");
         }
     }
 }

@@ -179,6 +179,7 @@ pub enum Section {
     Prose(Located<ProseSection>),
     Itemised(Located<ItemisedSection>),
     PlanItems(Located<PlanItemSection>),
+    Findings(Located<FindingsSection>),
 }
 
 #[allow(dead_code)]
@@ -188,6 +189,7 @@ impl Section {
             Self::Prose(section) => section.value.title.text(),
             Self::Itemised(section) => section.value.title.text(),
             Self::PlanItems(section) => section.value.title.text(),
+            Self::Findings(section) => section.value.title.text(),
         }
     }
 
@@ -196,6 +198,7 @@ impl Section {
             Self::Prose(section) => &section.value.title,
             Self::Itemised(section) => &section.value.title,
             Self::PlanItems(section) => &section.value.title,
+            Self::Findings(section) => &section.value.title,
         }
     }
 
@@ -204,6 +207,7 @@ impl Section {
             Self::Prose(section) => section.value.body.span(),
             Self::Itemised(section) => section.value.items.span(),
             Self::PlanItems(section) => section.value.items.span(),
+            Self::Findings(section) => section.value.body.span(),
         }
     }
 
@@ -212,19 +216,20 @@ impl Section {
             Self::Prose(section) => section.span(),
             Self::Itemised(section) => section.span(),
             Self::PlanItems(section) => section.span(),
+            Self::Findings(section) => section.span(),
         }
     }
 
     pub fn as_prose(&self) -> Option<&ProseSection> {
         match self {
             Self::Prose(section) => Some(section.value()),
-            Self::Itemised(_) | Self::PlanItems(_) => None,
+            Self::Itemised(_) | Self::PlanItems(_) | Self::Findings(_) => None,
         }
     }
 
     pub fn as_itemised(&self) -> Option<&ItemisedSection> {
         match self {
-            Self::Prose(_) | Self::PlanItems(_) => None,
+            Self::Prose(_) | Self::PlanItems(_) | Self::Findings(_) => None,
             Self::Itemised(section) => Some(section.value()),
         }
     }
@@ -232,14 +237,21 @@ impl Section {
     pub fn as_plan_items(&self) -> Option<&PlanItemSection> {
         match self {
             Self::PlanItems(section) => Some(section.value()),
-            Self::Prose(_) | Self::Itemised(_) => None,
+            Self::Prose(_) | Self::Itemised(_) | Self::Findings(_) => None,
         }
     }
 
     pub fn as_plan_items_mut(&mut self) -> Option<&mut PlanItemSection> {
         match self {
             Self::PlanItems(section) => Some(section.value_mut()),
-            Self::Prose(_) | Self::Itemised(_) => None,
+            Self::Prose(_) | Self::Itemised(_) | Self::Findings(_) => None,
+        }
+    }
+
+    pub fn as_findings(&self) -> Option<&FindingsSection> {
+        match self {
+            Self::Findings(section) => Some(section.value()),
+            Self::Prose(_) | Self::Itemised(_) | Self::PlanItems(_) => None,
         }
     }
 }
@@ -298,6 +310,77 @@ impl ItemisedSection {
 pub struct PlanItemSection {
     pub(crate) title: Located<String>,
     pub(crate) items: Located<Vec<PlanItem>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct FindingsSection {
+    pub(crate) title: Located<String>,
+    pub(crate) body: FindingsBody,
+}
+
+#[allow(dead_code)]
+impl FindingsSection {
+    pub fn title(&self) -> &Located<String> {
+        &self.title
+    }
+
+    pub fn body(&self) -> &FindingsBody {
+        &self.body
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum FindingsBody {
+    Sentinel(Located<String>),
+    Items(Located<Vec<Finding>>),
+}
+
+#[allow(dead_code)]
+impl FindingsBody {
+    pub fn span(&self) -> &SourceSpan {
+        match self {
+            Self::Sentinel(body) => body.span(),
+            Self::Items(items) => items.span(),
+        }
+    }
+
+    pub fn as_sentinel(&self) -> Option<&str> {
+        match self {
+            Self::Sentinel(body) => Some(body.text()),
+            Self::Items(_) => None,
+        }
+    }
+
+    pub fn items(&self) -> Option<&[Finding]> {
+        match self {
+            Self::Items(items) => Some(items.value()),
+            Self::Sentinel(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Finding {
+    pub(crate) expanded: Located<ExpandedItem>,
+}
+
+#[allow(dead_code)]
+impl Finding {
+    pub fn identifier(&self) -> Option<&Located<String>> {
+        self.expanded.value.identifier.as_ref()
+    }
+
+    pub fn content(&self) -> &Located<String> {
+        &self.expanded.value.content
+    }
+
+    pub fn body(&self) -> &Located<String> {
+        &self.expanded.value.body
+    }
+
+    pub fn span(&self) -> &SourceSpan {
+        self.expanded.span()
+    }
 }
 
 #[allow(dead_code)]
