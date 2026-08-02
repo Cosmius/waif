@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 /// A location in source text.
 ///
 /// `offset` is a zero-based UTF-8 byte offset. `line` and `column` are
@@ -24,14 +26,11 @@ impl Position {
     }
 }
 
-use std::ops::Range;
-
 /// A forward-only cursor over UTF-8 source text.
 #[derive(Clone, Debug)]
 pub struct Cursor<'a> {
     source: &'a str,
     position: Position,
-    end_offset: usize,
 }
 
 impl<'a> Cursor<'a> {
@@ -43,7 +42,6 @@ impl<'a> Cursor<'a> {
                 line: 1,
                 column: 1,
             },
-            end_offset: source.len(),
         }
     }
 
@@ -52,11 +50,10 @@ impl<'a> Cursor<'a> {
         assert!(range.end <= source.len());
         assert!(source.is_char_boundary(range.start));
         assert!(source.is_char_boundary(range.end));
-        let mut cursor = Self::new(source);
+        let mut cursor = Self::new(&source[..range.end]);
         while cursor.position.offset < range.start {
             cursor.take().expect("range start is within source");
         }
-        cursor.end_offset = range.end;
         cursor
     }
 
@@ -163,10 +160,7 @@ impl<'a> Cursor<'a> {
 
     /// Consume ASCII whitespace (space and tab) without crossing a line.
     pub fn skip_whitespaces_inline(&mut self) {
-        while self
-            .peek()
-            .is_some_and(|ch| ch == ' ' || ch == '\t')
-        {
+        while self.peek().is_some_and(|ch| ch == ' ' || ch == '\t') {
             self.take();
         }
     }
@@ -197,11 +191,11 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn is_eof(&self) -> bool {
-        self.position.offset == self.end_offset
+        self.position.offset == self.source.len()
     }
 
     fn remaining(&self) -> &'a str {
-        &self.source[self.position.offset..self.end_offset]
+        &self.source[self.position.offset..]
     }
 }
 
@@ -218,7 +212,7 @@ mod tests {
 
             assert_eq!(cursor.peek(), Some('a'));
             assert_eq!(cursor.peek(), Some('a'));
-            assert_eq!(cursor.position().offset, 0);
+            assert_eq!(cursor.position().offset(), 0);
             assert_eq!(cursor.take(), Some('a'));
             assert_eq!(cursor.peek(), Some('b'));
         }
@@ -370,8 +364,8 @@ mod tests {
                 cursor.skip_whitespaces_inline();
 
                 assert_eq!(cursor.peek(), Some('\n'));
-                assert_eq!(cursor.position().line, 1);
-                assert_eq!(cursor.position().column, 3);
+                assert_eq!(cursor.position().line(), 1);
+                assert_eq!(cursor.position().column(), 3);
             }
 
             assert_skips_inline_whitespaces(" \t\rvalue");

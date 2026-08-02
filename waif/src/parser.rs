@@ -123,7 +123,7 @@ impl<'a> ParserConfig<'a> {
     /// Declare the metadata keys recognized by this artifact contract.
     pub fn with_known_metadata<I>(mut self, names: I) -> Self
     where
-        I: IntoIterator<Item = &'a str>
+        I: IntoIterator<Item = &'a str>,
     {
         self.known_metadata = names.into_iter().collect();
         self
@@ -826,7 +826,7 @@ fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeadin
     let pos = ctx.cursor.position();
     for _ in 1..=3 {
         if ctx.cursor.take_if(|ch| ch == ' ').is_none() {
-            break
+            break;
         }
     }
     let level = ctx.cursor.take_while(|ch| ch == '#').len();
@@ -841,8 +841,8 @@ fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeadin
                 level,
                 title: ctx.located_with_pos(title_pos, title_pos.offset()),
                 pos,
-            })
-        },
+            });
+        }
         Some(ch) if ch != '\t' && ch != ' ' => return Err(()),
         _ => (),
     }
@@ -861,11 +861,7 @@ fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeadin
         trimmed.len()
     };
     let title = ctx.located_with_pos(text_pos, text_pos.offset() + title_len);
-    Ok(MarkdownHeading {
-        level,
-        title,
-        pos,
-    })
+    Ok(MarkdownHeading { level, title, pos })
 }
 
 // ============================================================================
@@ -2371,7 +2367,7 @@ bare preamble\n
     mod findings {
         use super::*;
 
-        fn config() -> ParserConfig<'static>{
+        fn config() -> ParserConfig<'static> {
             ParserConfig::new(vec![SectionConfig::findings("Findings")])
         }
 
