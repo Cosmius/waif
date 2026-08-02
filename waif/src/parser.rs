@@ -23,22 +23,46 @@ pub enum Severity {
 pub struct Diagnostic {
     severity: Severity,
     line: usize,
+    column: usize,
     message: String,
 }
 
 impl Diagnostic {
-    pub(crate) fn error(line: usize, message: impl Into<String>) -> Self {
-        Self::with_severity(Severity::Error, line, message)
+    /// error from position
+    pub(crate) fn error_p(position: Position, message: impl Into<String>) -> Self {
+        Self::with_severity(Severity::Error, position.line(), position.column(), message)
     }
 
-    pub(crate) fn warning(line: usize, message: impl Into<String>) -> Self {
-        Self::with_severity(Severity::Warning, line, message)
+    /// warning from position
+    pub(crate) fn warning_p(position: Position, message: impl Into<String>) -> Self {
+        Self::with_severity(
+            Severity::Warning,
+            position.line(),
+            position.column(),
+            message,
+        )
     }
 
-    fn with_severity(severity: Severity, line: usize, message: impl Into<String>) -> Self {
+    // TODO: remove it
+    pub(crate) fn error1(line: usize, message: impl Into<String>) -> Self {
+        Self::with_severity(Severity::Error, line, 1, message)
+    }
+
+    // TODO: remove it
+    pub(crate) fn warning1(line: usize, message: impl Into<String>) -> Self {
+        Self::with_severity(Severity::Warning, line, 1, message)
+    }
+
+    fn with_severity(
+        severity: Severity,
+        line: usize,
+        column: usize,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             severity,
             line,
+            column,
             message: message.into(),
         }
     }
@@ -51,6 +75,11 @@ impl Diagnostic {
         self.line
     }
 
+    #[allow(dead_code)]
+    pub fn column(&self) -> usize {
+        self.column
+    }
+
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -58,7 +87,11 @@ impl Diagnostic {
 
 impl fmt::Display for Diagnostic {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "line {}: {}", self.line, self.message)
+        write!(
+            formatter,
+            "line {}, column {}: {}",
+            self.line, self.column, self.message
+        )
     }
 }
 
@@ -233,7 +266,7 @@ fn p_title_line<'a>(ctx: &mut ParsingContext<'a>) -> Located<&'a str> {
     let pos = ctx.cursor.position();
     if ctx.cursor.is_eof() {
         ctx.diagnostics
-            .push(Diagnostic::error(pos.line(), "missing level-one title"));
+            .push(Diagnostic::error1(pos.line(), "missing level-one title"));
         return ctx.located_with_pos(pos, pos.offset());
     }
 
@@ -241,14 +274,14 @@ fn p_title_line<'a>(ctx: &mut ParsingContext<'a>) -> Located<&'a str> {
         level: 1, title, ..
     }) = ctx.try_(p_markdown_heading)
     else {
-        ctx.diagnostics.push(Diagnostic::error(
+        ctx.diagnostics.push(Diagnostic::error1(
             pos.line(),
             "first non-whitespace line must be a level-one Markdown heading",
         ));
         return ctx.located_with_pos(pos, pos.offset());
     };
     if title.value().is_empty() {
-        ctx.diagnostics.push(Diagnostic::error(
+        ctx.diagnostics.push(Diagnostic::error1(
             pos.line(),
             "level-one title must not be empty",
         ));
@@ -286,27 +319,60 @@ fn p_metadata(ctx: &mut ParsingContext) -> Vec<Located<Metadata>> {
     metadata
 }
 
+fn p_metadata_line(ctx: &mut ParsingContext) -> Option<Located<Metadata>> {
+    ctx.cursor
+        .try_(|cursor| {
+            let start = cursor.position();
+            cursor.skip_whitespaces_inline();
+            cursor.take_if(|ch| ch == '-').ok_or(())?;
+            if cursor.take_while(|ch| ch == ' ' || ch == '\t').is_empty() {
+                return Err(());
+            };
+            let key = cursor.take_while(|ch| ch != '\n' && ch != ':').trim();
+            if key.is_empty() {
+                return Err(());
+            }
+            cursor.take_if(|ch| ch == ':').ok_or(())?;
+            cursor.take_while(|ch| ch == ' ' || ch == '\t');
+            let value_start = cursor.position().offset();
+            let value = cursor.take_line().map_or("", |(_, value)| value.trim_end());
+            let end = cursor.position().offset();
+            Ok(Located::new(
+                Metadata::new(
+                    key.to_owned(),
+                    Located::new(
+                        value.to_owned(),
+                        SourceSpan::new(start.line(), value_start..value_start + value.len()),
+                    ),
+                ),
+                SourceSpan::new(start.line(), start.offset()..end),
+            ))
+        })
+        .ok()
+}
+
 fn p_pre_section_prose(ctx: &mut ParsingContext) -> Located<String> {
     let start = ctx.cursor.position();
     ctx.code_block = None;
     loop {
-        let Some((_, line)) = ctx.cursor.peek_line() else {
+        if ctx.try_(p_skip_code_block).is_ok() {
+            continue;
+        }
+        if ctx.cursor.peek_line().is_none() {
             break;
         };
         let line_start = ctx.cursor.position();
-        if !is_code_block_line(line, &mut ctx.code_block) {
-            match ctx.try_(p_markdown_heading) {
-                Ok(heading) if heading.level == 1 => {
-                    report_additional_title(ctx, line_start);
-                    continue;
-                }
-                Ok(heading) if heading.level == 2 => {
-                    ctx.cursor.rewind(line_start);
-                    break;
-                }
-                Ok(_) => continue,
-                Err(_) => {}
+        match ctx.try_(p_markdown_heading) {
+            Ok(heading) if heading.level == 1 => {
+                report_additional_title(ctx, line_start);
+                continue;
             }
+            Ok(heading) if heading.level == 2 => {
+                ctx.cursor.rewind(line_start);
+                break;
+            }
+            Ok(_) => continue,
+            Err(_) => {}
         }
         ctx.cursor.take_line();
     }
@@ -333,7 +399,7 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
         return None;
     }
     if heading.title.text().is_empty() {
-        ctx.diagnostics.push(Diagnostic::error(
+        ctx.diagnostics.push(Diagnostic::error1(
             heading.pos.line(),
             "level-two section name must not be empty",
         ));
@@ -420,23 +486,24 @@ fn p_findings_body(
 
 fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
     loop {
-        let Some((_, line)) = ctx.cursor.peek_line() else {
+        if ctx.try_(p_skip_code_block).is_ok() {
+            continue;
+        }
+        if ctx.cursor.peek_line().is_none() {
             return ctx.source.len();
         };
         let start = ctx.cursor.position();
-        if !is_code_block_line(line, &mut ctx.code_block) {
-            match ctx.try_(p_markdown_heading) {
-                Ok(next) if next.level == 1 => {
-                    report_additional_title(ctx, start);
-                    continue;
-                }
-                Ok(next) if next.level == 2 => {
-                    ctx.cursor.rewind(start);
-                    return start.offset();
-                }
-                Ok(_) => continue,
-                Err(_) => {}
+        match ctx.try_(p_markdown_heading) {
+            Ok(next) if next.level == 1 => {
+                report_additional_title(ctx, start);
+                continue;
             }
+            Ok(next) if next.level == 2 => {
+                ctx.cursor.rewind(start);
+                return start.offset();
+            }
+            Ok(_) => continue,
+            Err(_) => {}
         }
         ctx.cursor.take_line();
     }
@@ -501,12 +568,14 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
     let mut open = None;
 
     while ctx.cursor.position().offset() < body_end {
+        if ctx.try_(p_skip_code_block).is_ok() {
+            continue;
+        };
         let start = ctx.cursor.position();
         let (_, line) = ctx.cursor.peek_line().expect("body has a line");
-        let in_code_block = is_code_block_line(line, &mut ctx.code_block);
-        let marker = (!in_code_block).then(|| compact_marker(line)).flatten();
+        let marker = compact_marker(line);
 
-        if !in_code_block && peek_heading_level(ctx) == Some(3) {
+        if peek_heading_level(ctx) == Some(3) {
             if let Some(item) = open.take() {
                 items.push(finish_compact_item(ctx.source, item, start));
             }
@@ -528,9 +597,9 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         // an item is open, only unfenced content at or before peer indentation
         // falls outside its body. An open item always has a peer indentation.
         let outside_item = open.is_none()
-            || (!in_code_block && leading_indentation_columns(line) <= peer_indentation.unwrap());
+            || leading_indentation_columns(line) <= peer_indentation.unwrap();
         if !line.trim().is_empty() && outside_item {
-            ctx.diagnostics.push(Diagnostic::error(
+            ctx.diagnostics.push(Diagnostic::error1(
                 start.line(),
                 "expected a compact item in `- ID: content` form",
             ));
@@ -559,11 +628,13 @@ fn p_expanded_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
     let mut open = None;
 
     while ctx.cursor.position().offset() < body_end {
+        if ctx.try_(p_skip_code_block).is_ok() {
+            continue;
+        };
         let start = ctx.cursor.position();
         let (_, line) = ctx.cursor.peek_line().expect("body has a line");
-        let in_code_block = is_code_block_line(line, &mut ctx.code_block);
 
-        if !in_code_block && peek_heading_level(ctx) == Some(3) {
+        if peek_heading_level(ctx) == Some(3) {
             if let Some(item) = open.take() {
                 items.push(finish_expanded_item(ctx.source, item, start));
             }
@@ -572,7 +643,7 @@ fn p_expanded_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         }
 
         if open.is_none() && !line.trim().is_empty() {
-            ctx.diagnostics.push(Diagnostic::error(
+            ctx.diagnostics.push(Diagnostic::error1(
                 start.line(),
                 "expected an expanded item in `### ID: title` form",
             ));
@@ -779,7 +850,7 @@ fn finish_compact_item(source: &str, open: OpenCompactItem, end: Position) -> It
 }
 
 fn report_additional_title(ctx: &mut ParsingContext, position: Position) {
-    ctx.diagnostics.push(Diagnostic::error(
+    ctx.diagnostics.push(Diagnostic::error1(
         position.line(),
         "artifact must contain exactly one level-one heading",
     ));
@@ -810,16 +881,23 @@ struct MarkdownHeading<'a> {
 ///
 /// On failure, the cursor is left advanced; callers that need transactional
 /// behavior should use `ParsingContext::try_`.
-fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeading<'a>, ()> {
-    let pos = ctx.cursor.position();
-    for _ in 1..=3 {
+fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeading<'a>, Diagnostic> {
+    let start = ctx.cursor.position();
+    if start.column() != 1 {
+        return Err(Diagnostic::error_p(start, "line beginning expected"));
+    }
+    while ctx.cursor.position().column() <= 3 {
         if ctx.cursor.take_if(|ch| ch == ' ').is_none() {
             break;
         }
     }
+    let sharp_pos = ctx.cursor.position();
     let level = ctx.cursor.take_while(|ch| ch == '#').len();
     if !(1..=6).contains(&level) {
-        return Err(());
+        return Err(Diagnostic::error_p(
+            sharp_pos,
+            format!("invalid heading level: {}", level),
+        ));
     }
     match ctx.cursor.take_if(|ch| ch != '\n') {
         None => {
@@ -828,16 +906,19 @@ fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeadin
             return Ok(MarkdownHeading {
                 level,
                 title: ctx.located_with_pos(title_pos, title_pos.offset()),
-                pos,
+                pos: start,
             });
         }
-        Some(ch) if ch != '\t' && ch != ' ' => return Err(()),
+        Some(ch) if ch != '\t' && ch != ' ' => {
+            let title_pos = ctx.cursor.position();
+            return Err(Diagnostic::error_p(title_pos, "whitespace expected"));
+        }
         _ => (),
     }
     ctx.cursor.skip_whitespaces_inline();
     let text_pos = ctx.cursor.position();
     let Some((_, rest)) = ctx.cursor.take_line() else {
-        return Err(());
+        return Err(Diagnostic::error_p(text_pos, "unexpected EOF"));
     };
     let trimmed = rest.trim_end();
     let without_hashes = trimmed.trim_end_matches('#');
@@ -849,7 +930,11 @@ fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeadin
         trimmed.len()
     };
     let title = ctx.located_with_pos(text_pos, text_pos.offset() + title_len);
-    Ok(MarkdownHeading { level, title, pos })
+    Ok(MarkdownHeading {
+        level,
+        title,
+        pos: start,
+    })
 }
 
 fn peek_heading_level(ctx: &mut ParsingContext) -> Option<usize> {
@@ -863,93 +948,50 @@ fn peek_heading_level(ctx: &mut ParsingContext) -> Option<usize> {
 // Fenced code blocks
 // ============================================================================
 
-/// Track fenced code blocks and report whether `line` belongs to one.
-///
-/// The opening fence, every line inside it, and the closing fence return
-/// `true`. Lines outside the fence return `false`:
-///
-/// For these four input lines, it returns `true`, `true`, `true`, and `false`,
-/// respectively:
-///
-/// ```text
-/// ~~~markdown
-/// ## Example
-/// ~~~
-/// ## Real
-/// ```
-fn is_code_block_line(line: &str, code_block: &mut Option<(char, usize)>) -> bool {
-    let candidate = line.trim_start_matches(' ');
-    if line.len() - candidate.len() > 3 {
-        return code_block.is_some();
-    }
-    let Some(marker) = candidate.chars().next() else {
-        return code_block.is_some();
+/// Consume fenced code blocks and report whether consumed.
+fn p_skip_code_block(ctx: &mut ParsingContext) -> Result<(), Diagnostic> {
+    let start = ctx.cursor.position();
+    let (open_ch, open_count) = p_maybe_code_block_fence(ctx)?;
+    let Some((_, open_line)) = ctx.cursor.take_line() else {
+        return Err(Diagnostic::error_p(start, "unexpected EOF"));
     };
-    if marker != '`' && marker != '~' {
-        return code_block.is_some();
+    if open_ch == '`' && open_line.contains('`') {
+        return Err(Diagnostic::error_p(start, "expected code block marker"));
     }
-    let count = candidate
-        .chars()
-        .take_while(|character| *character == marker)
-        .count();
-    if count < 3 {
-        return code_block.is_some();
-    }
-
-    match code_block {
-        None => {
-            let info = &candidate[count..];
-            if marker == '`' && info.contains('`') {
-                return false;
+    loop {
+        match p_maybe_code_block_fence(ctx) {
+            Ok((ch, count)) if ch == open_ch && count >= open_count => {
+                ctx.cursor.skip_whitespaces_inline();
+                if !ctx.cursor.take().is_some_and(|ch| ch != '\n') {
+                    return Ok(());
+                }
             }
-            *code_block = Some((marker, count));
+            _ => {
+                if ctx.cursor.take_line().is_none() {
+                    return Ok(());
+                };
+            }
         }
-        Some((open_marker, open_count))
-            if *open_marker == marker
-                && count >= *open_count
-                && candidate[count..].trim().is_empty() =>
-        {
-            *code_block = None;
-        }
-        Some(_) => {}
     }
-    true
 }
 
-// ============================================================================
-// Metadata lines
-// ============================================================================
-
-fn p_metadata_line(ctx: &mut ParsingContext) -> Option<Located<Metadata>> {
-    ctx.cursor
-        .try_(|cursor| {
-            let start = cursor.position();
-            cursor.skip_whitespaces_inline();
-            cursor.take_if(|ch| ch == '-').ok_or(())?;
-            if cursor.take_while(|ch| ch == ' ' || ch == '\t').is_empty() {
-                return Err(());
-            };
-            let key = cursor.take_while(|ch| ch != '\n' && ch != ':').trim();
-            if key.is_empty() {
-                return Err(());
-            }
-            cursor.take_if(|ch| ch == ':').ok_or(())?;
-            cursor.take_while(|ch| ch == ' ' || ch == '\t');
-            let value_start = cursor.position().offset();
-            let value = cursor.take_line().map_or("", |(_, value)| value.trim_end());
-            let end = cursor.position().offset();
-            Ok(Located::new(
-                Metadata::new(
-                    key.to_owned(),
-                    Located::new(
-                        value.to_owned(),
-                        SourceSpan::new(start.line(), value_start..value_start + value.len()),
-                    ),
-                ),
-                SourceSpan::new(start.line(), start.offset()..end),
-            ))
-        })
-        .ok()
+/// Returns (marker_char, marker_count) if the next line is a code block fence
+fn p_maybe_code_block_fence(ctx: &mut ParsingContext) -> Result<(char, usize), Diagnostic> {
+    let start = ctx.cursor.position();
+    while ctx.cursor.position().column() <= 3 {
+        if ctx.cursor.take_if(|ch| ch == ' ').is_none() {
+            break;
+        }
+    }
+    let marker_ch = match ctx.cursor.peek() {
+        Some(ch) if ch == '`' || ch == '~' => ch,
+        _ => return Err(Diagnostic::error_p(start, "expected code block marker")),
+    };
+    let marker = ctx.cursor.take_while(|ch| ch == marker_ch);
+    if marker.len() < 3 {
+        return Err(Diagnostic::error_p(start, "expected code block marker"));
+    }
+    Ok((marker_ch, marker.len()))
 }
 
 #[cfg(test)]
@@ -1624,7 +1666,7 @@ Arbitrary prose.\n
                 .iter()
                 .all(|diagnostic| diagnostic.severity() == Severity::Error));
 
-            let warning = Diagnostic::warning(4, "section is empty");
+            let warning = Diagnostic::warning1(4, "section is empty");
             assert_eq!(warning.severity(), Severity::Warning);
             assert_eq!(warning.line(), 4);
             assert_eq!(warning.message(), "section is empty");
@@ -2302,7 +2344,7 @@ bare preamble\n
                 "# Plan\n## Plan Items\n### P1: Item\n# Broken hierarchy\n",
                 &config(),
             )
-            .expect_err("level-one heading should remain a parser error");
+            .expect_err("level-one heading should remain a parser error1");
             assert!(diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.message().contains("exactly one")));

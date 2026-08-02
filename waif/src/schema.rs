@@ -197,7 +197,7 @@ fn validate_metadata(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec
         let metadata = metadata.value();
         let key = metadata.key();
         if !seen.insert(key) {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 line,
                 format!("duplicate metadata key `{key}`"),
             ));
@@ -205,7 +205,7 @@ fn validate_metadata(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec
 
         if let Some(rule) = schema.metadata.iter().find(|rule| rule.name == key) {
             if let Err(message) = (rule.validator)(metadata.value()) {
-                diagnostics.push(Diagnostic::error(
+                diagnostics.push(Diagnostic::error1(
                     line,
                     format!("metadata `{}` {message}", rule.name),
                 ));
@@ -215,7 +215,7 @@ fn validate_metadata(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec
 
     for rule in schema.metadata {
         if !seen.contains(rule.name) {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 1,
                 format!("missing required metadata `{}`", rule.name),
             ));
@@ -238,13 +238,13 @@ fn validate_sections(
         let name = section.name();
         let line = section.span().start_line();
         if !seen_sections.insert(name) {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 line,
                 format!("duplicate section `{name}`"),
             ));
         }
         if section_is_empty(section) {
-            diagnostics.push(Diagnostic::warning(
+            diagnostics.push(Diagnostic::warning1(
                 line,
                 format!("section `{name}` is empty"),
             ));
@@ -260,7 +260,7 @@ fn validate_sections(
         };
         if let Some((greatest_rank, greatest_name)) = greatest_known {
             if rank < greatest_rank {
-                diagnostics.push(Diagnostic::error(
+                diagnostics.push(Diagnostic::error1(
                     line,
                     format!("section `{name}` must appear before section `{greatest_name}`"),
                 ));
@@ -298,7 +298,7 @@ fn validate_sections(
 
     for rule in schema.sections.iter().filter(|rule| rule.required) {
         if !seen_sections.contains(rule.name) {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 1,
                 format!("missing required section `{}`", rule.name),
             ));
@@ -324,7 +324,7 @@ fn validate_items(
 
     for item in section.items() {
         let Some(identifier) = item.identifier() else {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 item.span().start_line(),
                 format!(
                     "item in section `{}` is missing an identifier; expected `{}<number>`",
@@ -341,7 +341,7 @@ fn validate_items(
         };
         let Ok(number) = match_item_identifier(identifier, prefix_rule, family, observed_prefix)
         else {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 identifier.span().start_line(),
                 format!(
                     "item identifier `{identifier_text}` in section `{}` must use \
@@ -355,7 +355,7 @@ fn validate_items(
 
         let duplicate = !seen.insert((family, number));
         if duplicate {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 identifier.span().start_line(),
                 format!(
                     "duplicate item identifier `{identifier_text}` in section `{}`",
@@ -366,7 +366,7 @@ fn validate_items(
         if !duplicate {
             if let Some(previous) = last_numbers.get(family) {
                 if number < *previous {
-                    diagnostics.push(Diagnostic::error(
+                    diagnostics.push(Diagnostic::error1(
                         identifier.span().start_line(),
                         format!(
                             "item identifier `{identifier_text}` in section `{}` must be \
@@ -406,11 +406,11 @@ fn validate_item_forms(
     };
 
     match forms {
-        ItemForms::Consistent => diagnostics.push(Diagnostic::error(
+        ItemForms::Consistent => diagnostics.push(Diagnostic::error1(
             conflicting.span().start_line(),
             format!("itemised section `{section_name}` cannot mix compact and expanded items"),
         )),
-        ItemForms::ExpandedOnly => diagnostics.push(Diagnostic::error(
+        ItemForms::ExpandedOnly => diagnostics.push(Diagnostic::error1(
             conflicting.span().start_line(),
             format!("section `{section_name}` requires expanded items in `### ID: title` form"),
         )),
@@ -433,7 +433,7 @@ fn validate_plan_items(section: &Section, rule: PlanItemRule, diagnostics: &mut 
             .filter(|entry| entry.value().key() == "Status")
             .collect();
         if statuses.is_empty() {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 item.span().start_line(),
                 format!(
                     "plan item in section `{section_name}` is missing required metadata `Status`"
@@ -442,7 +442,7 @@ fn validate_plan_items(section: &Section, rule: PlanItemRule, diagnostics: &mut 
         }
         for status in &statuses {
             if !rule.statuses.contains(&status.value().value()) {
-                diagnostics.push(Diagnostic::error(
+                diagnostics.push(Diagnostic::error1(
                     status.span().start_line(),
                     format!(
                         "plan-item metadata `Status` expected {}, but got `{}`",
@@ -453,7 +453,7 @@ fn validate_plan_items(section: &Section, rule: PlanItemRule, diagnostics: &mut 
             }
         }
         for duplicate in statuses.iter().skip(1) {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 duplicate.span().start_line(),
                 "duplicate plan-item metadata key `Status`",
             ));
@@ -499,14 +499,14 @@ fn validate_finding(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let Some(identifier) = finding.identifier() else {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             finding.span().start_line(),
             format!("finding in section `{section_name}` is missing an identifier"),
         ));
         return;
     };
     let Ok(number) = match_item_identifier(identifier, prefix_rule, family, observed_prefix) else {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             identifier.span().start_line(),
             format!(
                 "finding identifier `{}` in section `{section_name}` must use \
@@ -518,7 +518,7 @@ fn validate_finding(
         return;
     };
     if !sequence.seen.insert(number) {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             identifier.span().start_line(),
             format!(
                 "duplicate finding identifier `{}` in section `{section_name}`",
@@ -529,7 +529,7 @@ fn validate_finding(
         .last_number
         .is_some_and(|previous| number < previous)
     {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             identifier.span().start_line(),
             format!(
                 "finding identifier `{}` must be greater than `{}{}`",
@@ -554,20 +554,20 @@ fn validate_plan_item_heading(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     if item.title().text().is_empty() {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             item.span().start_line(),
             format!("plan item in section `{section_name}` is missing a title"),
         ));
     }
     let Some(identifier) = item.identifier() else {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             item.span().start_line(),
             format!("plan item in section `{section_name}` is missing an identifier"),
         ));
         return;
     };
     let Some(number) = identifier.text().strip_prefix('P').and_then(valid_number) else {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             identifier.span().start_line(),
             format!(
                 "plan item identifier `{}` in section `{section_name}` must use \
@@ -579,7 +579,7 @@ fn validate_plan_item_heading(
     };
     let duplicate = !sequence.seen.insert(number);
     if duplicate {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             identifier.span().start_line(),
             format!("duplicate plan item identifier `{}`", identifier.text()),
         ));
@@ -587,7 +587,7 @@ fn validate_plan_item_heading(
         .last_number
         .is_some_and(|previous| number < previous)
     {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             identifier.span().start_line(),
             format!(
                 "plan item identifier `{}` must be greater than `P{}`",

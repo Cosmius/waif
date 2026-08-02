@@ -57,7 +57,7 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
     let title_number = validate_title(&artifact, &mut diagnostics);
     let filename_number = review_filename_number(path);
     if filename_number.is_none() {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             1,
             "review filename must use `reviewN.md` with a positive decimal number",
         ));
@@ -67,7 +67,7 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
 
     let path_step_number = step_directory_number(path);
     if path_step_number.is_none() {
-        diagnostics.push(Diagnostic::warning(
+        diagnostics.push(Diagnostic::warning1(
             1,
             "cannot resolve a step number from the containing directory; \
              skipping path-dependent identity checks",
@@ -171,7 +171,7 @@ fn validate_title(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) -> Opt
         .strip_prefix("Implementation Review ")
         .and_then(positive_number);
     if number.is_none() {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             1,
             "review title must use `Implementation Review N` with a positive decimal number",
         ));
@@ -189,7 +189,7 @@ fn validate_metadata_order(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic
             continue;
         };
         if greatest.is_some_and(|previous| rank < previous) {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 entry.span().start_line(),
                 format!("metadata `{}` is out of order", entry.value().key()),
             ));
@@ -213,18 +213,18 @@ fn validate_decision_findings(artifact: &Artifact, diagnostics: &mut Vec<Diagnos
         FindingsBody::Items(items) => (items.value().is_empty(), false),
     };
     if empty {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             section.body().span().start_line(),
             "section `Findings` must contain `No findings.` or at least one finding",
         ));
     }
     match decision {
-        Some("pass") if !sentinel => diagnostics.push(Diagnostic::error(
+        Some("pass") if !sentinel => diagnostics.push(Diagnostic::error1(
             section.body().span().start_line(),
             "decision `pass` requires the exact `No findings.` sentinel",
         )),
         Some("changes-requested") if sentinel || empty => {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 section.body().span().start_line(),
                 "decision `changes-requested` requires at least one finding",
             ));
@@ -284,7 +284,7 @@ fn compare_identity(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     if expected.is_some_and(|expected| expected != observed) {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             line,
             format!("review item {component} identity `{observed}` does not match {source}"),
         ));
@@ -300,7 +300,7 @@ fn compare_pair(
 ) {
     if let (Some(left), Some(right)) = (left, right) {
         if left != right {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 1,
                 format!("{left_name} `{left}` does not match {right_name} `{right}`"),
             ));

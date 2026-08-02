@@ -72,7 +72,7 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
 
     let path_number = step_directory_number(path);
     if path_number.is_none() {
-        diagnostics.push(Diagnostic::warning(
+        diagnostics.push(Diagnostic::warning1(
             1,
             "cannot resolve a step number from the containing directory; \
              skipping path-dependent identity checks",
@@ -99,7 +99,7 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
     }
     if let (Some(title), Some(path)) = (title_number, path_number) {
         if title != path {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 1,
                 format!("step title number `{title}` does not match containing directory `{path}`"),
             ));
@@ -156,7 +156,7 @@ fn validate_title(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) -> Opt
         .filter(|(_, title)| !title.is_empty())
         .and_then(|(number, _)| padded_step_number(number));
     if number.is_none() {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             1,
             "step title must use `Step NN: <non-empty title>` with a positive, \
              at-least-two-digit step number",
@@ -175,7 +175,7 @@ fn validate_metadata_order(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic
             continue;
         };
         if greatest.is_some_and(|previous| rank < previous) {
-            diagnostics.push(Diagnostic::error(
+            diagnostics.push(Diagnostic::error1(
                 entry.span().start_line(),
                 format!("metadata `{}` is out of order", entry.value().key()),
             ));
@@ -198,7 +198,7 @@ fn validate_lifecycle(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
         true
     };
     if !valid {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             commit.located_value().span().start_line(),
             format!(
                 "metadata `Source commit` is incompatible with step status `{}`",
@@ -234,13 +234,13 @@ fn validate_coverage(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
         match (id_number, parsed) {
             (Some(id), Some((plan, description))) if !description.trim().is_empty() => {
                 if id != plan {
-                    diagnostics.push(Diagnostic::error(
+                    diagnostics.push(Diagnostic::error1(
                         item.span().start_line(),
                         format!("coverage ID suffix `{id}` must match covered plan ID `P{plan}`"),
                     ));
                 }
             }
-            (Some(_), _) => diagnostics.push(Diagnostic::error(
+            (Some(_), _) => diagnostics.push(Diagnostic::error1(
                 item.span().start_line(),
                 "coverage entry must use `P<number> - partial | complete - <description>`",
             )),
@@ -297,7 +297,7 @@ fn compare_identity(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     if expected.is_some_and(|expected| expected != observed) {
-        diagnostics.push(Diagnostic::error(
+        diagnostics.push(Diagnostic::error1(
             line,
             format!("step item prefix `S{observed}-` does not match {source} identity"),
         ));

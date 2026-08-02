@@ -20,7 +20,6 @@ impl Position {
         self.line
     }
 
-    #[allow(dead_code)]
     pub fn column(self) -> usize {
         self.column
     }
