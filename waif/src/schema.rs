@@ -1,8 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 
 use chrono::DateTime;
 
-use crate::artifact::{Artifact, Finding, FindingsBody, Item, ItemForm, PlanItem, Section};
+use crate::artifact::{
+    Artifact, Finding, FindingsBody, Item, ItemForm, Located, PlanItem, Section, SourceSpan,
+};
 use crate::parser::Diagnostic;
 
 pub(crate) type ValueValidator = fn(&str) -> Result<(), String>;
@@ -25,22 +28,22 @@ pub(crate) enum ItemForms {
 
 #[derive(Clone, Copy)]
 pub(crate) struct ItemRule {
-    pub(crate) prefix: &'static str,
-    pub(crate) expanded_prefix: Option<&'static str>,
+    pub(crate) family: &'static str,
+    pub(crate) expanded_family: Option<&'static str>,
     pub(crate) forms: ItemForms,
 }
 
 impl ItemRule {
-    pub(crate) const fn new(prefix: &'static str) -> Self {
+    pub(crate) const fn new(family: &'static str) -> Self {
         Self {
-            prefix,
-            expanded_prefix: None,
+            family,
+            expanded_family: None,
             forms: ItemForms::Consistent,
         }
     }
 
-    pub(crate) const fn with_expanded_prefix(mut self, prefix: &'static str) -> Self {
-        self.expanded_prefix = Some(prefix);
+    pub(crate) const fn with_expanded_family(mut self, family: &'static str) -> Self {
+        self.expanded_family = Some(family);
         self
     }
 
@@ -57,14 +60,55 @@ impl ItemRule {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PlanItemRule {
-    pub(crate) prefix: &'static str,
     pub(crate) statuses: &'static [&'static str],
 }
 
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub(crate) struct FindingsRule {
-    pub(crate) prefix: &'static str,
+    pub(crate) family: &'static str,
+}
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) enum ArtifactPrefixRule {
+    Known(&'static str),
+    Unknown(ArtifactPrefixShape),
+}
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) enum ArtifactPrefixShape {
+    Step,
+    Review,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct ObservedArtifactPrefix {
+    text: String,
+    components: Vec<Located<i64>>,
+}
+
+#[derive(Default)]
+struct ItemSequence {
+    seen: HashSet<i64>,
+    last_number: Option<i64>,
+}
+
+type PrefixComponent = (i64, Range<usize>);
+// The byte offset after an unknown prefix's trailing dash, followed by its
+// numeric values and their identifier-relative byte ranges.
+type ParsedPrefix = (usize, Vec<PrefixComponent>);
+
+#[allow(dead_code)]
+impl ObservedArtifactPrefix {
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub(crate) fn components(&self) -> &[Located<i64>] {
+        &self.components
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -110,6 +154,7 @@ impl SectionRule {
 }
 
 pub(crate) struct Schema {
+    pub(crate) prefix: ArtifactPrefixRule,
     pub(crate) metadata: &'static [MetadataRule],
     pub(crate) sections: &'static [SectionRule],
 }
@@ -131,10 +176,17 @@ pub(crate) fn rfc3339_timestamp(value: &str) -> Result<(), String> {
 }
 
 pub(crate) fn validate(artifact: &Artifact, schema: &Schema) -> Vec<Diagnostic> {
+    validate_with_prefix(artifact, schema).0
+}
+
+pub(crate) fn validate_with_prefix(
+    artifact: &Artifact,
+    schema: &Schema,
+) -> (Vec<Diagnostic>, Option<ObservedArtifactPrefix>) {
     let mut diagnostics = Vec::new();
     validate_metadata(artifact, schema, &mut diagnostics);
-    validate_sections(artifact, schema, &mut diagnostics);
-    diagnostics
+    let prefix = validate_sections(artifact, schema, &mut diagnostics);
+    (diagnostics, prefix)
 }
 
 fn validate_metadata(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec<Diagnostic>) {
@@ -171,11 +223,16 @@ fn validate_metadata(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec
     }
 }
 
-fn validate_sections(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec<Diagnostic>) {
+fn validate_sections(
+    artifact: &Artifact,
+    schema: &Schema,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<ObservedArtifactPrefix> {
     let mut seen_sections = HashSet::new();
     let mut seen_ids = HashSet::new();
     let mut last_numbers = HashMap::new();
     let mut greatest_known: Option<(usize, &str)> = None;
+    let mut observed_prefix = None;
 
     for section in artifact.sections() {
         let name = section.name();
@@ -218,6 +275,8 @@ fn validate_sections(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec
             validate_items(
                 section,
                 item_rule,
+                schema.prefix,
+                &mut observed_prefix,
                 &mut seen_ids,
                 &mut last_numbers,
                 diagnostics,
@@ -227,7 +286,13 @@ fn validate_sections(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec
             validate_plan_items(section, plan_item_rule, diagnostics);
         }
         if let Some(findings_rule) = rule.findings {
-            validate_findings(section, findings_rule, diagnostics);
+            validate_findings(
+                section,
+                findings_rule,
+                schema.prefix,
+                &mut observed_prefix,
+                diagnostics,
+            );
         }
     }
 
@@ -239,11 +304,14 @@ fn validate_sections(artifact: &Artifact, schema: &Schema, diagnostics: &mut Vec
             ));
         }
     }
+    observed_prefix
 }
 
 fn validate_items(
     section: &Section,
     rule: ItemRule,
+    prefix_rule: ArtifactPrefixRule,
+    observed_prefix: &mut Option<ObservedArtifactPrefix>,
     seen: &mut HashSet<(&'static str, i64)>,
     last_numbers: &mut HashMap<&'static str, i64>,
     diagnostics: &mut Vec<Diagnostic>,
@@ -260,29 +328,32 @@ fn validate_items(
                 item.span().start_line(),
                 format!(
                     "item in section `{}` is missing an identifier; expected `{}<number>`",
-                    section_name, rule.prefix
+                    section_name,
+                    expected_identifier(prefix_rule, rule.family, observed_prefix.as_ref())
                 ),
             ));
             continue;
         };
         let identifier_text = identifier.text();
-        let prefix = match item.form() {
-            ItemForm::Compact => rule.prefix,
-            ItemForm::Expanded => rule.expanded_prefix.unwrap_or(rule.prefix),
+        let family = match item.form() {
+            ItemForm::Compact => rule.family,
+            ItemForm::Expanded => rule.expanded_family.unwrap_or(rule.family),
         };
-        let Some(number) = valid_item_number(identifier_text, prefix) else {
+        let Ok(number) = match_item_identifier(identifier, prefix_rule, family, observed_prefix)
+        else {
             diagnostics.push(Diagnostic::error(
                 identifier.span().start_line(),
                 format!(
                     "item identifier `{identifier_text}` in section `{}` must use \
                      `{}<number>`, where number is from 1 through `2^63 - 1`",
-                    section_name, prefix
+                    section_name,
+                    expected_identifier(prefix_rule, family, observed_prefix.as_ref())
                 ),
             ));
             continue;
         };
 
-        let duplicate = !seen.insert((prefix, number));
+        let duplicate = !seen.insert((family, number));
         if duplicate {
             diagnostics.push(Diagnostic::error(
                 identifier.span().start_line(),
@@ -293,24 +364,25 @@ fn validate_items(
             ));
         }
         if !duplicate {
-            if let Some(previous) = last_numbers.get(prefix) {
+            if let Some(previous) = last_numbers.get(family) {
                 if number < *previous {
                     diagnostics.push(Diagnostic::error(
                         identifier.span().start_line(),
                         format!(
                             "item identifier `{identifier_text}` in section `{}` must be \
                              greater than `{}{previous}`",
-                            section_name, prefix
+                            section_name,
+                            expected_identifier(prefix_rule, family, observed_prefix.as_ref())
                         ),
                     ));
                 }
             }
         }
         if last_numbers
-            .get(prefix)
+            .get(family)
             .is_none_or(|previous| number > *previous)
         {
-            last_numbers.insert(prefix, number);
+            last_numbers.insert(family, number);
         }
     }
 }
@@ -351,18 +423,10 @@ fn validate_plan_items(section: &Section, rule: PlanItemRule, diagnostics: &mut 
     let section = section
         .as_plan_items()
         .expect("a plan-item rule requires a plan-items parser section");
-    let mut seen = HashSet::new();
-    let mut last_number = None;
+    let mut sequence = ItemSequence::default();
 
     for item in section.items() {
-        validate_plan_item_heading(
-            section_name,
-            item,
-            rule.prefix,
-            &mut seen,
-            &mut last_number,
-            diagnostics,
-        );
+        validate_plan_item_heading(section_name, item, &mut sequence, diagnostics);
         let statuses: Vec<_> = item
             .metadata()
             .iter()
@@ -397,7 +461,13 @@ fn validate_plan_items(section: &Section, rule: PlanItemRule, diagnostics: &mut 
     }
 }
 
-fn validate_findings(section: &Section, rule: FindingsRule, diagnostics: &mut Vec<Diagnostic>) {
+fn validate_findings(
+    section: &Section,
+    rule: FindingsRule,
+    prefix_rule: ArtifactPrefixRule,
+    observed_prefix: &mut Option<ObservedArtifactPrefix>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let section_name = section.name();
     let section = section
         .as_findings()
@@ -405,15 +475,15 @@ fn validate_findings(section: &Section, rule: FindingsRule, diagnostics: &mut Ve
     let FindingsBody::Items(items) = section.body() else {
         return;
     };
-    let mut seen = HashSet::new();
-    let mut last_number = None;
+    let mut sequence = ItemSequence::default();
     for finding in items.value() {
         validate_finding(
             section_name,
             finding,
-            rule.prefix,
-            &mut seen,
-            &mut last_number,
+            prefix_rule,
+            rule.family,
+            observed_prefix,
+            &mut sequence,
             diagnostics,
         );
     }
@@ -422,9 +492,10 @@ fn validate_findings(section: &Section, rule: FindingsRule, diagnostics: &mut Ve
 fn validate_finding(
     section_name: &str,
     finding: &Finding,
-    prefix: &'static str,
-    seen: &mut HashSet<i64>,
-    last_number: &mut Option<i64>,
+    prefix_rule: ArtifactPrefixRule,
+    family: &'static str,
+    observed_prefix: &mut Option<ObservedArtifactPrefix>,
+    sequence: &mut ItemSequence,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let Some(identifier) = finding.identifier() else {
@@ -434,18 +505,19 @@ fn validate_finding(
         ));
         return;
     };
-    let Some(number) = valid_item_number(identifier.text(), prefix) else {
+    let Ok(number) = match_item_identifier(identifier, prefix_rule, family, observed_prefix) else {
         diagnostics.push(Diagnostic::error(
             identifier.span().start_line(),
             format!(
                 "finding identifier `{}` in section `{section_name}` must use \
-                 `{prefix}<number>`, where number is from 1 through `2^63 - 1`",
-                identifier.text()
+                 `{}<number>`, where number is from 1 through `2^63 - 1`",
+                identifier.text(),
+                expected_identifier(prefix_rule, family, observed_prefix.as_ref())
             ),
         ));
         return;
     };
-    if !seen.insert(number) {
+    if !sequence.seen.insert(number) {
         diagnostics.push(Diagnostic::error(
             identifier.span().start_line(),
             format!(
@@ -453,27 +525,32 @@ fn validate_finding(
                 identifier.text()
             ),
         ));
-    } else if last_number.is_some_and(|previous| number < previous) {
+    } else if sequence
+        .last_number
+        .is_some_and(|previous| number < previous)
+    {
         diagnostics.push(Diagnostic::error(
             identifier.span().start_line(),
             format!(
-                "finding identifier `{}` must be greater than `{prefix}{}`",
+                "finding identifier `{}` must be greater than `{}{}`",
                 identifier.text(),
-                last_number.expect("previous number exists")
+                expected_identifier(prefix_rule, family, observed_prefix.as_ref()),
+                sequence.last_number.expect("previous number exists")
             ),
         ));
     }
-    if last_number.is_none_or(|previous| number > previous) {
-        *last_number = Some(number);
+    if sequence
+        .last_number
+        .is_none_or(|previous| number > previous)
+    {
+        sequence.last_number = Some(number);
     }
 }
 
 fn validate_plan_item_heading(
     section_name: &str,
     item: &PlanItem,
-    prefix: &'static str,
-    seen: &mut HashSet<i64>,
-    last_number: &mut Option<i64>,
+    sequence: &mut ItemSequence,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     if item.title().text().is_empty() {
@@ -489,35 +566,41 @@ fn validate_plan_item_heading(
         ));
         return;
     };
-    let Some(number) = valid_item_number(identifier.text(), prefix) else {
+    let Some(number) = identifier.text().strip_prefix('P').and_then(valid_number) else {
         diagnostics.push(Diagnostic::error(
             identifier.span().start_line(),
             format!(
                 "plan item identifier `{}` in section `{section_name}` must use \
-                 `{prefix}<number>`, where number is from 1 through `2^63 - 1`",
+                 `P<number>`, where number is from 1 through `2^63 - 1`",
                 identifier.text()
             ),
         ));
         return;
     };
-    let duplicate = !seen.insert(number);
+    let duplicate = !sequence.seen.insert(number);
     if duplicate {
         diagnostics.push(Diagnostic::error(
             identifier.span().start_line(),
             format!("duplicate plan item identifier `{}`", identifier.text()),
         ));
-    } else if last_number.is_some_and(|previous| number < previous) {
+    } else if sequence
+        .last_number
+        .is_some_and(|previous| number < previous)
+    {
         diagnostics.push(Diagnostic::error(
             identifier.span().start_line(),
             format!(
-                "plan item identifier `{}` must be greater than `{prefix}{}`",
+                "plan item identifier `{}` must be greater than `P{}`",
                 identifier.text(),
-                last_number.expect("previous number exists")
+                sequence.last_number.expect("previous number exists")
             ),
         ));
     }
-    if last_number.is_none_or(|previous| number > previous) {
-        *last_number = Some(number);
+    if sequence
+        .last_number
+        .is_none_or(|previous| number > previous)
+    {
+        sequence.last_number = Some(number);
     }
 }
 
@@ -529,8 +612,109 @@ fn joined_choices(choices: &[&str]) -> String {
         .join(" or ")
 }
 
-fn valid_item_number(identifier: &str, prefix: &str) -> Option<i64> {
-    let number = identifier.strip_prefix(prefix)?;
+fn expected_identifier(
+    prefix: ArtifactPrefixRule,
+    family: &str,
+    observed: Option<&ObservedArtifactPrefix>,
+) -> String {
+    if let Some(observed) = observed {
+        return format!("{}{family}", observed.text);
+    }
+    match prefix {
+        ArtifactPrefixRule::Known(prefix) => format!("{prefix}{family}"),
+        ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Step) => {
+            format!("S<number>-{family}")
+        }
+        ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Review) => {
+            format!("S<number>-R<number>-{family}")
+        }
+    }
+}
+
+fn match_item_identifier(
+    identifier: &Located<String>,
+    prefix_rule: ArtifactPrefixRule,
+    family: &str,
+    observed: &mut Option<ObservedArtifactPrefix>,
+) -> Result<i64, ()> {
+    let text = identifier.text();
+    let (prefix_end, components) = match prefix_rule {
+        ArtifactPrefixRule::Known(prefix) => {
+            if !text.starts_with(prefix) {
+                return Err(());
+            }
+            (prefix.len(), Vec::new())
+        }
+        ArtifactPrefixRule::Unknown(shape) => parse_unknown_prefix(text, shape)?,
+    };
+    let number = text[prefix_end..]
+        .strip_prefix(family)
+        .and_then(valid_number)
+        .ok_or(())?;
+
+    if matches!(prefix_rule, ArtifactPrefixRule::Unknown(_)) {
+        let prefix_text = &text[..prefix_end];
+        if let Some(previous) = observed.as_ref() {
+            if previous.text != prefix_text {
+                return Err(());
+            }
+        } else {
+            let identifier_start = identifier.span().range().start;
+            let components = components
+                .into_iter()
+                .map(|(value, range)| {
+                    Located::new(
+                        value,
+                        SourceSpan::new(
+                            identifier.span().start_line(),
+                            identifier_start + range.start..identifier_start + range.end,
+                        ),
+                    )
+                })
+                .collect();
+            *observed = Some(ObservedArtifactPrefix {
+                text: prefix_text.to_owned(),
+                components,
+            });
+        }
+    }
+    Ok(number)
+}
+
+fn parse_unknown_prefix(identifier: &str, shape: ArtifactPrefixShape) -> Result<ParsedPrefix, ()> {
+    if !identifier.starts_with('S') {
+        return Err(());
+    }
+    let (step, step_range) = number_at(identifier, 1).ok_or(())?;
+    let mut end = step_range.end;
+    let mut components = vec![(step, step_range)];
+    if matches!(shape, ArtifactPrefixShape::Review) {
+        if !identifier[end..].starts_with("-R") {
+            return Err(());
+        }
+        end += 2;
+        let (review, review_range) = number_at(identifier, end).ok_or(())?;
+        end = review_range.end;
+        components.push((review, review_range));
+    }
+    if !identifier[end..].starts_with('-') {
+        return Err(());
+    }
+    end += 1;
+    Ok((end, components))
+}
+
+fn number_at(identifier: &str, start: usize) -> Option<(i64, Range<usize>)> {
+    let end = start
+        + identifier[start..]
+            .bytes()
+            .take_while(u8::is_ascii_digit)
+            .count();
+    let range = start..end;
+    valid_number(&identifier[range.clone()]).map(|number| (number, range))
+}
+
+fn valid_number(number: &str) -> Option<i64> {
     let mut bytes = number.bytes();
     if !matches!(bytes.next(), Some(b'1'..=b'9')) {
         return None;
@@ -559,8 +743,9 @@ mod tests {
     use crate::parser::{self, ParserConfig, SectionConfig};
 
     const FINDINGS_SCHEMA: Schema = Schema {
+        prefix: ArtifactPrefixRule::Known(""),
         metadata: &[],
-        sections: &[SectionRule::new("Findings").with_findings(FindingsRule { prefix: "F" })],
+        sections: &[SectionRule::new("Findings").with_findings(FindingsRule { family: "F" })],
     };
 
     fn check(source: &str) -> Vec<Diagnostic> {
@@ -601,5 +786,197 @@ mod tests {
         assert!(diagnostics[0]
             .message()
             .contains("section `Findings` is empty"));
+    }
+
+    #[test]
+    fn known_step_and_review_prefixes_match_exactly() {
+        const STEP_SCHEMA: Schema = Schema {
+            prefix: ArtifactPrefixRule::Known("S2-"),
+            metadata: &[],
+            sections: &[SectionRule::new("Changes").with_items(ItemRule::new("C"))],
+        };
+        const REVIEW_SCHEMA: Schema = Schema {
+            prefix: ArtifactPrefixRule::Known("S2-R3-"),
+            metadata: &[],
+            sections: &[SectionRule::new("Findings").with_findings(FindingsRule { family: "F" })],
+        };
+        let step_config = ParserConfig::new(vec![SectionConfig::itemised("Changes")]);
+        let review_config = ParserConfig::new(vec![SectionConfig::findings("Findings")]);
+
+        let step = parser::parse_with_config("# Step\n## Changes\n- S2-C1: valid\n", &step_config)
+            .expect("valid step");
+        assert!(validate(&step, &STEP_SCHEMA).is_empty());
+
+        let review = parser::parse_with_config(
+            "# Review\n## Findings\n### S2-R3-F1: valid\n",
+            &review_config,
+        )
+        .expect("valid review");
+        assert!(validate(&review, &REVIEW_SCHEMA).is_empty());
+
+        let wrong =
+            parser::parse_with_config("# Step\n## Changes\n- S3-C1: wrong prefix\n", &step_config)
+                .expect("structurally parsed");
+        assert!(validate(&wrong, &STEP_SCHEMA)[0]
+            .message()
+            .contains("must use `S2-C<number>`"));
+    }
+
+    #[test]
+    fn plan_items_remain_independent_of_unknown_artifact_prefixes() {
+        const SCHEMA: Schema = Schema {
+            prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Step),
+            metadata: &[],
+            sections: &[
+                SectionRule::new("Plan Items").with_plan_items(PlanItemRule {
+                    statuses: &["pending"],
+                }),
+                SectionRule::new("Changes").with_items(ItemRule::new("C")),
+            ],
+        };
+        let config = ParserConfig::new(vec![
+            SectionConfig::plan_items("Plan Items"),
+            SectionConfig::itemised("Changes"),
+        ])
+        .with_known_metadata(["Status"]);
+        let valid = concat!(
+            "# Step\n",
+            "## Plan Items\n### P1: independent\n- Status: pending\n",
+            "## Changes\n- S7-C1: establishes prefix\n",
+        );
+        let artifact = parser::parse_with_config(valid, &config).expect("parsed artifact");
+        let (diagnostics, prefix) = validate_with_prefix(&artifact, &SCHEMA);
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(prefix.expect("observed prefix").text(), "S7-");
+
+        let malformed = valid.replace("### P1", "### S7-P1");
+        let artifact = parser::parse_with_config(&malformed, &config).expect("parsed artifact");
+        let (diagnostics, prefix) = validate_with_prefix(&artifact, &SCHEMA);
+
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message().contains("must use `P<number>`"));
+        assert_eq!(prefix.expect("observed prefix").text(), "S7-");
+    }
+
+    #[test]
+    fn unknown_step_prefix_is_observed_once_across_item_families() {
+        const SCHEMA: Schema = Schema {
+            prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Step),
+            metadata: &[],
+            sections: &[
+                SectionRule::new("Changes").with_items(ItemRule::new("C")),
+                SectionRule::new("Tests").with_items(ItemRule::new("T")),
+            ],
+        };
+        let config = ParserConfig::new(vec![
+            SectionConfig::itemised("Changes"),
+            SectionConfig::itemised("Tests"),
+        ]);
+        let source = concat!(
+            "# Step\n",
+            "## Changes\n- S12-C1: first\n",
+            "## Tests\n- S12-T1: same prefix\n- S13-T2: mixed prefix\n",
+        );
+        let artifact = parser::parse_with_config(source, &config).expect("parsed artifact");
+        let (diagnostics, prefix) = validate_with_prefix(&artifact, &SCHEMA);
+
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0]
+            .message()
+            .contains("item identifier `S13-T2`"));
+        let prefix = prefix.expect("observed prefix");
+        assert_eq!(prefix.text(), "S12-");
+        assert_eq!(*prefix.components()[0].value(), 12);
+        assert_eq!(&source[prefix.components()[0].span().range()], "12");
+        assert_eq!(prefix.components()[0].span().start_line(), 3);
+    }
+
+    #[test]
+    fn unknown_review_prefix_is_shared_with_findings() {
+        const SCHEMA: Schema = Schema {
+            prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Review),
+            metadata: &[],
+            sections: &[
+                SectionRule::new("Findings").with_findings(FindingsRule { family: "F" }),
+                SectionRule::new("Validation").with_items(ItemRule::new("V")),
+            ],
+        };
+        let config = ParserConfig::new(vec![
+            SectionConfig::findings("Findings"),
+            SectionConfig::itemised("Validation"),
+        ]);
+        let source = concat!(
+            "# Review\n",
+            "## Findings\n### S4-R2-F1: finding\n",
+            "## Validation\n- S4-R2-V1: valid\n",
+        );
+        let artifact = parser::parse_with_config(source, &config).expect("parsed artifact");
+        let (diagnostics, prefix) = validate_with_prefix(&artifact, &SCHEMA);
+
+        assert!(diagnostics.is_empty());
+        let prefix = prefix.expect("observed prefix");
+        assert_eq!(prefix.text(), "S4-R2-");
+        assert_eq!(
+            prefix
+                .components()
+                .iter()
+                .map(|component| *component.value())
+                .collect::<Vec<_>>(),
+            [4, 2]
+        );
+    }
+
+    #[test]
+    fn unknown_prefix_rejects_malformed_ids_without_binding() {
+        const SCHEMA: Schema = Schema {
+            prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Review),
+            metadata: &[],
+            sections: &[SectionRule::new("Findings").with_findings(FindingsRule { family: "F" })],
+        };
+        let config = ParserConfig::new(vec![SectionConfig::findings("Findings")]);
+        for identifier in [
+            "S0-R1-F1",
+            "S01-R1-F1",
+            "S1-R0-F1",
+            "S1-R01-F1",
+            "S1-R1-F0",
+            "S1-R1-F01",
+            "S1-R1-F9223372036854775808",
+            "S1-R1-F1-tail",
+            "S1-F1",
+        ] {
+            let source = format!("# Review\n## Findings\n### {identifier}: bad\n");
+            let artifact = parser::parse_with_config(&source, &config).expect("parsed artifact");
+            let (diagnostics, prefix) = validate_with_prefix(&artifact, &SCHEMA);
+            assert_eq!(diagnostics.len(), 1, "diagnostics for `{identifier}`");
+            assert!(
+                diagnostics[0]
+                    .message()
+                    .contains("must use `S<number>-R<number>-F<number>`"),
+                "diagnostic for `{identifier}`"
+            );
+            assert!(prefix.is_none(), "bound malformed `{identifier}`");
+        }
+    }
+
+    #[test]
+    fn unbound_step_diagnostic_includes_prefix_trailing_dash() {
+        const SCHEMA: Schema = Schema {
+            prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Step),
+            metadata: &[],
+            sections: &[SectionRule::new("Changes").with_items(ItemRule::new("C"))],
+        };
+        let config = ParserConfig::new(vec![SectionConfig::itemised("Changes")]);
+        let artifact =
+            parser::parse_with_config("# Step\n## Changes\n- S0-C1: malformed prefix\n", &config)
+                .expect("parsed artifact");
+        let (diagnostics, prefix) = validate_with_prefix(&artifact, &SCHEMA);
+
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0]
+            .message()
+            .contains("must use `S<number>-C<number>`"));
+        assert!(prefix.is_none());
     }
 }

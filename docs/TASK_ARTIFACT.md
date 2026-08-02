@@ -91,6 +91,25 @@ Stable-ID numeric suffixes are canonical positive decimal integers from 1
 through `2^63 - 1`. Numbers are unique and increasing in document order within
 their family. IDs and names are case-sensitive.
 
+Every ordinary item ID consists of an artifact item prefix, a section-specific
+family, and a final item number. The prefix owns its trailing dash; the family
+does not include a leading separator. Goal and plan prefixes are the known
+literals `G-` and `P-`. Step prefixes have the shape `S<n>-`, and
+implementation-review prefixes have the shape `S<n>-R<m>-`, where every
+numeric component is canonical and bounded as above. Plan-item headings retain
+their independent, hard-coded `P<number>` contract and do not participate in
+artifact-prefix inference.
+
+A checker uses a known prefix when the artifact identity is available before
+item validation. Known prefixes must match exactly. Otherwise a step or review
+checker uses an unknown prefix shape: the first valid item establishes the
+observed prefix, and every later item family in that artifact must use the same
+value. Unknown mode establishes internal consistency only. The shared schema
+retains each observed numeric component with its source span; artifact-specific
+checking compares those observations with titles, filenames, or nominal paths
+when that context is available. Prefix inference never crosses artifact
+boundaries or uses opaque prose or neighboring files.
+
 ### Plan Items
 
 The `Plan Items` section contains expanded nested records. Bare content outside

@@ -1,5 +1,5 @@
 use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
-use crate::schema::{self, ItemRule, MetadataRule, Schema, SectionRule};
+use crate::schema::{self, ArtifactPrefixRule, ItemRule, MetadataRule, Schema, SectionRule};
 
 const METADATA: [MetadataRule; 3] = [
     MetadataRule {
@@ -17,24 +17,25 @@ const METADATA: [MetadataRule; 3] = [
 ];
 const SECTIONS: [SectionRule; 7] = [
     SectionRule::new("Outcome"),
-    SectionRule::new("Acceptance Criteria").with_items(ItemRule::new("G-AC")),
+    SectionRule::new("Acceptance Criteria").with_items(ItemRule::new("AC")),
     SectionRule::new("Open Questions")
         .optional()
-        .with_items(ItemRule::new("G-Q")),
+        .with_items(ItemRule::new("Q")),
     SectionRule::new("Assumptions")
         .optional()
-        .with_items(ItemRule::new("G-A")),
+        .with_items(ItemRule::new("A")),
     SectionRule::new("In Scope")
         .optional()
-        .with_items(ItemRule::new("G-IN")),
+        .with_items(ItemRule::new("IN")),
     SectionRule::new("Out of Scope")
         .optional()
-        .with_items(ItemRule::new("G-OUT")),
+        .with_items(ItemRule::new("OUT")),
     SectionRule::new("Revisions")
         .optional()
-        .with_items(ItemRule::new("G-REV").expanded_only()),
+        .with_items(ItemRule::new("REV").expanded_only()),
 ];
 const SCHEMA: Schema = Schema {
+    prefix: ArtifactPrefixRule::Known("G-"),
     metadata: &METADATA,
     sections: &SECTIONS,
 };

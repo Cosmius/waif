@@ -1,5 +1,7 @@
 use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
-use crate::schema::{self, ItemRule, MetadataRule, PlanItemRule, Schema, SectionRule};
+use crate::schema::{
+    self, ArtifactPrefixRule, ItemRule, MetadataRule, PlanItemRule, Schema, SectionRule,
+};
 
 const METADATA: [MetadataRule; 7] = [
     MetadataRule {
@@ -34,27 +36,26 @@ const METADATA: [MetadataRule; 7] = [
 
 const SECTIONS: [SectionRule; 9] = [
     SectionRule::new("Technical Summary"),
-    SectionRule::new("Decisions")
-        .with_items(ItemRule::new("P-D").with_expanded_prefix("P-DD").mixed()),
+    SectionRule::new("Decisions").with_items(ItemRule::new("D").with_expanded_family("DD").mixed()),
     SectionRule::new("Open Questions")
         .optional()
-        .with_items(ItemRule::new("P-Q")),
+        .with_items(ItemRule::new("Q")),
     SectionRule::new("Assumptions")
         .optional()
-        .with_items(ItemRule::new("P-A")),
+        .with_items(ItemRule::new("A")),
     SectionRule::new("Current System"),
     SectionRule::new("Plan Items").with_plan_items(PlanItemRule {
-        prefix: "P",
         statuses: &["pending", "done"],
     }),
-    SectionRule::new("Risks").with_items(ItemRule::new("P-R")),
-    SectionRule::new("Cross-Cutting Validation").with_items(ItemRule::new("P-V")),
+    SectionRule::new("Risks").with_items(ItemRule::new("R")),
+    SectionRule::new("Cross-Cutting Validation").with_items(ItemRule::new("V")),
     SectionRule::new("Revisions")
         .optional()
-        .with_items(ItemRule::new("P-REV").expanded_only()),
+        .with_items(ItemRule::new("REV").expanded_only()),
 ];
 
 const SCHEMA: Schema = Schema {
+    prefix: ArtifactPrefixRule::Known("P-"),
     metadata: &METADATA,
     sections: &SECTIONS,
 };
