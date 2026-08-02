@@ -580,12 +580,22 @@ impl<T> Located<T> {
     pub fn span(&self) -> &SourceSpan {
         &self.span
     }
+
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Located<U> {
+        Located::new(f(self.value), self.span)
+    }
 }
 
 #[allow(dead_code)]
 impl Located<String> {
     pub fn text(&self) -> &str {
         &self.value
+    }
+}
+
+impl Located<&str> {
+    pub fn text(&self) -> &str {
+        self.value
     }
 }
 

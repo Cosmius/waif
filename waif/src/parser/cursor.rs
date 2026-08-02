@@ -35,7 +35,7 @@ pub struct Cursor<'a> {
 }
 
 impl<'a> Cursor<'a> {
-    pub fn new(source: &'a str) -> Self {
+    pub const fn new(source: &'a str) -> Self {
         Self {
             source,
             position: Position {
@@ -161,11 +161,11 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    /// Consume ASCII whitespace without crossing a line ending.
+    /// Consume ASCII whitespace (space and tab) without crossing a line.
     pub fn skip_whitespaces_inline(&mut self) {
         while self
             .peek()
-            .is_some_and(|ch| ch != '\n' && ch.is_ascii_whitespace())
+            .is_some_and(|ch| ch == ' ' || ch == '\t')
         {
             self.take();
         }

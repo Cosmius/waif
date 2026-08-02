@@ -20,7 +20,7 @@ pub enum Severity {
     Warning,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Diagnostic {
     severity: Severity,
     line: usize,
@@ -78,51 +78,42 @@ pub enum SectionType {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SectionConfig {
-    name: String,
+pub struct SectionConfig<'a> {
+    name: &'a str,
     section_type: SectionType,
 }
 
-#[allow(dead_code)]
-impl SectionConfig {
-    pub fn prose(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            section_type: SectionType::Prose,
-        }
+impl<'a> SectionConfig<'a> {
+    pub const fn prose(name: &'a str) -> Self {
+        Self::with_type(name, SectionType::Prose)
     }
 
-    pub fn itemised(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            section_type: SectionType::Itemised,
-        }
+    pub const fn itemised(name: &'a str) -> Self {
+        Self::with_type(name, SectionType::Itemised)
     }
 
-    pub fn plan_items(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            section_type: SectionType::PlanItems,
-        }
+    pub const fn plan_items(name: &'a str) -> Self {
+        Self::with_type(name, SectionType::PlanItems)
     }
 
-    pub fn findings(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            section_type: SectionType::Findings,
-        }
+    pub const fn findings(name: &'a str) -> Self {
+        Self::with_type(name, SectionType::Findings)
+    }
+
+    const fn with_type(name: &'a str, section_type: SectionType) -> Self {
+        Self { name, section_type }
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ParserConfig {
-    known_metadata: Vec<String>,
-    sections: Vec<SectionConfig>,
+pub struct ParserConfig<'a> {
+    known_metadata: Vec<&'a str>,
+    sections: Vec<SectionConfig<'a>>,
 }
 
 #[allow(dead_code)]
-impl ParserConfig {
-    pub fn new(sections: Vec<SectionConfig>) -> Self {
+impl<'a> ParserConfig<'a> {
+    pub fn new(sections: Vec<SectionConfig<'a>>) -> Self {
         Self {
             known_metadata: Vec::new(),
             sections,
@@ -130,19 +121,18 @@ impl ParserConfig {
     }
 
     /// Declare the metadata keys recognized by this artifact contract.
-    pub fn with_known_metadata<I, S>(mut self, names: I) -> Self
+    pub fn with_known_metadata<I>(mut self, names: I) -> Self
     where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
+        I: IntoIterator<Item = &'a str>
     {
-        self.known_metadata = names.into_iter().map(Into::into).collect();
+        self.known_metadata = names.into_iter().collect();
         self
     }
 
     fn recognizes_metadata(&self, name: &str) -> bool {
         self.known_metadata
             .iter()
-            .any(|candidate| candidate == name)
+            .any(|candidate| *candidate == name)
     }
 
     fn section_type(&self, name: &str) -> SectionType {
@@ -177,19 +167,12 @@ pub(crate) fn parse_with_diagnostics(
     source: &str,
     config: &ParserConfig,
 ) -> (Artifact, Vec<Diagnostic>) {
-    let diagnostics = Vec::new();
-    let cursor = Cursor::new(source);
-    let mut ctx = ParsingContext {
-        source,
-        cursor,
-        diagnostics,
-        code_block: None,
-        config: config.clone(),
-    };
+    let mut ctx = ParsingContext::new(source, config.clone());
     let artifact = p_artifact(&mut ctx);
     (artifact, ctx.diagnostics)
 }
 
+#[derive(Clone)]
 struct ParsingContext<'a> {
     source: &'a str,
     cursor: Cursor<'a>,
@@ -197,7 +180,39 @@ struct ParsingContext<'a> {
     /// The open code fence as `(marker, opening length)`, or `None` outside
     /// a fenced code block.
     code_block: Option<(char, usize)>,
-    config: ParserConfig,
+    config: ParserConfig<'a>,
+}
+
+impl<'a> ParsingContext<'a> {
+    pub(crate) fn located_with_pos(&self, position: Position, end: usize) -> Located<&'a str> {
+        Located::new(
+            &self.source[position.offset()..end],
+            SourceSpan::new(position.line(), position.offset()..end),
+        )
+    }
+}
+
+impl<'a> ParsingContext<'a> {
+    pub const fn new(source: &'a str, config: ParserConfig<'a>) -> Self {
+        Self {
+            source,
+            cursor: Cursor::new(source),
+            diagnostics: Vec::new(),
+            code_block: None,
+            config,
+        }
+    }
+
+    pub fn try_<A, E>(&mut self, k: impl FnOnce(&mut Self) -> Result<A, E>) -> Result<A, E> {
+        let ctx = self.clone();
+        match k(self) {
+            Ok(a) => Ok(a),
+            Err(e) => {
+                *self = ctx;
+                Err(e)
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -212,38 +227,38 @@ fn p_artifact(ctx: &mut ParsingContext) -> Artifact {
     let sections = p_sections(ctx);
     Artifact::new(
         ctx.source.to_owned(),
-        title,
+        title.text().to_owned(),
         metadata,
         pre_section_prose,
         sections,
     )
 }
 
-fn p_title_line(ctx: &mut ParsingContext) -> String {
+fn p_title_line<'a>(ctx: &mut ParsingContext<'a>) -> Located<&'a str> {
     let pos = ctx.cursor.position();
     if ctx.cursor.is_eof() {
         ctx.diagnostics
             .push(Diagnostic::error(pos.line(), "missing level-one title"));
-        return String::new();
+        return ctx.located_with_pos(pos, pos.offset());
     }
 
-    let Some(MarkdownHeading {
+    let Ok(MarkdownHeading {
         level: 1, title, ..
-    }) = p_markdown_heading(ctx)
+    }) = ctx.try_(p_markdown_heading)
     else {
         ctx.diagnostics.push(Diagnostic::error(
             pos.line(),
             "first non-whitespace line must be a level-one Markdown heading",
         ));
-        return String::new();
+        return ctx.located_with_pos(pos, pos.offset());
     };
-    if title.text().is_empty() {
+    if title.value().is_empty() {
         ctx.diagnostics.push(Diagnostic::error(
             pos.line(),
             "level-one title must not be empty",
         ));
     }
-    title.value().to_owned()
+    title
 }
 
 fn p_metadata(ctx: &mut ParsingContext) -> Vec<Located<Metadata>> {
@@ -264,7 +279,7 @@ fn p_metadata(ctx: &mut ParsingContext) -> Vec<Located<Metadata>> {
             break;
         }
 
-        if let Some(heading) = p_markdown_heading(ctx) {
+        if let Ok(heading) = ctx.try_(p_markdown_heading) {
             if heading.level == 2 {
                 ctx.cursor.rewind(before_whitespace);
                 break;
@@ -285,17 +300,17 @@ fn p_pre_section_prose(ctx: &mut ParsingContext) -> Located<String> {
         };
         let line_start = ctx.cursor.position();
         if !is_code_block_line(line, &mut ctx.code_block) {
-            match p_markdown_heading(ctx) {
-                Some(heading) if heading.level == 1 => {
+            match ctx.try_(p_markdown_heading) {
+                Ok(heading) if heading.level == 1 => {
                     report_additional_title(ctx, line_start);
                     continue;
                 }
-                Some(heading) if heading.level == 2 => {
+                Ok(heading) if heading.level == 2 => {
                     ctx.cursor.rewind(line_start);
                     break;
                 }
-                Some(_) => continue,
-                None => {}
+                Ok(_) => continue,
+                Err(_) => {}
             }
         }
         ctx.cursor.take_line();
@@ -317,7 +332,7 @@ fn p_sections(ctx: &mut ParsingContext) -> Vec<Section> {
 
 fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
     let pos = ctx.cursor.position();
-    let heading = p_markdown_heading(ctx)?;
+    let heading = ctx.try_(p_markdown_heading).ok()?;
     if heading.level != 2 {
         ctx.cursor.rewind(pos);
         return None;
@@ -338,7 +353,7 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
     match section_type {
         SectionType::Prose => Some(Section::Prose(Located::new(
             ProseSection::new(
-                heading.title,
+                heading.title.map(|s| s.to_owned()),
                 Located::new(
                     ctx.source[body_start.offset()..body_end].to_owned(),
                     body_span,
@@ -352,7 +367,7 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
             let items = p_itemised_items(ctx, body_end);
             Some(Section::Itemised(Located::new(
                 ItemisedSection {
-                    title: heading.title,
+                    title: heading.title.map(|s| s.to_owned()),
                     items: Located::new(items, body_span),
                 },
                 section_span,
@@ -364,7 +379,7 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
             let items = p_plan_items(ctx, body_end);
             Some(Section::PlanItems(Located::new(
                 PlanItemSection {
-                    title: heading.title,
+                    title: heading.title.map(|s| s.to_owned()),
                     items: Located::new(items, body_span),
                 },
                 section_span,
@@ -376,7 +391,7 @@ fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
             let body = p_findings_body(ctx, body_end, body_span.clone());
             Some(Section::Findings(Located::new(
                 FindingsSection {
-                    title: heading.title,
+                    title: heading.title.map(|s| s.to_owned()),
                     body,
                 },
                 section_span,
@@ -415,17 +430,17 @@ fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
         };
         let start = ctx.cursor.position();
         if !is_code_block_line(line, &mut ctx.code_block) {
-            match p_markdown_heading(ctx) {
-                Some(next) if next.level == 1 => {
+            match ctx.try_(p_markdown_heading) {
+                Ok(next) if next.level == 1 => {
                     report_additional_title(ctx, start);
                     continue;
                 }
-                Some(next) if next.level == 2 => {
+                Ok(next) if next.level == 2 => {
                     ctx.cursor.rewind(start);
                     return start.offset();
                 }
-                Some(_) => continue,
-                None => {}
+                Ok(_) => continue,
+                Err(_) => {}
             }
         }
         ctx.cursor.take_line();
@@ -476,7 +491,7 @@ fn p_plan_item(source: &str, expanded: Located<ExpandedItem>) -> PlanItem {
 
 fn heading_level(ctx: &mut ParsingContext) -> Option<usize> {
     let start = ctx.cursor.position();
-    let level = p_markdown_heading(ctx).map(|heading| heading.level);
+    let level = p_markdown_heading(ctx).map(|heading| heading.level).ok();
     ctx.cursor.rewind(start);
     level
 }
@@ -786,66 +801,71 @@ fn report_additional_title(ctx: &mut ParsingContext, position: Position) {
 // Markdown headings
 // ============================================================================
 
-struct MarkdownHeading {
+struct MarkdownHeading<'a> {
     level: usize,
-    title: Located<String>,
+    title: Located<&'a str>,
     pos: Position,
 }
 
-fn p_markdown_heading(ctx: &mut ParsingContext) -> Option<MarkdownHeading> {
-    ctx.cursor
-        .try_(|cursor| {
-            let pos = cursor.position();
-            let (_, line) = cursor.take_line().ok_or(())?;
-            let candidate = line.trim_start_matches(' ');
-            let indentation = line.len() - candidate.len();
-            if indentation > 3 {
-                return Err(());
-            }
-
-            let level = candidate.bytes().take_while(|byte| *byte == b'#').count();
-            if !(1..=6).contains(&level) {
-                return Err(());
-            }
-            let rest = &candidate[level..];
-            if rest.is_empty() {
-                return Ok(MarkdownHeading {
-                    level,
-                    title: Located::new(
-                        String::new(),
-                        SourceSpan::new(
-                            pos.line(),
-                            pos.offset() + indentation + level..pos.offset() + indentation + level,
-                        ),
-                    ),
-                    pos,
-                });
-            }
-            if !rest.starts_with([' ', '\t']) {
-                return Err(());
-            }
-
-            let trimmed = rest.trim();
-            let without_hashes = trimmed.trim_end_matches('#');
-            let title = if without_hashes.is_empty() {
-                without_hashes
-            } else if without_hashes.ends_with(char::is_whitespace) {
-                without_hashes.trim_end()
-            } else {
-                trimmed
-            };
-            let title_start =
-                pos.offset() + indentation + level + rest.len() - rest.trim_start().len();
-            Ok(MarkdownHeading {
+/// Parse one ATX-style Markdown heading.
+///
+/// Branches:
+///
+/// - Success, titled:       `## Design Notes` -> level 2, title
+///                           `Design Notes`.
+/// - Success, empty:        `###` at EOF -> level 3, empty title span
+///                           immediately after the markers.
+/// - Success, indented:     `  # Title` is accepted.
+/// - Failure, indentation:  `    # Title` is rejected.
+/// - Failure, marker count: `plain text` and `####### Title` are rejected.
+/// - Failure, no whitespace: `##Title` is rejected.
+///
+/// On failure, the cursor is left advanced; callers that need transactional
+/// behavior should use `ParsingContext::try_`.
+fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeading<'a>, ()> {
+    let pos = ctx.cursor.position();
+    for _ in 1..=3 {
+        if ctx.cursor.take_if(|ch| ch == ' ').is_none() {
+            break
+        }
+    }
+    let level = ctx.cursor.take_while(|ch| ch == '#').len();
+    if !(1..=6).contains(&level) {
+        return Err(());
+    }
+    match ctx.cursor.take_if(|ch| ch != '\n') {
+        None => {
+            ctx.cursor.take_line();
+            let title_pos = ctx.cursor.position();
+            return Ok(MarkdownHeading {
                 level,
-                title: Located::new(
-                    title.to_owned(),
-                    SourceSpan::new(pos.line(), title_start..title_start + title.len()),
-                ),
+                title: ctx.located_with_pos(title_pos, title_pos.offset()),
                 pos,
             })
-        })
-        .ok()
+        },
+        Some(ch) if ch != '\t' && ch != ' ' => return Err(()),
+        _ => (),
+    }
+    ctx.cursor.skip_whitespaces_inline();
+    let text_pos = ctx.cursor.position();
+    let Some((_, rest)) = ctx.cursor.take_line() else {
+        return Err(());
+    };
+    let trimmed = rest.trim_end();
+    let without_hashes = trimmed.trim_end_matches('#');
+    let title_len = if without_hashes.is_empty() {
+        0
+    } else if without_hashes.ends_with([' ', '\t']) {
+        without_hashes.trim_end().len()
+    } else {
+        trimmed.len()
+    };
+    let title = ctx.located_with_pos(text_pos, text_pos.offset() + title_len);
+    Ok(MarkdownHeading {
+        level,
+        title,
+        pos,
+    })
 }
 
 // ============================================================================
@@ -968,7 +988,7 @@ mod tests {
         ParserConfig::new(vec![SectionConfig::itemised(name)]).with_known_metadata(["Status"])
     }
 
-    fn metadata_config(names: &[&str]) -> ParserConfig {
+    fn metadata_config<'a>(names: &[&'a str]) -> ParserConfig<'a> {
         ParserConfig::new(vec![]).with_known_metadata(names.iter().copied())
     }
 
@@ -993,13 +1013,13 @@ mod tests {
         fn markdown_heading_consumes_success_and_rewinds_failure() {
             let mut heading = context("# Title\nbody");
             let parsed = p_markdown_heading(&mut heading).expect("heading should parse");
-            assert_eq!(parsed.title.text(), "Title");
+            assert_eq!(*parsed.title.value(), "Title");
             assert_eq!(heading.cursor.position().line(), 2);
 
-            let mut not_heading = context("plain text\n");
+            let mut not_heading = context("###plain text\n");
             let start = not_heading.cursor.position();
-            assert!(p_markdown_heading(&mut not_heading).is_none());
-            assert_eq!(not_heading.cursor.position(), start);
+            assert!(p_markdown_heading(&mut not_heading).is_err());
+            assert_ne!(not_heading.cursor.position(), start);
         }
 
         #[test]
@@ -2035,7 +2055,7 @@ bare preamble\n
     mod plan_items {
         use super::*;
 
-        fn config() -> ParserConfig {
+        fn config() -> ParserConfig<'static> {
             ParserConfig::new(vec![SectionConfig::plan_items("Plan Items")])
                 .with_known_metadata(["Status"])
         }
@@ -2351,7 +2371,7 @@ bare preamble\n
     mod findings {
         use super::*;
 
-        fn config() -> ParserConfig {
+        fn config() -> ParserConfig<'static>{
             ParserConfig::new(vec![SectionConfig::findings("Findings")])
         }
 

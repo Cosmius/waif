@@ -108,7 +108,7 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
     diagnostics
 }
 
-fn parser_config() -> ParserConfig {
+fn parser_config() -> ParserConfig<'static> {
     ParserConfig::new(vec![
         SectionConfig::prose("Objective"),
         SectionConfig::itemised("Plan Item Coverage"),
