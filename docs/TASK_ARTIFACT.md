@@ -285,6 +285,52 @@ Item content and prose are opaque. Numeric bounds, complete identifier
 consumption, item-form consistency, uniqueness, ordering, section order, and
 empty-section warnings follow the common rules.
 
+## Implementation Review Contract
+
+A checked file named `reviewN.md` in an immediate step directory receives this
+contract, where `N` is a positive decimal review number. Its title is
+`Implementation Review N`. The filename, title, and review-number component of
+every stable ID agree.
+
+When the direct parent matches `NN-short-name`, its positive, at-least-two-digit
+number supplies the canonical step identity. Otherwise checking warns, skips
+comparisons requiring path identity, and still requires one internally
+consistent `S<n>-R<m>-` prefix. Selected paths are interpreted nominally
+rather than by canonicalizing symlink targets. Directory padding is omitted
+from IDs: `steps/04-check/review1.md` uses `S4-R1-F1`.
+
+Required metadata, in order, is:
+
+```text
+Step             ./step.md
+Decision         pass | changes-requested
+Date             RFC 3339 timestamp with Z or a numeric UTC offset
+Reviewer         independent subagent |
+                 current session - subagent unavailable
+Workspace state  uncommitted
+```
+
+Implementation reviews do not have lifecycle `Status` metadata. Known sections
+have this relative order:
+
+| Section        | Type                            | Presence |
+|----------------|---------------------------------|----------|
+| Findings       | findings; S<n>-R<m>-F<k>        | required |
+| Scope          | itemised; S<n>-R<m>-SC<k>       | optional |
+| Validation     | itemised; S<n>-R<m>-V<k>        | optional |
+| Residual Risks | itemised; S<n>-R<m>-RR<k>       | optional |
+
+`Findings` contains either the exact prose `No findings.` or one or more
+expanded findings headed `### S<n>-R<m>-F<k>: <opaque content>`. A `pass`
+decision requires the sentinel and a `changes-requested` decision requires at
+least one finding. Finding content and bodies are opaque; deterministic
+checking does not interpret severity, title, location, or recommendations.
+
+Ordinary itemised sections accept compact or expanded items consistently.
+Review item numbers are canonical positive decimals through `2^63 - 1`,
+unique and increasing within each family. Empty Findings is an error; other
+empty sections retain the common warning behavior.
+
 ## Source Preservation
 
 Parsing retains source locations for structured content and exact source for

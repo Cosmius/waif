@@ -8,6 +8,7 @@ mod goal;
 mod parser;
 mod plan;
 mod protocol;
+mod review;
 mod schema;
 #[allow(dead_code)]
 mod step;

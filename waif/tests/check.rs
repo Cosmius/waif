@@ -36,6 +36,30 @@ const VALID_PLAN: &str = concat!(
     "## Cross-Cutting Validation\n- P-V1: Test.\n",
 );
 
+const VALID_STEP: &str = concat!(
+    "# Step 01: Example\n",
+    "- Status: accepted\n",
+    "- Source commit: not-created\n",
+    "- Created: 2026-08-02T12:00:00+09:00\n",
+    "- Updated: 2026-08-02T12:01:00+09:00\n",
+    "- Plan items: P1\n",
+    "## Objective\nText.\n",
+    "## Plan Item Coverage\n- S1-PC1: P1 - complete - example\n",
+    "## Context\nText.\n",
+    "## Done When\n- S1-D1: Done.\n",
+);
+
+const VALID_REVIEW: &str = concat!(
+    "# Implementation Review 1\n",
+    "- Step: ./step.md\n",
+    "- Decision: pass\n",
+    "- Date: 2026-08-02T12:02:00+09:00\n",
+    "- Reviewer: independent subagent\n",
+    "- Workspace state: uncommitted\n",
+    "## Findings\nNo findings.\n",
+    "## Scope\n- S1-R1-SC1: Example.\n",
+);
+
 #[test]
 fn check_reports_every_bad_artifact_before_exiting_one() {
     let directory = TestDir::new("all-errors");
@@ -111,6 +135,48 @@ fn check_accepts_an_explicit_valid_plan() {
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
+}
+
+#[test]
+fn check_dispatches_explicit_step_and_review_files() {
+    let directory = TestDir::new("valid-step-review");
+    let step = directory.path.join("steps/01-example");
+    fs::create_dir_all(&step).expect("step directory should be created");
+    fs::write(step.join("step.md"), VALID_STEP).expect("step should be written");
+    fs::write(step.join("review1.md"), VALID_REVIEW).expect("review should be written");
+
+    for artifact in [step.join("step.md"), step.join("review1.md")] {
+        let output = run_check(&directory.path, &[artifact.as_os_str()]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn check_aggregates_step_and_review_schema_errors() {
+    let directory = TestDir::new("invalid-step-review");
+    let step = directory.path.join("steps/01-example");
+    fs::create_dir_all(&step).expect("step directory should be created");
+    fs::write(step.join("step.md"), VALID_STEP.replace("S1-D1", "S2-D1"))
+        .expect("step should be written");
+    fs::write(
+        step.join("review1.md"),
+        VALID_REVIEW.replace("- Decision: pass", "- Decision: changes-requested"),
+    )
+    .expect("review should be written");
+
+    let output = run_check(&directory.path, &[directory.path.as_os_str()]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr.contains("step.md"));
+    assert!(stderr.contains("review1.md"));
+    assert!(stderr.contains("changes-requested` requires at least one finding"));
+    assert!(stdout.contains("checked 2 artifact(s); 2 invalid"));
 }
 
 #[test]
@@ -330,8 +396,7 @@ fn check_uses_a_symlinked_steps_directory_nominally() {
     let step = target.join("01-example");
     fs::create_dir_all(&task).expect("task directory should be created");
     fs::create_dir_all(&step).expect("target directory should be created");
-    fs::write(step.join("step.md"), "# Example\n## Details\nProse.\n")
-        .expect("step should be written");
+    fs::write(step.join("step.md"), VALID_STEP).expect("step should be written");
     symlink("../step-target", task.join("steps")).expect("directory link should be created");
 
     let output = run_check(&task, &[task.as_os_str()]);

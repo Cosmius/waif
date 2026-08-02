@@ -28,7 +28,8 @@ a path, check those files in the current task. Recognized task files are
 `reviewN.md` where `N` contains only decimal digits.
 
 Each selected artifact receives its applicable structural checks. Files named
-exactly `goal.md` also receive goal-specific validation.
+exactly `goal.md`, `plan.md`, and `step.md`, plus numbered implementation
+reviews, receive their artifact-specific validation.
 
 The command reports all discovered errors and warnings for every selected
 artifact before printing the aggregate summary. Errors invalidate an artifact

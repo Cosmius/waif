@@ -11,6 +11,8 @@ use crate::goal;
 use crate::parser::{self, Severity};
 use crate::plan;
 use crate::protocol::WorkflowDir;
+use crate::review;
+use crate::step;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -89,6 +91,14 @@ fn check_diagnostics(path: &Path, content: &str) -> Vec<parser::Diagnostic> {
         goal::check(content)
     } else if path.file_name() == Some(OsStr::new("plan.md")) {
         plan::check(content)
+    } else if path.file_name() == Some(OsStr::new("step.md")) {
+        step::check(path, content)
+    } else if path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(is_numbered_review_name)
+    {
+        review::check(path, content)
     } else {
         parser::parse(content).err().unwrap_or_default()
     }

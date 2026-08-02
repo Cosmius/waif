@@ -78,26 +78,26 @@ Use this structure for `steps/NN-short-name/reviewN.md`:
 # Implementation Review N
 
 - Step: ./step.md
+- Decision: pass
 - Date: YYYY-MM-DDTHH:MM:SS+HH:MM
 - Reviewer: independent subagent
-- Decision: pass
 - Workspace state: uncommitted
-
-## Scope
-
-- S01-R1-SC1: <Files and behavior reviewed>
-
-## Validation
-
-- S01-R1-V1: `<command>`: passed
 
 ## Findings
 
 No findings.
 
+## Scope
+
+- S1-R1-SC1: <Files and behavior reviewed>
+
+## Validation
+
+- S1-R1-V1: `<command>`: passed
+
 ## Residual Risks
 
-- S01-R1-RR1: None.
+- S1-R1-RR1: None.
 ```
 
 Decisions are `pass` and `changes-requested`.
@@ -113,7 +113,7 @@ When findings exist, order them by severity:
 ```markdown
 ## Findings
 
-### S01-R1-F1 - High - <short title>
+### S1-R1-F1: High - <short title>
 
 - Location: `path/to/file:line`
 - Problem: <observable defect or risk>
@@ -126,7 +126,8 @@ Do not add an artifact `Status`. Review records are immutable observations.
   without gaps or overwrites.
 - Scope the review number `N` to the current step directory. Do not number
   implementation reviews globally across the task.
-- Prefix review content IDs with step and review numbers, such as `S01-R2-F1`.
+- Prefix review content IDs with unpadded step and review numbers, such as
+  `S1-R2-F1`.
 - Preserve source artifact IDs when referring to goal criteria, plan items, or
   step items.
 
