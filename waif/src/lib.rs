@@ -9,6 +9,8 @@ mod parser;
 mod plan;
 mod protocol;
 mod schema;
+#[allow(dead_code)]
+mod step;
 #[cfg(test)]
 mod test_support;
 

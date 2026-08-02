@@ -226,6 +226,65 @@ signed-64-bit numeric bound. A plan item must have a non-empty title.
 Plan checking validates structure, not the technical quality of decisions,
 outcomes, affected areas, risks, dependencies, or validation commands.
 
+## Step Contract
+
+A checked file named exactly `step.md` receives this contract. When its direct
+parent matches `NN-short-name`, the positive decimal `NN` has at least two
+digits and supplies the canonical step identity. Otherwise checking warns,
+skips comparisons requiring path identity, and still requires one internally
+consistent `S<n>-` prefix. Selected paths are interpreted nominally rather
+than by canonicalizing symlink targets.
+
+The title is `Step NN: <non-empty title>`. Its number agrees with a canonical
+containing directory and with the unpadded number in all stable-ID prefixes.
+Thus step directory `03-check-steps` uses title `Step 03: Check steps` and IDs
+such as `S3-C1`.
+
+Structurally required metadata, in order, is:
+
+```text
+Status         drafting | accepted | amending | done
+Source commit  not-created | full 40-character hexadecimal Git commit hash
+Created        RFC 3339 timestamp with Z or a numeric UTC offset
+Updated        RFC 3339 timestamp with Z or a numeric UTC offset
+```
+
+`Source commit` is `not-created` for `drafting`, `accepted`, and `amending`
+steps. A `done` step requires a full commit hash. Authoring metadata such as
+`Plan items`, `Goal criteria`, and `Estimated non-test/doc changes` follows
+the structural metadata as opaque pre-section prose and is not checked.
+
+Known sections have this relative order:
+
+| Section              | Type                     | Presence |
+|----------------------|--------------------------|----------|
+| Objective            | prose                    | required |
+| Plan Item Coverage   | itemised; S<n>-PC<m>     | required |
+| Context              | prose                    | required |
+| Open Questions       | itemised; S<n>-Q<m>      | optional |
+| Assumptions          | itemised; S<n>-A<m>      | optional |
+| Done When            | itemised; S<n>-D<m>      | required |
+| Changes              | itemised; S<n>-C<m>      | optional |
+| Size and Coherence   | prose                    | optional |
+| Tests                | itemised; S<n>-T<m>      | optional |
+| Validation           | itemised; S<n>-V<m>      | optional |
+| Risks and Edge Cases | itemised; S<n>-R<m>      | optional |
+| Revisions            | expanded; S<n>-REV<m>    | optional |
+
+Ordinary itemised sections accept compact or expanded items consistently.
+`Done When` uses those ordinary forms; Markdown task-list checkbox syntax is
+not a conforming substitute for an item ID.
+
+Each coverage item has the form
+`S<n>-PC<m>: P<m> - partial | complete - <non-empty description>`. The `PC`
+suffix must equal the covered plan ID suffix, but coverage IDs need not be
+consecutive. Checking does not compare coverage entries with the opaque
+`Plan items` authoring field.
+
+Item content and prose are opaque. Numeric bounds, complete identifier
+consumption, item-form consistency, uniqueness, ordering, section order, and
+empty-section warnings follow the common rules.
+
 ## Source Preservation
 
 Parsing retains source locations for structured content and exact source for

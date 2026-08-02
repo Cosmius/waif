@@ -28,8 +28,9 @@ Consume one coherent part of the general plan and produce an executable
    validation. Estimate changed non-test/doc lines. Keep the step suitable for
    one source commit and roughly 200 such lines or fewer. If not practical,
    explain why in `Size and Coherence`. Do not modify source code.
-6. Create or revise the step only while `Status: drafting`. Never revise an
-   accepted or done step.
+6. Create or revise the initial step only while `Status: drafting`. An accepted
+   step may enter `amending` and be revised under the amendment-cycle rules.
+   Never revise a done step.
 7. Show the step plan and wait for review.
 8. On explicit acceptance, verify:
    - plan-item and goal-criterion IDs exist;
@@ -49,32 +50,45 @@ used. Never reuse or backfill a number.
 # Step NN: <title>
 
 - Status: drafting
-- Plan items: P1
-- Goal criteria: G-AC1
-- Estimated non-test/doc changes: ~150 lines
 - Source commit: not-created
 - Created: YYYY-MM-DDTHH:MM:SS+HH:MM
 - Updated: YYYY-MM-DDTHH:MM:SS+HH:MM
+- Plan items: P1
+- Goal criteria: G-AC1
+- Estimated non-test/doc changes: ~150 lines
 
 ## Objective
 
 <The technical result of this step.>
 
-## Context
-
-<Relevant current behavior and constraints discovered from the workspace.>
-
 ## Plan Item Coverage
 
-- S01-PC1: P1 - partial - <the exact part consumed by this step>
+- S1-PC1: P1 - partial - <the exact part consumed by this step>
 
 Use `complete` instead of `partial` when this step is expected to finish the
 remaining outcome of the plan item.
 
+## Context
+
+<Relevant current behavior and constraints discovered from the workspace.>
+
+## Open Questions
+
+- S1-Q1: <Major issue, why it matters, and options the human can adopt>
+
+## Assumptions
+
+- S1-A1: <Minor issue and the best-effort solution adopted>
+
+## Done When
+
+- S1-D1: <Observable implementation result>
+- S1-D2: <Required validation passes>
+
 ## Changes
 
-- S01-C1: <Concrete change, naming paths and interfaces>
-- S01-C2: <Concrete change>
+- S1-C1: <Concrete change, naming paths and interfaces>
+- S1-C2: <Concrete change>
 
 ## Size and Coherence
 
@@ -84,47 +98,45 @@ would make the step impractical or incoherent.>
 
 ## Tests
 
-- S01-T1: <Test to add or update>
+- S1-T1: <Test to add or update>
 
 ## Validation
 
-- S01-V1: `<focused command>`
-- S01-V2: `<broader regression command when needed>`
+- S1-V1: `<focused command>`
+- S1-V2: `<broader regression command when needed>`
 
 ## Risks and Edge Cases
 
-- S01-R1: <Risk or edge case and handling>
+- S1-R1: <Risk or edge case and handling>
 
-## Open Questions
+## Revisions
 
-- S01-Q1: <Major issue, why it matters, and options the human can adopt>
+### S1-REV1: YYYY-MM-DDTHH:MM:SS+HH:MM - <revision title>
 
-## Assumptions
-
-- S01-A1: <Minor issue and the best-effort solution adopted>
-
-## Done When
-
-- [ ] S01-D1: <Observable implementation result>
-- [ ] S01-D2: <Required validation passes>
+- Before: <accepted content before the amendment>
+- Changed:
+  - <change included in this amendment cycle>
 ```
 
-Statuses are `drafting`, `accepted`, and `done`.
+Statuses are `drafting`, `accepted`, `amending`, and `done`. `Source commit`
+remains `not-created` through drafting, acceptance, and amendment; only a
+successfully committed implementation changes it to a full commit hash.
 - `Plan items` is a comma-separated exact-ID list, for example
   `Plan items: P2, P3`.
 - `Goal criteria` is the union advanced through those plan items.
-- `Source commit` must be `not-created` while the step is `drafting` or
-  `accepted`. Only `dev-implement-step` may replace it, and only with the full
-  commit hash after the workspace commit succeeds.
+- `Source commit` must be `not-created` while the step is `drafting`,
+  `accepted`, or `amending`. Only `dev-implement-step` may replace it, and only
+  with the full commit hash after the workspace commit succeeds.
 - `Plan Item Coverage` must contain one `partial` or `complete` entry for every
   listed plan ID and no others.
 
-Omit empty `Open Questions` and `Assumptions`. Step plans never have
-`Revisions`. Do not mark a step `done` until implementation is accepted and the
-workspace commit succeeds. Plan items may remain `pending` across completed
-steps. Prefix item IDs with the step number, such as `S01-C1`; preserve them
-while drafting and never reuse them. Follow the shared item-ID and ambiguity
-rules.
+Omit empty optional sections. While a step is `amending`, use expanded
+`Revisions` records and the shared amendment-cycle rules. Do not mark a step
+`done` until implementation is accepted and the workspace commit succeeds.
+Plan items may remain `pending` across completed steps. Prefix item IDs with
+the unpadded step number, such as `S1-C1` for step directory `01-short-name`;
+preserve them while drafting and never reuse them. Follow the shared item-ID
+and ambiguity rules.
 
 ## Guardrails
 
@@ -132,7 +144,7 @@ rules.
 - Map by exact plan-item IDs, never fuzzy heading text, or invented child IDs.
 - Multiple steps may advance one plan item only when their coverage is distinct
   or intentionally cumulative.
-- Never revise an accepted or done step plan.
+- Never revise a done step plan.
 
 ## Done When
 
