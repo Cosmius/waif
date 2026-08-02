@@ -13,7 +13,6 @@ mod cursor;
 // Diagnostics
 // ============================================================================
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Severity {
     Error,
@@ -27,7 +26,6 @@ pub struct Diagnostic {
     message: String,
 }
 
-#[allow(dead_code)]
 impl Diagnostic {
     pub(crate) fn error(line: usize, message: impl Into<String>) -> Self {
         Self::with_severity(Severity::Error, line, message)
@@ -65,10 +63,9 @@ impl fmt::Display for Diagnostic {
 }
 
 // ============================================================================
-// Parser entry point and state
+// Parser entry point
 // ============================================================================
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SectionType {
     Prose,
@@ -111,7 +108,6 @@ pub struct ParserConfig<'a> {
     sections: Vec<SectionConfig<'a>>,
 }
 
-#[allow(dead_code)]
 impl<'a> ParserConfig<'a> {
     pub fn new(sections: Vec<SectionConfig<'a>>) -> Self {
         Self {
@@ -163,14 +159,15 @@ pub fn parse_with_config(source: &str, config: &ParserConfig) -> Result<Artifact
 ///
 /// Schema checkers use this entry point when independent contract violations
 /// remain meaningful despite a malformed structural fragment.
-pub(crate) fn parse_with_diagnostics(
-    source: &str,
-    config: &ParserConfig,
-) -> (Artifact, Vec<Diagnostic>) {
+pub fn parse_with_diagnostics(source: &str, config: &ParserConfig) -> (Artifact, Vec<Diagnostic>) {
     let mut ctx = ParsingContext::new(source, config.clone());
     let artifact = p_artifact(&mut ctx);
     (artifact, ctx.diagnostics)
 }
+
+// ============================================================================
+// Parser state
+// ============================================================================
 
 #[derive(Clone)]
 struct ParsingContext<'a> {
@@ -181,15 +178,6 @@ struct ParsingContext<'a> {
     /// a fenced code block.
     code_block: Option<(char, usize)>,
     config: ParserConfig<'a>,
-}
-
-impl<'a> ParsingContext<'a> {
-    pub(crate) fn located_with_pos(&self, position: Position, end: usize) -> Located<&'a str> {
-        Located::new(
-            &self.source[position.offset()..end],
-            SourceSpan::new(position.line(), position.offset()..end),
-        )
-    }
 }
 
 impl<'a> ParsingContext<'a> {
@@ -212,6 +200,13 @@ impl<'a> ParsingContext<'a> {
                 Err(e)
             }
         }
+    }
+
+    pub(crate) fn located_with_pos(&self, position: Position, end: usize) -> Located<&'a str> {
+        Located::new(
+            &self.source[position.offset()..end],
+            SourceSpan::new(position.line(), position.offset()..end),
+        )
     }
 }
 
@@ -489,13 +484,6 @@ fn p_plan_item(source: &str, expanded: Located<ExpandedItem>) -> PlanItem {
     }
 }
 
-fn heading_level(ctx: &mut ParsingContext) -> Option<usize> {
-    let start = ctx.cursor.position();
-    let level = p_markdown_heading(ctx).map(|heading| heading.level).ok();
-    ctx.cursor.rewind(start);
-    level
-}
-
 // A compact item whose body end is not known until the next peer or section.
 struct OpenCompactItem {
     start: Position,
@@ -518,7 +506,7 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         let in_code_block = is_code_block_line(line, &mut ctx.code_block);
         let marker = (!in_code_block).then(|| compact_marker(line)).flatten();
 
-        if !in_code_block && heading_level(ctx) == Some(3) {
+        if !in_code_block && peek_heading_level(ctx) == Some(3) {
             if let Some(item) = open.take() {
                 items.push(finish_compact_item(ctx.source, item, start));
             }
@@ -575,7 +563,7 @@ fn p_expanded_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         let (_, line) = ctx.cursor.peek_line().expect("body has a line");
         let in_code_block = is_code_block_line(line, &mut ctx.code_block);
 
-        if !in_code_block && heading_level(ctx) == Some(3) {
+        if !in_code_block && peek_heading_level(ctx) == Some(3) {
             if let Some(item) = open.take() {
                 items.push(finish_expanded_item(ctx.source, item, start));
             }
@@ -862,6 +850,13 @@ fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeadin
     };
     let title = ctx.located_with_pos(text_pos, text_pos.offset() + title_len);
     Ok(MarkdownHeading { level, title, pos })
+}
+
+fn peek_heading_level(ctx: &mut ParsingContext) -> Option<usize> {
+    let pos = ctx.cursor.position();
+    let level = p_markdown_heading(ctx).map(|heading| heading.level).ok();
+    ctx.cursor.rewind(pos);
+    level
 }
 
 // ============================================================================
