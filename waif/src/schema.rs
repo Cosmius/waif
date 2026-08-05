@@ -659,15 +659,14 @@ fn match_item_identifier(
                 return Err(());
             }
         } else {
-            let identifier_start = identifier.span().range().start;
             let components = components
                 .into_iter()
                 .map(|(value, range)| {
                     Located::new(
                         value,
                         SourceSpan::new(
-                            identifier.span().start_line(),
-                            identifier_start + range.start..identifier_start + range.end,
+                            identifier.span().start().advance(&prefix_text[..range.start]),
+                            identifier.span().start().advance(&prefix_text[..range.end]),
                         ),
                     )
                 })

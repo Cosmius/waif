@@ -1,4 +1,5 @@
-use self::cursor::{Cursor, Position};
+use self::cursor::Cursor;
+pub use self::cursor::Position;
 use crate::artifact::{
     Artifact, CompactItem, ExpandedItem, Finding, FindingsBody, FindingsSection, Item,
     ItemisedSection, Located, Metadata, PlanItem, PlanItemSection, ProseSection, Section,
@@ -242,10 +243,8 @@ impl<'p, 'a> ParsingContext<'p, 'a> {
     }
 
     pub(crate) fn located_with_pos(&self, position: Position, end: usize) -> Located<&'a str> {
-        Located::new(
-            &self.source[position.offset()..end],
-            SourceSpan::new(position.line(), position.offset()..end),
-        )
+        let text = &self.source[position.offset()..end];
+        Located::new(text, SourceSpan::new(position, position.advance(text)))
     }
 }
 
@@ -395,7 +394,7 @@ fn p_pre_section_prose(ctx: &mut ParsingContext) -> Located<String> {
     let end = ctx.cursor.position();
     Located::new(
         ctx.source[start.offset()..end.offset()].to_owned(),
-        SourceSpan::new(start.line(), start.offset()..end.offset()),
+        SourceSpan::new(start, end),
     )
 }
 
@@ -423,9 +422,11 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
     let body_start = ctx.cursor.position();
     let body_end = p_section_body_end(ctx);
 
-    let heading_line = heading.pos.line();
-    let section_span = SourceSpan::new(heading_line, heading.pos.offset()..body_end);
-    let body_span = SourceSpan::new(body_start.line(), body_start.offset()..body_end);
+    let body_end_pos = heading
+        .pos
+        .advance(&ctx.source[heading.pos.offset()..body_end]);
+    let section_span = SourceSpan::new(heading.pos, body_end_pos);
+    let body_span = SourceSpan::new(body_start, body_end_pos);
     let section_type = ctx.config.section_type(heading.title.text());
     match section_type {
         SectionType::Prose => Some(Section::Prose(Located::new(
@@ -567,7 +568,10 @@ fn p_plan_item(source: &str, expanded: Located<ExpandedItem>) -> PlanItem {
         metadata,
         prose: Located::new(
             source[prose_start.offset()..body_end].to_owned(),
-            SourceSpan::new(prose_start.line(), prose_start.offset()..body_end),
+            SourceSpan::new(
+                prose_start,
+                prose_start.advance(&source[prose_start.offset()..body_end]),
+            ),
         ),
     }
 }
@@ -688,15 +692,28 @@ fn p_expanded_item_opening(ctx: &mut ParsingContext) -> OpenExpandedItem {
     debug_assert_eq!(heading.level, 3);
     let title_range = heading.title.span().range();
     let title = heading.title.text();
-    let marker = located_source_range(ctx.source, start.line(), start.offset()..title_range.start);
+    let marker_end = start.advance(&ctx.source[start.offset()..title_range.start]);
+    let marker = located_source_range(ctx.source, start, marker_end);
     let ranges = item_opening_ranges(title).offset(title_range.start);
     let identifier = ranges
         .identifier
-        .map(|range| located_source_range(ctx.source, start.line(), range));
+        .map(|range| {
+            let range_start = start.advance(&ctx.source[start.offset()..range.start]);
+            let range_end = start.advance(&ctx.source[start.offset()..range.end]);
+            located_source_range(ctx.source, range_start, range_end)
+        });
     let delimiter = ranges
         .delimiter
-        .map(|range| located_source_range(ctx.source, start.line(), range));
-    let content = located_source_range(ctx.source, start.line(), ranges.content);
+        .map(|range| {
+            let range_start = start.advance(&ctx.source[start.offset()..range.start]);
+            let range_end = start.advance(&ctx.source[start.offset()..range.end]);
+            located_source_range(ctx.source, range_start, range_end)
+        });
+    let content = located_source_range(
+        ctx.source,
+        start.advance(&ctx.source[start.offset()..ranges.content.start]),
+        start.advance(&ctx.source[start.offset()..ranges.content.end]),
+    );
 
     OpenExpandedItem {
         start,
@@ -715,13 +732,9 @@ fn finish_expanded_item(source: &str, open: OpenExpandedItem, end: Position) -> 
             identifier: open.identifier,
             delimiter: open.delimiter,
             content: open.content,
-            body: located_source_range(
-                source,
-                open.body_start.line(),
-                open.body_start.offset()..end.offset(),
-            ),
+            body: located_source_range(source, open.body_start, end),
         },
-        SourceSpan::new(open.start.line(), open.start.offset()..end.offset()),
+        SourceSpan::new(open.start, end),
     ))
 }
 
@@ -837,16 +850,16 @@ fn located_line_range(line: &str, line_start: Position, range: Range<usize>) -> 
     Located::new(
         line[range.clone()].to_owned(),
         SourceSpan::new(
-            line_start.line(),
-            line_start.offset() + range.start..line_start.offset() + range.end,
+            line_start.advance(&line[..range.start]),
+            line_start.advance(&line[..range.end]),
         ),
     )
 }
 
-fn located_source_range(source: &str, start_line: usize, range: Range<usize>) -> Located<String> {
+fn located_source_range(source: &str, start: Position, end: Position) -> Located<String> {
     Located::new(
-        source[range.clone()].to_owned(),
-        SourceSpan::new(start_line, range),
+        source[start.offset()..end.offset()].to_owned(),
+        SourceSpan::new(start, end),
     )
 }
 
@@ -860,13 +873,10 @@ fn finish_compact_item(source: &str, open: OpenCompactItem, end: Position) -> It
             content: open.content,
             body: Located::new(
                 source[open.body_start.offset()..end.offset()].to_owned(),
-                SourceSpan::new(
-                    open.body_start.line(),
-                    open.body_start.offset()..end.offset(),
-                ),
+                SourceSpan::new(open.body_start, end),
             ),
         },
-        SourceSpan::new(open.start.line(), open.start.offset()..end.offset()),
+        SourceSpan::new(open.start, end),
     ))
 }
 
@@ -1046,7 +1056,7 @@ fn p_markdown_item<'a>(
             marker: ctx.located_with_pos(start, marker_end.offset()),
             content: ctx.located_with_pos(content_start, content_end.offset()),
         },
-        SourceSpan::new(start.line(), start.offset()..content_end.offset()),
+        SourceSpan::new(start, content_end),
     ))
 }
 

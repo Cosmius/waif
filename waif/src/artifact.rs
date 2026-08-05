@@ -163,25 +163,35 @@ impl fmt::Display for InvalidValue {
 
 impl std::error::Error for InvalidValue {}
 
+use crate::parser::Position;
+
 /// A half-open UTF-8 byte range and its one-based starting line.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceSpan {
-    start_line: usize,
-    range: Range<usize>,
+    start: Position,
+    end: Position
 }
 
 #[allow(dead_code)]
 impl SourceSpan {
-    pub(crate) fn new(start_line: usize, range: Range<usize>) -> Self {
-        Self { start_line, range }
+    pub(crate) fn new(start: Position, end: Position) -> Self {
+        Self { start, end }
+    }
+
+    pub fn start(&self) -> &Position {
+        &self.start
+    }
+
+    pub fn end(&self) -> &Position {
+        &self.end
     }
 
     pub fn start_line(&self) -> usize {
-        self.start_line
+        self.start.line()
     }
 
     pub fn range(&self) -> Range<usize> {
-        self.range.clone()
+        self.start.offset()..self.end.offset()
     }
 }
 
@@ -658,8 +668,14 @@ mod tests {
     #[test]
     fn rejects_multiline_metadata_replacements() {
         let mut metadata = Metadata {
-            key: Located::new("Status", SourceSpan::new(2, 10..16)),
-            value: Located::new("proposed".into(), SourceSpan::new(2, 20..28)),
+            key: Located::new(
+                "Status",
+                SourceSpan::new(Position::new(10, 2, 11), Position::new(16, 2, 17)),
+            ),
+            value: Located::new(
+                "proposed".into(),
+                SourceSpan::new(Position::new(20, 2, 21), Position::new(28, 2, 29)),
+            ),
         };
 
         let error = metadata
@@ -673,8 +689,14 @@ mod tests {
     #[test]
     fn rejects_edits_to_parsed_multiline_metadata_values() {
         let mut metadata = Metadata {
-            key: Located::new("Status", SourceSpan::new(2, 2..8)),
-            value: Located::new("proposed\n  continued".into(), SourceSpan::new(2, 18..38)),
+            key: Located::new(
+                "Status",
+                SourceSpan::new(Position::new(2, 2, 3), Position::new(8, 2, 9)),
+            ),
+            value: Located::new(
+                "proposed\n  continued".into(),
+                SourceSpan::new(Position::new(18, 2, 19), Position::new(38, 3, 11)),
+            ),
         };
 
         let error = metadata
