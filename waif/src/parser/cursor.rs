@@ -10,13 +10,6 @@ pub struct Position {
 }
 
 impl Position {
-    pub(crate) const fn new(offset: usize, line: usize, column: usize) -> Self {
-        Self {
-            offset,
-            line,
-            column,
-        }
-    }
 
     pub fn offset(self) -> usize {
         self.offset
@@ -93,18 +86,6 @@ impl<'a> Cursor<'a> {
     pub fn limit(&mut self, offset: usize) {
         assert!(self.source.is_char_boundary(offset));
         self.source = &self.source[..offset];
-    }
-
-    /// Run a parsing operation, rewinding the cursor when it fails.
-    pub fn try_<A, E>(&mut self, f: impl FnOnce(&mut Self) -> Result<A, E>) -> Result<A, E> {
-        let pos = self.position();
-        match f(self) {
-            Ok(v) => Ok(v),
-            Err(e) => {
-                self.rewind(pos);
-                Err(e)
-            }
-        }
     }
 
     /// Return the next character without advancing the cursor.
@@ -262,26 +243,6 @@ mod tests {
             assert_eq!(cursor.peek(), Some('阿'));
             assert_eq!(cursor.take(), Some('阿'));
             assert_eq!(cursor.peek(), Some('\n'));
-        }
-
-        #[test]
-        fn transactions_keep_successes_and_rewind_failures() {
-            let mut success = Cursor::new("ab");
-            let result: Result<_, ()> = success.try_(|cursor| {
-                cursor.take();
-                Ok('a')
-            });
-            assert_eq!(result, Ok('a'));
-            assert_eq!(success.peek(), Some('b'));
-
-            let mut failure = Cursor::new("ab");
-            let start = failure.position();
-            let result: Result<(), _> = failure.try_(|cursor| {
-                cursor.take();
-                Err("failed")
-            });
-            assert_eq!(result, Err("failed"));
-            assert_eq!(failure.position(), start);
         }
 
         #[test]

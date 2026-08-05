@@ -723,39 +723,6 @@ fn finish_expanded_item<'a>(
     ))
 }
 
-// Return a compact marker's indentation and end offset.
-// For `"  - item"`, return `(2, 4)`.
-fn compact_marker(line: &str) -> Option<(usize, usize)> {
-    let indentation = leading_spaces(line);
-    if indentation > 3 {
-        return None;
-    }
-    let rest = &line[indentation..];
-    let after_marker = rest.strip_prefix('-')?;
-    let whitespace = after_marker
-        .bytes()
-        .take_while(|byte| *byte == b' ' || *byte == b'\t')
-        .count();
-    (whitespace > 0).then_some((indentation, indentation + 1 + whitespace))
-}
-
-fn leading_spaces(line: &str) -> usize {
-    line.bytes().take_while(|byte| *byte == b' ').count()
-}
-
-// Measure leading spaces and tabs using four-column tab stops.
-fn leading_indentation_columns(line: &str) -> usize {
-    line.bytes()
-        .take_while(|byte| *byte == b' ' || *byte == b'\t')
-        .fold(0, |column, byte| {
-            if byte == b'\t' {
-                column + 4 - column % 4
-            } else {
-                column + 1
-            }
-        })
-}
-
 struct ItemOpeningRanges {
     identifier: Option<Range<usize>>,
     delimiter: Option<Range<usize>>,
@@ -800,18 +767,7 @@ fn offset_range(range: Range<usize>, offset: usize) -> Range<usize> {
     range.start + offset..range.end + offset
 }
 
-// Copy a line range while translating it to an artifact source span.
-fn located_line_range(line: &str, line_start: Position, range: Range<usize>) -> Located<String> {
-    Located::new(
-        line[range.clone()].to_owned(),
-        SourceSpan::new(
-            line_start.advance(&line[..range.start]),
-            line_start.advance(&line[..range.end]),
-        ),
-    )
-}
-
-fn located_source_range<'a>(source: &'a str, start: Position, end: Position) -> Located<&'a str> {
+fn located_source_range(source: &str, start: Position, end: Position) -> Located<&str> {
     Located::new(
         &source[start.offset()..end.offset()],
         SourceSpan::new(start, end),
