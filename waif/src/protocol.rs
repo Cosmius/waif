@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use chrono::Local;
 
 use crate::artifact::Artifact;
-use crate::parser::{self, Diagnostic};
+use crate::parser::{self, Diagnostic, ParserConfig};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -137,34 +137,30 @@ impl Task {
 
 pub struct TaskArtifact {
     path: PathBuf,
-    artifact: Artifact,
+    source: String,
 }
 
 impl TaskArtifact {
     pub fn read(path: PathBuf) -> Result<Self> {
         let content = fs::read_to_string(&path)?;
-        let config =
-            parser::ParserConfig::new(vec![]).with_known_metadata(["Status", "Created", "Updated"]);
-        let artifact = parser::parse_with_config(&content, &config).map_err(|diagnostics| {
-            Box::new(InvalidTaskArtifact {
-                path: path.clone(),
-                diagnostics,
-            }) as Box<dyn Error>
-        })?;
-        Ok(Self { path, artifact })
+        Ok(Self {
+            path,
+            source: content,
+        })
     }
 
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    pub fn metadata_value(&self, key: &str) -> Option<&str> {
-        self.artifact
-            .metadata()
-            .iter()
-            .map(|metadata| metadata.value())
-            .find(|metadata| metadata.key() == key)
-            .map(|metadata| metadata.value())
+    pub fn artifact(&self) -> Result<Artifact<'_>> {
+        let config = ParserConfig::default().with_known_metadata(["Status", "Created", "Updated"]);
+        parser::parse_with_config(&self.source, &config).map_err(|diagnostics| {
+            Box::new(InvalidTaskArtifact {
+                path: self.path.clone(),
+                diagnostics,
+            }) as Box<dyn Error>
+        })
     }
 }
 

@@ -38,14 +38,20 @@ fn print_current_task(workspace_dir: &Path, task: Task) -> Result<()> {
     println!("Goal:");
     match task.goal()? {
         Some(goal) => {
+            let goal_artifact = goal.artifact()?;
+            let status = goal_artifact
+                .metadata()
+                .iter()
+                .find_map(|m| {
+                    let m = m.value();
+                    (m.key() == "Status").then(|| m.value())
+                })
+                .unwrap_or("BAD VALUE");
             println!(
                 "  Path:             {}",
                 relative_path(workspace_dir, goal.path())
             );
-            println!(
-                "  Status:           {}",
-                goal.metadata_value("Status").unwrap_or("BAD VALUE")
-            );
+            println!("  Status:           {}", status);
         }
         None => {
             println!("  not created yet");

@@ -249,7 +249,7 @@ fn validate_coverage(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-fn metadata<'a>(artifact: &'a Artifact, key: &str) -> Option<&'a Metadata> {
+fn metadata<'a, 'b>(artifact: &'a Artifact<'b>, key: &str) -> Option<&'a Metadata<'b>> {
     let mut entries = artifact
         .metadata()
         .iter()

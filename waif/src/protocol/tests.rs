@@ -311,7 +311,7 @@ fn task_goal_is_none_when_goal_file_is_missing() {
 }
 
 #[test]
-fn task_goal_reads_metadata_from_goal_file() {
+fn task_goal_parses_metadata_through_its_artifact_accessor() {
     let workspace = TestDir::new("goal-metadata");
     let task = Task::new(workspace.path.join(".waif/tasks/example-task"));
     fs::create_dir_all(&task.path).expect("task dir should be created");
@@ -334,17 +334,19 @@ Create tests.
         .goal()
         .expect("goal should load")
         .expect("goal should exist");
+    let artifact = goal.artifact().expect("goal should parse");
 
-    assert_eq!(goal.metadata_value("Status"), Some("drafting"));
+    assert_eq!(artifact.metadata()[0].value().key(), "Status");
+    assert_eq!(artifact.metadata()[0].value().value(), "drafting");
+    assert_eq!(artifact.metadata()[1].value().key(), "Created");
     assert_eq!(
-        goal.metadata_value("Created"),
-        Some("2026-07-04T09:00:00+09:00")
+        artifact.metadata()[1].value().value(),
+        "2026-07-04T09:00:00+09:00"
     );
-    assert_eq!(goal.metadata_value("Missing"), None);
 }
 
 #[test]
-fn task_goal_rejects_an_invalid_artifact() {
+fn task_goal_defers_invalid_artifact_errors_until_parsing() {
     let workspace = TestDir::new("invalid-goal");
     let task = Task::new(workspace.path.join(".waif/tasks/example-task"));
     fs::create_dir_all(&task.path).expect("task dir should be created");
@@ -360,10 +362,13 @@ Create tests.
     )
     .expect("goal should be written");
 
-    let error = match task.goal() {
-        Ok(_) => panic!("invalid goal should fail"),
-        Err(error) => error,
-    };
+    let goal = task
+        .goal()
+        .expect("reading should not parse the artifact")
+        .expect("goal should exist");
+    let error = goal
+        .artifact()
+        .expect_err("invalid goal should fail when parsed");
 
     assert!(error
         .to_string()

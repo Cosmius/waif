@@ -179,7 +179,10 @@ pub fn parse(source: &str) -> Result<Artifact, Vec<Diagnostic>> {
     parse_with_config(source, &ParserConfig::default())
 }
 
-pub fn parse_with_config(source: &str, config: &ParserConfig) -> Result<Artifact, Vec<Diagnostic>> {
+pub fn parse_with_config<'a>(
+    source: &'a str,
+    config: &ParserConfig,
+) -> Result<Artifact<'a>, Vec<Diagnostic>> {
     let (artifact, diagnostics) = parse_with_diagnostics(source, config);
     if diagnostics.is_empty() {
         Ok(artifact)
@@ -192,7 +195,10 @@ pub fn parse_with_config(source: &str, config: &ParserConfig) -> Result<Artifact
 ///
 /// Schema checkers use this entry point when independent contract violations
 /// remain meaningful despite a malformed structural fragment.
-pub fn parse_with_diagnostics(source: &str, config: &ParserConfig) -> (Artifact, Vec<Diagnostic>) {
+pub fn parse_with_diagnostics<'a, 'b: 'a>(
+    source: &'b str,
+    config: &ParserConfig<'a>,
+) -> (Artifact<'b>, Vec<Diagnostic>) {
     let mut ctx = ParsingContext::new(source, config.clone());
     let artifact = p_artifact(&mut ctx);
     (artifact, ctx.diagnostics)
@@ -203,18 +209,18 @@ pub fn parse_with_diagnostics(source: &str, config: &ParserConfig) -> (Artifact,
 // ============================================================================
 
 #[derive(Clone)]
-struct ParsingContext<'a> {
+struct ParsingContext<'p, 'a> {
     source: &'a str,
     cursor: Cursor<'a>,
     diagnostics: Vec<Diagnostic>,
     /// The open code fence as `(marker, opening length)`, or `None` outside
     /// a fenced code block.
     code_block: Option<(char, usize)>,
-    config: ParserConfig<'a>,
+    config: ParserConfig<'p>,
 }
 
-impl<'a> ParsingContext<'a> {
-    pub const fn new(source: &'a str, config: ParserConfig<'a>) -> Self {
+impl<'p, 'a> ParsingContext<'p, 'a> {
+    pub const fn new(source: &'a str, config: ParserConfig<'p>) -> Self {
         Self {
             source,
             cursor: Cursor::new(source),
@@ -247,7 +253,7 @@ impl<'a> ParsingContext<'a> {
 // Artifact envelope
 // ============================================================================
 
-fn p_artifact(ctx: &mut ParsingContext) -> Artifact {
+fn p_artifact<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Artifact<'a> {
     ctx.cursor.skip_whitespace_lines();
     let title = p_title_line(ctx);
     let metadata = p_metadata(ctx);
@@ -262,7 +268,7 @@ fn p_artifact(ctx: &mut ParsingContext) -> Artifact {
     )
 }
 
-fn p_title_line<'a>(ctx: &mut ParsingContext<'a>) -> Located<&'a str> {
+fn p_title_line<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Located<&'a str> {
     let pos = ctx.cursor.position();
     if ctx.cursor.is_eof() {
         ctx.diagnostics
@@ -289,7 +295,7 @@ fn p_title_line<'a>(ctx: &mut ParsingContext<'a>) -> Located<&'a str> {
     title
 }
 
-fn p_metadata(ctx: &mut ParsingContext) -> Vec<Located<Metadata>> {
+fn p_metadata<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Vec<Located<Metadata<'a>>> {
     let mut metadata = Vec::new();
     loop {
         let before_whitespace = ctx.cursor.position();
@@ -298,7 +304,7 @@ fn p_metadata(ctx: &mut ParsingContext) -> Vec<Located<Metadata>> {
             ctx.cursor.rewind(before_whitespace);
             break;
         }
-        if let Some(entry) = p_metadata_line(ctx) {
+        if let Ok(entry) = ctx.try_(p_metadata_line) {
             if ctx.config.recognizes_metadata(entry.value().key()) {
                 metadata.push(entry);
                 continue;
@@ -319,36 +325,43 @@ fn p_metadata(ctx: &mut ParsingContext) -> Vec<Located<Metadata>> {
     metadata
 }
 
-fn p_metadata_line(ctx: &mut ParsingContext) -> Option<Located<Metadata>> {
-    ctx.cursor
-        .try_(|cursor| {
-            let start = cursor.position();
-            cursor.skip_whitespaces_inline();
-            cursor.take_if(|ch| ch == '-').ok_or(())?;
-            if cursor.take_while(|ch| ch == ' ' || ch == '\t').is_empty() {
-                return Err(());
-            };
-            let key = cursor.take_while(|ch| ch != '\n' && ch != ':').trim();
-            if key.is_empty() {
-                return Err(());
-            }
-            cursor.take_if(|ch| ch == ':').ok_or(())?;
-            cursor.take_while(|ch| ch == ' ' || ch == '\t');
-            let value_start = cursor.position().offset();
-            let value = cursor.take_line().map_or("", |(_, value)| value.trim_end());
-            let end = cursor.position().offset();
-            Ok(Located::new(
-                Metadata::new(
-                    key.to_owned(),
-                    Located::new(
-                        value.to_owned(),
-                        SourceSpan::new(start.line(), value_start..value_start + value.len()),
-                    ),
-                ),
-                SourceSpan::new(start.line(), start.offset()..end),
-            ))
-        })
-        .ok()
+fn p_metadata_line<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+) -> Result<Located<Metadata<'a>>, Diagnostic> {
+    let mut subctx = ctx.clone();
+    let item = p_markdown_item(ctx)?;
+    let item_content = &item.value().content;
+    let content_len = item_content
+        .text()
+        .trim_end_matches(['\t', '\r', '\n', ' '])
+        .len();
+    let value_end_offset = item_content.span().range().start + content_len;
+    subctx
+        .cursor
+        .skip_to_offset(item_content.span().range().start);
+    subctx.cursor.limit(value_end_offset);
+    let key_start = subctx.cursor.position();
+    let key = subctx
+        .cursor
+        .take_while(|ch| ch != ':' && ch != '\n')
+        .trim_end_matches(['\t', ' ']);
+    if key.is_empty() {
+        return Err(Diagnostic::error_p(key_start, "expected key"));
+    }
+    let key_l = subctx.located_with_pos(key_start, key_start.offset() + key.len());
+    let colon_pos = subctx.cursor.position();
+    if !subctx.cursor.take().is_some_and(|ch| ch == ':') {
+        return Err(Diagnostic::error_p(colon_pos, "expected colon"));
+    }
+    subctx.cursor.skip_whitespaces_inline();
+    let value_start = subctx.cursor.position();
+    let value_l = subctx
+        .located_with_pos(value_start, value_end_offset)
+        .map(|s| s.to_owned());
+    Ok(Located::new(
+        Metadata::new(key_l, value_l),
+        item.span().clone(),
+    ))
 }
 
 fn p_pre_section_prose(ctx: &mut ParsingContext) -> Located<String> {
@@ -364,7 +377,10 @@ fn p_pre_section_prose(ctx: &mut ParsingContext) -> Located<String> {
         let line_start = ctx.cursor.position();
         match ctx.try_(p_markdown_heading) {
             Ok(heading) if heading.level == 1 => {
-                report_additional_title(ctx, line_start);
+                ctx.diagnostics.push(Diagnostic::error1(
+                    line_start.line(),
+                    "artifact must contain exactly one level-one heading",
+                ));
                 continue;
             }
             Ok(heading) if heading.level == 2 => {
@@ -383,7 +399,7 @@ fn p_pre_section_prose(ctx: &mut ParsingContext) -> Located<String> {
     )
 }
 
-fn p_sections(ctx: &mut ParsingContext) -> Vec<Section> {
+fn p_sections<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Vec<Section<'a>> {
     let mut sections = Vec::new();
     while let Some(section) = p_section(ctx) {
         sections.push(section);
@@ -391,7 +407,7 @@ fn p_sections(ctx: &mut ParsingContext) -> Vec<Section> {
     sections
 }
 
-fn p_section(ctx: &mut ParsingContext) -> Option<Section> {
+fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
     let pos = ctx.cursor.position();
     let heading = ctx.try_(p_markdown_heading).ok()?;
     if heading.level != 2 {
@@ -495,7 +511,10 @@ fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
         let start = ctx.cursor.position();
         match ctx.try_(p_markdown_heading) {
             Ok(next) if next.level == 1 => {
-                report_additional_title(ctx, start);
+                ctx.diagnostics.push(Diagnostic::error1(
+                    start.line(),
+                    "artifact must contain exactly one level-one heading",
+                ));
                 continue;
             }
             Ok(next) if next.level == 2 => {
@@ -517,7 +536,7 @@ fn p_itemised_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
     items
 }
 
-fn p_plan_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<PlanItem> {
+fn p_plan_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Vec<PlanItem<'a>> {
     p_expanded_items(ctx, body_end)
         .into_iter()
         .map(|item| match item {
@@ -531,7 +550,9 @@ fn p_plan_item(source: &str, expanded: Located<ExpandedItem>) -> PlanItem {
     let body_span = expanded.value().body().span();
     let body_range = body_span.range();
     let body_end = body_range.end;
-    let cursor = Cursor::within(source, body_range);
+    let mut cursor = Cursor::new(source);
+    cursor.limit(body_end);
+    cursor.skip_to_offset(body_range.start);
     let mut ctx = ParsingContext {
         source,
         cursor,
@@ -575,7 +596,7 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         let (_, line) = ctx.cursor.peek_line().expect("body has a line");
         let marker = compact_marker(line);
 
-        if peek_heading_level(ctx) == Some(3) {
+        if matches!(peek_heading_level(ctx), Ok((3, _))) {
             if let Some(item) = open.take() {
                 items.push(finish_compact_item(ctx.source, item, start));
             }
@@ -596,8 +617,8 @@ fn p_compact_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         // Before the first item, every nonblank line is outside an item. Once
         // an item is open, only unfenced content at or before peer indentation
         // falls outside its body. An open item always has a peer indentation.
-        let outside_item = open.is_none()
-            || leading_indentation_columns(line) <= peer_indentation.unwrap();
+        let outside_item =
+            open.is_none() || leading_indentation_columns(line) <= peer_indentation.unwrap();
         if !line.trim().is_empty() && outside_item {
             ctx.diagnostics.push(Diagnostic::error1(
                 start.line(),
@@ -634,7 +655,7 @@ fn p_expanded_items(ctx: &mut ParsingContext, body_end: usize) -> Vec<Item> {
         let start = ctx.cursor.position();
         let (_, line) = ctx.cursor.peek_line().expect("body has a line");
 
-        if peek_heading_level(ctx) == Some(3) {
+        if matches!(peek_heading_level(ctx), Ok((3, _))) {
             if let Some(item) = open.take() {
                 items.push(finish_expanded_item(ctx.source, item, start));
             }
@@ -849,16 +870,51 @@ fn finish_compact_item(source: &str, open: OpenCompactItem, end: Position) -> It
     ))
 }
 
-fn report_additional_title(ctx: &mut ParsingContext, position: Position) {
-    ctx.diagnostics.push(Diagnostic::error1(
-        position.line(),
-        "artifact must contain exactly one level-one heading",
-    ));
+// ============================================================================
+// Markdown components
+// ============================================================================
+
+enum LineKind<'a> {
+    EOF,
+    Blank,
+    Heading { level: usize },
+    UnorderedItem { marker: Located<&'a str> },
+    FenceStart { marker: Located<&'a str> },
+    Text,
 }
 
-// ============================================================================
-// Markdown headings
-// ============================================================================
+/// Returns (indentation, line_kind)
+fn peek_line_kind<'a>(ctx: &ParsingContext<'_, 'a>) -> (usize, LineKind<'a>) {
+    let start = ctx.cursor.position();
+    let Some((_, line)) = ctx.cursor.peek_line() else {
+        return (0, LineKind::EOF);
+    };
+    if line.trim().is_empty() {
+        return (0, LineKind::Blank);
+    }
+    if let Ok((level, _)) = peek_heading_level(ctx) {
+        return (0, LineKind::Heading { level });
+    }
+    if let Ok((_, _)) = peek_is_item(ctx) {
+        return (
+            0,
+            LineKind::UnorderedItem {
+                marker: ctx.located_with_pos(start, start.offset() + 1),
+            },
+        );
+    }
+    let mut ctx = ctx.clone();
+    if let Ok((_, _, indentation)) = ctx.try_(p_maybe_code_block_fence) {
+        return (
+            indentation,
+            LineKind::FenceStart {
+                marker: ctx.located_with_pos(start, ctx.cursor.position().offset()),
+            },
+        );
+    }
+    let indentation = ctx.cursor.take_while(|ch| ch == ' ').len();
+    (indentation, LineKind::Text)
+}
 
 struct MarkdownHeading<'a> {
     level: usize,
@@ -874,31 +930,17 @@ struct MarkdownHeading<'a> {
 ///                           `Design Notes`.
 /// - Success, empty:        `###` at EOF -> level 3, empty title span
 ///                           immediately after the markers.
-/// - Success, indented:     `  # Title` is accepted.
-/// - Failure, indentation:  `    # Title` is rejected.
+/// - Failure, indentation:  `  # Title` and `    # Title` are rejected.
 /// - Failure, marker count: `plain text` and `####### Title` are rejected.
 /// - Failure, no whitespace: `##Title` is rejected.
 ///
-/// On failure, the cursor is left advanced; callers that need transactional
-/// behavior should use `ParsingContext::try_`.
-fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeading<'a>, Diagnostic> {
+/// On failure, the cursor position is not guaranteed.
+fn p_markdown_heading<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+) -> Result<MarkdownHeading<'a>, Diagnostic> {
     let start = ctx.cursor.position();
-    if start.column() != 1 {
-        return Err(Diagnostic::error_p(start, "line beginning expected"));
-    }
-    while ctx.cursor.position().column() <= 3 {
-        if ctx.cursor.take_if(|ch| ch == ' ').is_none() {
-            break;
-        }
-    }
-    let sharp_pos = ctx.cursor.position();
-    let level = ctx.cursor.take_while(|ch| ch == '#').len();
-    if !(1..=6).contains(&level) {
-        return Err(Diagnostic::error_p(
-            sharp_pos,
-            format!("invalid heading level: {}", level),
-        ));
-    }
+    let (level, pos) = peek_heading_level(ctx)?;
+    ctx.cursor.rewind(pos);
     match ctx.cursor.take_if(|ch| ch != '\n') {
         None => {
             ctx.cursor.take_line();
@@ -937,21 +979,101 @@ fn p_markdown_heading<'a>(ctx: &mut ParsingContext<'a>) -> Result<MarkdownHeadin
     })
 }
 
-fn peek_heading_level(ctx: &mut ParsingContext) -> Option<usize> {
-    let pos = ctx.cursor.position();
-    let level = p_markdown_heading(ctx).map(|heading| heading.level).ok();
-    ctx.cursor.rewind(pos);
-    level
+/// Returns (level, position immediate after `#`)
+fn peek_heading_level(ctx: &ParsingContext) -> Result<(usize, Position), Diagnostic> {
+    let mut ctx = ctx.clone();
+    // CommonMark says indentation is allowed, but we don't support it.
+    let sharp_pos = ctx.cursor.position();
+    let level = ctx.cursor.take_while(|ch| ch == '#').len();
+    if !(1..=6).contains(&level) {
+        return Err(Diagnostic::error_p(
+            sharp_pos,
+            format!("invalid heading level: {}", level),
+        ));
+    }
+    if ctx
+        .cursor
+        .peek()
+        .is_some_and(|ch| ![' ', '\t', '\n'].contains(&ch))
+    {
+        return Err(Diagnostic::error_p(
+            ctx.cursor.position(),
+            "expected space after heading marker",
+        ));
+    }
+    Ok((level, ctx.cursor.position()))
 }
 
-// ============================================================================
-// Fenced code blocks
-// ============================================================================
+struct MarkdownItem<'a> {
+    marker: Located<&'a str>,
+    content: Located<&'a str>,
+}
+
+fn p_markdown_item<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+) -> Result<Located<MarkdownItem<'a>>, Diagnostic> {
+    let start = ctx.cursor.position();
+    let (_, marker_end) = peek_is_item(ctx)?;
+    ctx.cursor.rewind(marker_end);
+    ctx.cursor.skip_whitespaces_inline();
+    let content_start = ctx.cursor.position();
+    ctx.cursor.take_line();
+    loop {
+        let (indentation, kind) = peek_line_kind(ctx);
+        let is_indented = indentation > start.column() - 1;
+
+        match kind {
+            LineKind::FenceStart { .. } if is_indented => {
+                p_skip_code_block(ctx)?;
+            }
+            LineKind::EOF
+            | LineKind::Heading { .. }
+            | LineKind::UnorderedItem { .. }
+            | LineKind::FenceStart { .. } => break,
+            LineKind::Blank => {
+                ctx.cursor.take_line();
+            }
+            LineKind::Text if is_indented => {
+                ctx.cursor.take_line();
+            }
+            LineKind::Text => break,
+        };
+    }
+    let content_end = ctx.cursor.position();
+
+    Ok(Located::new(
+        MarkdownItem {
+            marker: ctx.located_with_pos(start, marker_end.offset()),
+            content: ctx.located_with_pos(content_start, content_end.offset()),
+        },
+        SourceSpan::new(start.line(), start.offset()..content_end.offset()),
+    ))
+}
+
+/// Returns (marker, position immediate after `-`)
+fn peek_is_item(ctx: &ParsingContext) -> Result<(char, Position), Diagnostic> {
+    let mut ctx = ctx.clone();
+    // CommonMark says indentation is allowed, but we don't support it.
+    let Some(ch) = ctx.cursor.take_if(|ch| ch == '-') else {
+        return Err(Diagnostic::error_p(ctx.cursor.position(), "expected `-`"));
+    };
+    if ctx
+        .cursor
+        .peek()
+        .is_some_and(|ch| ![' ', '\t', '\n'].contains(&ch))
+    {
+        return Err(Diagnostic::error_p(
+            ctx.cursor.position(),
+            "expected space after item marker",
+        ));
+    }
+    Ok((ch, ctx.cursor.position()))
+}
 
 /// Consume fenced code blocks and report whether consumed.
 fn p_skip_code_block(ctx: &mut ParsingContext) -> Result<(), Diagnostic> {
     let start = ctx.cursor.position();
-    let (open_ch, open_count) = p_maybe_code_block_fence(ctx)?;
+    let (open_ch, open_count, _) = p_maybe_code_block_fence(ctx)?;
     let Some((_, open_line)) = ctx.cursor.take_line() else {
         return Err(Diagnostic::error_p(start, "unexpected EOF"));
     };
@@ -960,7 +1082,7 @@ fn p_skip_code_block(ctx: &mut ParsingContext) -> Result<(), Diagnostic> {
     }
     loop {
         match p_maybe_code_block_fence(ctx) {
-            Ok((ch, count)) if ch == open_ch && count >= open_count => {
+            Ok((ch, count, _)) if ch == open_ch && count >= open_count => {
                 ctx.cursor.skip_whitespaces_inline();
                 if !ctx.cursor.take().is_some_and(|ch| ch != '\n') {
                     return Ok(());
@@ -975,14 +1097,15 @@ fn p_skip_code_block(ctx: &mut ParsingContext) -> Result<(), Diagnostic> {
     }
 }
 
-/// Returns (marker_char, marker_count) if the next line is a code block fence
-fn p_maybe_code_block_fence(ctx: &mut ParsingContext) -> Result<(char, usize), Diagnostic> {
+/// Returns (marker_char, marker_count, indent_level) if the next line is a code block fence
+fn p_maybe_code_block_fence(ctx: &mut ParsingContext) -> Result<(char, usize, usize), Diagnostic> {
     let start = ctx.cursor.position();
     while ctx.cursor.position().column() <= 3 {
         if ctx.cursor.take_if(|ch| ch == ' ').is_none() {
             break;
         }
     }
+    let indentation_level = ctx.cursor.position().column() - 1;
     let marker_ch = match ctx.cursor.peek() {
         Some(ch) if ch == '`' || ch == '~' => ch,
         _ => return Err(Diagnostic::error_p(start, "expected code block marker")),
@@ -991,21 +1114,21 @@ fn p_maybe_code_block_fence(ctx: &mut ParsingContext) -> Result<(char, usize), D
     if marker.len() < 3 {
         return Err(Diagnostic::error_p(start, "expected code block marker"));
     }
-    Ok((marker_ch, marker.len()))
+    Ok((marker_ch, marker.len(), indentation_level))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::artifact::ItemForm;
+    use crate::artifact::{InvalidValue, ItemForm};
 
-    fn prose(section: &Section) -> &ProseSection {
+    fn prose<'a>(section: &'a Section<'_>) -> &'a ProseSection {
         section
             .as_prose()
             .expect("section should contain opaque prose")
     }
 
-    fn itemised(section: &Section) -> &ItemisedSection {
+    fn itemised<'a>(section: &'a Section<'_>) -> &'a ItemisedSection {
         section.as_itemised().expect("section should contain items")
     }
 
@@ -1032,7 +1155,7 @@ mod tests {
     mod component_parsers {
         use super::*;
 
-        fn context(source: &str) -> ParsingContext<'_> {
+        fn context(source: &str) -> ParsingContext<'_, '_> {
             ParsingContext {
                 source,
                 cursor: Cursor::new(source),
@@ -1043,35 +1166,54 @@ mod tests {
         }
 
         #[test]
-        fn markdown_heading_consumes_success_and_rewinds_failure() {
+        fn markdown_heading_consumes_success() {
             let mut heading = context("# Title\nbody");
             let parsed = p_markdown_heading(&mut heading).expect("heading should parse");
             assert_eq!(*parsed.title.value(), "Title");
             assert_eq!(heading.cursor.position().line(), 2);
-
-            let mut not_heading = context("###plain text\n");
-            let start = not_heading.cursor.position();
-            assert!(p_markdown_heading(&mut not_heading).is_err());
-            assert_ne!(not_heading.cursor.position(), start);
         }
 
         #[test]
-        fn metadata_line_consumes_success_and_rewinds_failures() {
+        fn heading_level_peek_does_not_consume_input() {
+            let heading = context("### Title\nbody");
+            let start = heading.cursor.position();
+
+            let (level, marker_end) =
+                peek_heading_level(&heading).expect("heading level should parse");
+
+            assert_eq!(level, 3);
+            assert_eq!(marker_end.offset(), 3);
+            assert_eq!(heading.cursor.position(), start);
+        }
+
+        #[test]
+        fn metadata_line_consumes_success() {
             let mut metadata = context("- Status: proposed\nbody");
             let parsed = p_metadata_line(&mut metadata).expect("metadata should parse");
             assert_eq!(parsed.value().value(), "proposed");
             assert_eq!(metadata.cursor.position().line(), 2);
+        }
 
-            let mut not_metadata = context("plain text\n");
-            let start = not_metadata.cursor.position();
-            assert!(p_metadata_line(&mut not_metadata).is_none());
-            assert_eq!(not_metadata.cursor.position(), start);
+        #[test]
+        fn markdown_item_consumes_indented_continuations() {
+            let source = "- Status: proposed\n  continuation\n- Next: value\n";
+            let mut item_context = context(source);
 
-            let mut invalid_metadata = context("- invalid metadata\nnext");
-            let start = invalid_metadata.cursor.position();
-            assert!(p_metadata_line(&mut invalid_metadata).is_none());
-            assert_eq!(invalid_metadata.cursor.position(), start);
-            assert!(invalid_metadata.diagnostics.is_empty());
+            let item = p_markdown_item(&mut item_context).expect("item should parse");
+
+            assert_eq!(item.value().marker.text(), "-");
+            assert_eq!(
+                item.value().content.text(),
+                "Status: proposed\n  continuation\n"
+            );
+            assert_eq!(
+                item.span().range(),
+                0..source.find("- Next").expect("next item should exist")
+            );
+            assert_eq!(
+                item_context.cursor.peek_line(),
+                Some((true, "- Next: value"))
+            );
         }
 
         #[test]
@@ -1131,7 +1273,7 @@ Arbitrary prose.\n
             assert_eq!(artifact.metadata()[1].span().start_line(), 7);
             assert_eq!(
                 &artifact_source[artifact.metadata()[1].span().range()],
-                "- Purpose: A value: with another colon\n"
+                "- Purpose: A value: with another colon\n\n\n\n"
             );
             assert_eq!(artifact.sections()[0].name(), "Overview");
             assert!(prose(&artifact.sections()[0])
@@ -1142,11 +1284,11 @@ Arbitrary prose.\n
         #[test]
         fn tracks_metadata_spans_for_utf8_and_supported_line_endings() {
             for ending in ["\n", "\r\n", "\r"] {
-                let source = ["# α", "  - Status: 値", "## Details", "text", ""].join(ending);
+                let source = ["# α", "- Status: 値", "## Details", "text", ""].join(ending);
                 let artifact = parse_with_config(&source, &metadata_config(&["Status"]))
                     .expect("artifact should parse");
                 let metadata = &artifact.metadata()[0];
-                let start = source.find("  - Status").unwrap();
+                let start = source.find("- Status").unwrap();
                 let end = source.find("## Details").unwrap();
 
                 assert_eq!(metadata.span().start_line(), 2);
@@ -1160,9 +1302,43 @@ Arbitrary prose.\n
         }
 
         #[test]
+        fn preserves_indented_multiline_metadata_as_immutable_value() {
+            let source = concat!(
+                "# Example\n",
+                "- Status: drafting\n",
+                "  continuation\n",
+                "  ```text\n",
+                "  body\n",
+                "  ```\n",
+                "## Details\n",
+            );
+            let expected_value = concat!(
+                "drafting\n",
+                "  continuation\n",
+                "  ```text\n",
+                "  body\n",
+                "  ```",
+            );
+            let mut artifact = parse_with_config(source, &metadata_config(&["Status"]))
+                .expect("multiline metadata should parse");
+
+            assert_eq!(artifact.metadata().len(), 1);
+            assert_eq!(artifact.metadata()[0].value().value(), expected_value);
+            let value = artifact.metadata()[0].value().located_value();
+            assert_eq!(&source[value.span().range()], expected_value);
+
+            let error = artifact.metadata_mut()[0]
+                .value_mut()
+                .set_value("accepted")
+                .expect_err("multiline metadata should be immutable");
+            assert_eq!(error, InvalidValue::Immutable);
+            assert_eq!(artifact.serialize(), source);
+        }
+
+        #[test]
         fn uses_markdown_heading_rules_and_source_ranges() {
             let source = concat!(
-                "  # Example ###\n",
+                "# Example ###\n",
                 "- Status: proposed\n",
                 "\n",
                 "## Details ##\n",
@@ -1226,10 +1402,10 @@ Arbitrary prose.\n
             assert_eq!(artifact.metadata()[0].value().key(), "Updated");
             assert_eq!(
                 artifact.pre_section_prose(),
-                "\r\nOpaque α.\r\n- Status: accepted\r\n"
+                "Opaque α.\r\n- Status: accepted\r\n"
             );
             let prose = artifact.located_pre_section_prose();
-            assert_eq!(prose.span().start_line(), 4);
+            assert_eq!(prose.span().start_line(), 5);
             assert_eq!(&source[prose.span().range()], prose.text());
             assert_eq!(artifact.sections()[0].name(), "Details");
             assert_eq!(artifact.serialize(), source);
@@ -1296,6 +1472,16 @@ Arbitrary prose.\n
                 artifact.pre_section_prose(),
                 "- Custom: value\nplain prose\n"
             );
+        }
+
+        #[test]
+        fn treats_indented_metadata_as_opaque_prose() {
+            let source = concat!("# Example\n", "  - Status: drafting\n", "## Details\n",);
+            let artifact = parse_with_config(source, &metadata_config(&["Status"]))
+                .expect("indented prose should be valid");
+
+            assert!(artifact.metadata().is_empty());
+            assert_eq!(artifact.pre_section_prose(), "  - Status: drafting\n");
         }
     }
 
@@ -1399,7 +1585,7 @@ Arbitrary prose.\n
             let source = concat!(
                 "# Example\n",
                 "## Items\n",
-                " ### G-REV1 :  α ###\n",
+                "### G-REV1 :  α ###\n",
                 "opaque body\n",
                 "#### A deeper heading\n",
                 "- Before: ordinary revision-body prose\n",
@@ -1422,7 +1608,7 @@ Arbitrary prose.\n
             let first_item = &items[0];
             let first = expanded(first_item);
             assert_eq!(first_item.form(), crate::artifact::ItemForm::Expanded);
-            assert_eq!(first.marker().text(), " ### ");
+            assert_eq!(first.marker().text(), "### ");
             assert_eq!(first_item.identifier().unwrap().text(), "G-REV1");
             assert_eq!(first.delimiter().unwrap().text(), " :  ");
             assert_eq!(first_item.content().text(), "α");
@@ -1449,7 +1635,7 @@ Arbitrary prose.\n
             assert_eq!(
                 &source[first_item.span().range()],
                 concat!(
-                    " ### G-REV1 :  α ###\n",
+                    "### G-REV1 :  α ###\n",
                     "opaque body\n",
                     "#### A deeper heading\n",
                     "- Before: ordinary revision-body prose\n",
@@ -2000,46 +2186,6 @@ Arbitrary prose.\n
             );
             assert_eq!(artifact.sections()[0].span(), &section_span);
             assert_eq!(artifact.source(), source);
-        }
-
-        #[test]
-        fn accepts_spacing_variations_in_metadata() {
-            let source = concat!(
-                "# Example\n",
-                "-    First  :   one  \n",
-                "     - Second : two\n",
-                "- Third:three\n",
-            );
-            let mut artifact =
-                parse_with_config(source, &metadata_config(&["First", "Second", "Third"]))
-                    .expect("artifact should parse");
-
-            let entries: Vec<_> = artifact
-                .metadata()
-                .iter()
-                .map(|entry| {
-                    let metadata = entry.value();
-                    (metadata.key(), metadata.value())
-                })
-                .collect();
-            assert_eq!(
-                entries,
-                vec![("First", "one"), ("Second", "two"), ("Third", "three")]
-            );
-
-            artifact.metadata_mut()[0]
-                .value_mut()
-                .set_value("updated")
-                .expect("value should be valid");
-            assert_eq!(
-                artifact.serialize(),
-                concat!(
-                    "# Example\n",
-                    "-    First  :   updated  \n",
-                    "     - Second : two\n",
-                    "- Third:three\n",
-                )
-            );
         }
     }
 

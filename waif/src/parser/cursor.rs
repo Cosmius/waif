@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 /// A location in source text.
 ///
 /// `offset` is a zero-based UTF-8 byte offset. `line` and `column` are
@@ -44,18 +42,6 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    pub fn within(source: &'a str, range: Range<usize>) -> Self {
-        assert!(range.start <= range.end);
-        assert!(range.end <= source.len());
-        assert!(source.is_char_boundary(range.start));
-        assert!(source.is_char_boundary(range.end));
-        let mut cursor = Self::new(&source[..range.end]);
-        while cursor.position.offset < range.start {
-            cursor.take().expect("range start is within source");
-        }
-        cursor
-    }
-
     /// Return the current source position.
     pub fn position(&self) -> Position {
         self.position
@@ -67,6 +53,19 @@ impl<'a> Cursor<'a> {
     /// current position. This precondition is not checked.
     pub fn rewind(&mut self, position: Position) {
         self.position = position;
+    }
+
+    pub fn skip_to_offset(&mut self, abs_offset: usize) {
+        assert!(abs_offset <= self.source.len());
+        while self.position.offset < abs_offset {
+            self.take().expect("abs_offset is within source");
+        }
+        assert_eq!(self.position.offset, abs_offset);
+    }
+
+    pub fn limit(&mut self, offset: usize) {
+        assert!(self.source.is_char_boundary(offset));
+        self.source = &self.source[..offset];
     }
 
     /// Run a parsing operation, rewinding the cursor when it fails.
@@ -275,7 +274,9 @@ mod tests {
             let source = "first\r\n値: body\r\nafter";
             let start = source.find('値').expect("range start");
             let end = source.find("\r\nafter").expect("range end");
-            let mut cursor = Cursor::within(source, start..end);
+            let mut cursor = Cursor::new(source);
+            cursor.limit(end);
+            cursor.skip_to_offset(start);
 
             assert_eq!(cursor.position().offset(), start);
             assert_eq!(cursor.position().line(), 2);

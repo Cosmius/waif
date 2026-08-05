@@ -2,24 +2,24 @@ use std::fmt;
 use std::ops::Range;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Artifact {
+pub struct Artifact<'a> {
     source: String,
     title: String,
-    metadata: Vec<Located<Metadata>>,
+    metadata: Vec<Located<Metadata<'a>>>,
     pre_section_prose: Located<String>,
-    sections: Vec<Section>,
+    sections: Vec<Section<'a>>,
 }
 
 // This is the structured artifact API. The check command currently only needs
 // parsing to succeed, while later commands will consume these accessors.
 #[allow(dead_code)]
-impl Artifact {
+impl<'a> Artifact<'a> {
     pub(crate) fn new(
         source: String,
         title: String,
-        metadata: Vec<Located<Metadata>>,
+        metadata: Vec<Located<Metadata<'a>>>,
         pre_section_prose: Located<String>,
-        sections: Vec<Section>,
+        sections: Vec<Section<'a>>,
     ) -> Self {
         Self {
             source,
@@ -39,7 +39,7 @@ impl Artifact {
         &self.title
     }
 
-    pub fn metadata(&self) -> &[Located<Metadata>] {
+    pub fn metadata(&self) -> &[Located<Metadata<'a>>] {
         &self.metadata
     }
 
@@ -48,7 +48,7 @@ impl Artifact {
     /// The slice cannot add, remove, or reorder entries. Use
     /// [`Metadata::set_value`] to change an existing value. Keys and ordering
     /// are controlled by the applicable artifact contract.
-    pub fn metadata_mut(&mut self) -> &mut [Located<Metadata>] {
+    pub fn metadata_mut(&mut self) -> &mut [Located<Metadata<'a>>] {
         &mut self.metadata
     }
 
@@ -79,7 +79,7 @@ impl Artifact {
         matches.next().is_none().then_some(item)
     }
 
-    pub fn plan_item_mut(&mut self, identifier: &str) -> Option<&mut PlanItem> {
+    pub fn plan_item_mut(&mut self, identifier: &str) -> Option<&mut PlanItem<'a>> {
         let count = self
             .sections
             .iter()
@@ -104,19 +104,19 @@ impl Artifact {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Metadata {
-    key: String,
+pub struct Metadata<'a> {
+    key: Located<&'a str>,
     value: Located<String>,
 }
 
 #[allow(dead_code)]
-impl Metadata {
-    pub(crate) fn new(key: String, value: Located<String>) -> Self {
+impl<'a> Metadata<'a> {
+    pub(crate) fn new(key: Located<&'a str>, value: Located<String>) -> Self {
         Self { key, value }
     }
 
-    pub fn key(&self) -> &str {
-        &self.key
+    pub fn key(&self) -> &'a str {
+        self.key.text()
     }
 
     pub fn value(&self) -> &str {
@@ -133,8 +133,11 @@ impl Metadata {
     /// including the separator and line ending, remains unchanged.
     pub fn set_value(&mut self, value: impl Into<String>) -> Result<(), InvalidValue> {
         let value = value.into();
+        if self.value.value.contains(['\r', '\n']) {
+            return Err(InvalidValue::Immutable);
+        }
         if value.contains(['\r', '\n']) {
-            return Err(InvalidValue);
+            return Err(InvalidValue::Multiline);
         }
         self.value.value = value;
         Ok(())
@@ -142,11 +145,19 @@ impl Metadata {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct InvalidValue;
+pub enum InvalidValue {
+    /// The parsed value spans multiple lines and cannot be edited safely.
+    Immutable,
+    /// The replacement value contains a line ending.
+    Multiline,
+}
 
 impl fmt::Display for InvalidValue {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "metadata values must be single-line")
+        match self {
+            Self::Immutable => write!(formatter, "metadata value is immutable"),
+            Self::Multiline => write!(formatter, "metadata values must be single-line"),
+        }
     }
 }
 
@@ -175,15 +186,15 @@ impl SourceSpan {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Section {
+pub enum Section<'a> {
     Prose(Located<ProseSection>),
     Itemised(Located<ItemisedSection>),
-    PlanItems(Located<PlanItemSection>),
+    PlanItems(Located<PlanItemSection<'a>>),
     Findings(Located<FindingsSection>),
 }
 
 #[allow(dead_code)]
-impl Section {
+impl<'a> Section<'a> {
     pub fn name(&self) -> &str {
         match self {
             Self::Prose(section) => section.value.title.text(),
@@ -241,7 +252,7 @@ impl Section {
         }
     }
 
-    pub fn as_plan_items_mut(&mut self) -> Option<&mut PlanItemSection> {
+    pub fn as_plan_items_mut(&mut self) -> Option<&mut PlanItemSection<'a>> {
         match self {
             Self::PlanItems(section) => Some(section.value_mut()),
             Self::Prose(_) | Self::Itemised(_) | Self::Findings(_) => None,
@@ -307,9 +318,9 @@ impl ItemisedSection {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct PlanItemSection {
+pub struct PlanItemSection<'a> {
     pub(crate) title: Located<String>,
-    pub(crate) items: Located<Vec<PlanItem>>,
+    pub(crate) items: Located<Vec<PlanItem<'a>>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -384,12 +395,12 @@ impl Finding {
 }
 
 #[allow(dead_code)]
-impl PlanItemSection {
+impl<'a> PlanItemSection<'a> {
     pub fn items(&self) -> &[PlanItem] {
         self.items.value()
     }
 
-    pub fn items_mut(&mut self) -> &mut [PlanItem] {
+    pub fn items_mut(&mut self) -> &mut [PlanItem<'a>] {
         self.items.value_mut()
     }
 
@@ -403,18 +414,18 @@ impl PlanItemSection {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct PlanItem {
+pub struct PlanItem<'a> {
     // Keep the ordinary expanded-item representation as the source of truth
     // for heading components and the complete record span. Plan items add only
     // a structured view over that item's body: leading metadata followed by
     // opaque prose.
     pub(crate) expanded: Located<ExpandedItem>,
-    pub(crate) metadata: Vec<Located<Metadata>>,
+    pub(crate) metadata: Vec<Located<Metadata<'a>>>,
     pub(crate) prose: Located<String>,
 }
 
 #[allow(dead_code)]
-impl PlanItem {
+impl<'a> PlanItem<'a> {
     pub fn identifier(&self) -> Option<&Located<String>> {
         self.expanded.value.identifier.as_ref()
     }
@@ -427,7 +438,7 @@ impl PlanItem {
         &self.metadata
     }
 
-    pub fn status_mut(&mut self) -> Option<&mut Metadata> {
+    pub fn status_mut(&mut self) -> Option<&mut Metadata<'a>> {
         let mut matches = self
             .metadata
             .iter_mut()
@@ -593,8 +604,8 @@ impl Located<String> {
     }
 }
 
-impl Located<&str> {
-    pub fn text(&self) -> &str {
+impl<'a> Located<&'a str> {
+    pub fn text(&self) -> &'a str {
         self.value
     }
 }
@@ -634,7 +645,7 @@ pub fn serialize(artifact: &Artifact) -> String {
     output
 }
 
-impl fmt::Display for Artifact {
+impl fmt::Display for Artifact<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&serialize(self))
     }
@@ -647,7 +658,7 @@ mod tests {
     #[test]
     fn rejects_multiline_metadata_replacements() {
         let mut metadata = Metadata {
-            key: "Status".into(),
+            key: Located::new("Status", SourceSpan::new(2, 10..16)),
             value: Located::new("proposed".into(), SourceSpan::new(2, 20..28)),
         };
 
@@ -655,7 +666,24 @@ mod tests {
             .set_value("accepted\n- Extra: value")
             .expect_err("multiline metadata should be rejected");
 
+        assert_eq!(error, InvalidValue::Multiline);
         assert_eq!(error.to_string(), "metadata values must be single-line");
+    }
+
+    #[test]
+    fn rejects_edits_to_parsed_multiline_metadata_values() {
+        let mut metadata = Metadata {
+            key: Located::new("Status", SourceSpan::new(2, 2..8)),
+            value: Located::new("proposed\n  continued".into(), SourceSpan::new(2, 18..38)),
+        };
+
+        let error = metadata
+            .set_value("accepted")
+            .expect_err("parsed multiline metadata should be immutable");
+
+        assert_eq!(error, InvalidValue::Immutable);
+        assert_eq!(error.to_string(), "metadata value is immutable");
+        assert_eq!(metadata.value(), "proposed\n  continued");
     }
 
     #[test]

@@ -233,7 +233,7 @@ fn validate_decision_findings(artifact: &Artifact, diagnostics: &mut Vec<Diagnos
     }
 }
 
-fn metadata<'a>(artifact: &'a Artifact, key: &str) -> Option<&'a Metadata> {
+fn metadata<'a, 'b>(artifact: &'a Artifact<'b>, key: &str) -> Option<&'a Metadata<'b>> {
     let mut entries = artifact
         .metadata()
         .iter()

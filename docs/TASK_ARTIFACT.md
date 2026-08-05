@@ -25,8 +25,8 @@ block quotes, or raw HTML are outside the supported format.
 
 An artifact contains, in order:
 
-1. Exactly one level-one heading with a non-empty, single-line title. It is the
-   first non-whitespace line.
+1. Exactly one level-one heading with a non-empty, single-line title. It begins
+   in column one and is the first non-whitespace line.
 2. A leading structured metadata block whose entries have the logical form
    `- Key: value`.
 3. Optional opaque prose.
@@ -47,10 +47,15 @@ recognized-key-looking entries. A misspelled key therefore begins prose and
 causes the actual recognized key to be reported missing rather than
 reinterpreting later source.
 
-A metadata entry may be indented and must have whitespace between `-` and its
-key. Extra whitespace around the key, colon, and value is insignificant. The
-first colon separates the key from its single-line value, which may contain
-further colons.
+A metadata entry begins with `-` in column one and must have whitespace between
+`-` and its key. Extra whitespace around the key, colon, and value is
+insignificant. The first colon separates the key from its value, which may
+contain further colons.
+
+A metadata value may continue onto indented lines, including an indented fenced
+code block. Parsed multiline values are immutable through the structured
+artifact API. A programmatic replacement is supported only when the parsed
+value and its replacement are both single-line.
 
 ## Section Types
 
