@@ -579,50 +579,6 @@ fn p_plan_item<'a>(source: &'a str, expanded: Located<ExpandedItem<'a>>) -> Plan
     }
 }
 
-// Parse compact peer items up to the section boundary or expanded phase.
-fn p_compact_items<'a>(
-    ctx: &mut ParsingContext<'_, 'a>,
-    body_end: usize,
-) -> Vec<Located<CompactItem<'a>>> {
-    let mut items = Vec::new();
-
-    let mut old_cursor = ctx.cursor.clone();
-    ctx.cursor.limit(body_end);
-
-    while !ctx.cursor.is_eof() {
-        let (_, kind) = peek_line_kind(ctx);
-        match kind {
-            LineKind::Heading { .. } => {
-                break;
-            }
-            LineKind::FenceStart { .. } => {
-                let pos = ctx.cursor.position();
-                ctx.diagnostics
-                    .push(Diagnostic::error_p(pos, "unexpected code block"));
-                p_skip_code_block(ctx).expect("must be code block");
-                continue;
-            }
-            LineKind::Blank => {
-                ctx.cursor.take_line().expect("not eof");
-                continue;
-            }
-            _ => {}
-        }
-        match ctx.try_(p_compact_item) {
-            Ok(item) => {
-                items.push(item);
-            }
-            Err(diagnostic) => {
-                ctx.cursor.take_line().expect("not eof");
-                ctx.diagnostics.push(diagnostic);
-            }
-        };
-    }
-    old_cursor.rewind(ctx.cursor.position());
-    ctx.cursor = old_cursor;
-    items
-}
-
 // An expanded item whose body end is not known until the next peer or section.
 struct OpenExpandedItem<'a> {
     start: Position,
@@ -772,6 +728,50 @@ fn located_source_range(source: &str, start: Position, end: Position) -> Located
         &source[start.offset()..end.offset()],
         SourceSpan::new(start, end),
     )
+}
+
+// Parse compact peer items up to the section boundary or expanded phase.
+fn p_compact_items<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+    body_end: usize,
+) -> Vec<Located<CompactItem<'a>>> {
+    let mut items = Vec::new();
+
+    let mut old_cursor = ctx.cursor.clone();
+    ctx.cursor.limit(body_end);
+
+    while !ctx.cursor.is_eof() {
+        let (_, kind) = peek_line_kind(ctx);
+        match kind {
+            LineKind::Heading { .. } => {
+                break;
+            }
+            LineKind::FenceStart { .. } => {
+                let pos = ctx.cursor.position();
+                ctx.diagnostics
+                    .push(Diagnostic::error_p(pos, "unexpected code block"));
+                p_skip_code_block(ctx).expect("must be code block");
+                continue;
+            }
+            LineKind::Blank => {
+                ctx.cursor.take_line().expect("not eof");
+                continue;
+            }
+            _ => {}
+        }
+        match ctx.try_(p_compact_item) {
+            Ok(item) => {
+                items.push(item);
+            }
+            Err(diagnostic) => {
+                ctx.cursor.take_line().expect("not eof");
+                ctx.diagnostics.push(diagnostic);
+            }
+        };
+    }
+    old_cursor.rewind(ctx.cursor.position());
+    ctx.cursor = old_cursor;
+    items
 }
 
 fn p_compact_item<'a>(
