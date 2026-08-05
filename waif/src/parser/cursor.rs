@@ -10,7 +10,6 @@ pub struct Position {
 }
 
 impl Position {
-
     pub fn offset(self) -> usize {
         self.offset
     }
@@ -48,6 +47,7 @@ impl Position {
 pub struct Cursor<'a> {
     source: &'a str,
     position: Position,
+    limit: usize,
 }
 
 impl<'a> Cursor<'a> {
@@ -59,6 +59,7 @@ impl<'a> Cursor<'a> {
                 line: 1,
                 column: 1,
             },
+            limit: source.len(),
         }
     }
 
@@ -76,7 +77,7 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn skip_to_offset(&mut self, abs_offset: usize) {
-        assert!(abs_offset <= self.source.len());
+        assert!(abs_offset <= self.limit);
         while self.position.offset < abs_offset {
             self.take().expect("abs_offset is within source");
         }
@@ -85,7 +86,9 @@ impl<'a> Cursor<'a> {
 
     pub fn limit(&mut self, offset: usize) {
         assert!(self.source.is_char_boundary(offset));
-        self.source = &self.source[..offset];
+        assert!(offset >= self.position.offset);
+        assert!(offset <= self.source.len());
+        self.limit = offset;
     }
 
     /// Return the next character without advancing the cursor.
@@ -203,11 +206,11 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn is_eof(&self) -> bool {
-        self.position.offset == self.source.len()
+        self.position.offset == self.limit
     }
 
     fn remaining(&self) -> &'a str {
-        &self.source[self.position.offset..]
+        &self.source[self.position.offset..self.limit]
     }
 }
 
@@ -278,6 +281,20 @@ mod tests {
             assert_eq!(cursor.position().offset(), end);
             assert!(cursor.is_eof());
             assert_eq!(cursor.take(), None);
+        }
+
+        #[test]
+        fn resetting_the_limit_restores_the_hidden_suffix() {
+            let source = "first\r\nsecond";
+            let mut cursor = Cursor::new(source);
+            cursor.limit(5);
+            cursor.skip_to_offset(5);
+
+            assert!(cursor.is_eof());
+            cursor.limit(source.len());
+
+            assert_eq!(cursor.take(), Some('\n'));
+            assert_eq!(cursor.take_line(), Some((false, "second")));
         }
     }
 
