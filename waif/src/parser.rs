@@ -6,6 +6,7 @@ use crate::artifact::{
     SourceSpan,
 };
 use std::fmt;
+use std::iter::repeat_n;
 use std::ops::Range;
 
 mod cursor;
@@ -242,9 +243,9 @@ impl<'p, 'a> ParsingContext<'p, 'a> {
         }
     }
 
-    pub(crate) fn located_with_pos(&self, position: Position, end: usize) -> Located<&'a str> {
-        let text = &self.source[position.offset()..end];
-        Located::new(text, SourceSpan::new(position, position.advance(text)))
+    pub(crate) fn located_with_pos(&self, position: Position, end: Position) -> Located<&'a str> {
+        let text = &self.source[position.offset()..end.offset()];
+        Located::new(text, SourceSpan::new(position, end))
     }
 }
 
@@ -272,7 +273,7 @@ fn p_title_line<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Located<&'a str> {
     if ctx.cursor.is_eof() {
         ctx.diagnostics
             .push(Diagnostic::error1(pos.line(), "missing level-one title"));
-        return ctx.located_with_pos(pos, pos.offset());
+        return ctx.located_with_pos(pos, pos);
     }
 
     let Ok(MarkdownHeading {
@@ -283,7 +284,7 @@ fn p_title_line<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Located<&'a str> {
             pos.line(),
             "first non-whitespace line must be a level-one Markdown heading",
         ));
-        return ctx.located_with_pos(pos, pos.offset());
+        return ctx.located_with_pos(pos, pos);
     };
     if title.value().is_empty() {
         ctx.diagnostics.push(Diagnostic::error1(
@@ -330,15 +331,14 @@ fn p_metadata_line<'a>(
     let mut subctx = ctx.clone();
     let item = p_markdown_item(ctx)?;
     let item_content = &item.value().content;
-    let content_len = item_content
+    let content = item_content
         .text()
-        .trim_end_matches(['\t', '\r', '\n', ' '])
-        .len();
-    let value_end_offset = item_content.span().range().start + content_len;
+        .trim_end_matches(['\t', '\r', '\n', ' ']);
+    let value_end = item_content.span().start().advance(content);
     subctx
         .cursor
         .skip_to_offset(item_content.span().range().start);
-    subctx.cursor.limit(value_end_offset);
+    subctx.cursor.limit(value_end.offset());
     let key_start = subctx.cursor.position();
     let key = subctx
         .cursor
@@ -347,7 +347,7 @@ fn p_metadata_line<'a>(
     if key.is_empty() {
         return Err(Diagnostic::error_p(key_start, "expected key"));
     }
-    let key_l = subctx.located_with_pos(key_start, key_start.offset() + key.len());
+    let key_l = subctx.located_with_pos(key_start, key_start.advance(key));
     let colon_pos = subctx.cursor.position();
     if !subctx.cursor.take().is_some_and(|ch| ch == ':') {
         return Err(Diagnostic::error_p(colon_pos, "expected colon"));
@@ -355,7 +355,7 @@ fn p_metadata_line<'a>(
     subctx.cursor.skip_whitespaces_inline();
     let value_start = subctx.cursor.position();
     let value_l = subctx
-        .located_with_pos(value_start, value_end_offset)
+        .located_with_pos(value_start, value_end)
         .map(|s| s.to_owned());
     Ok(Located::new(
         Metadata::new(key_l, value_l),
@@ -695,20 +695,16 @@ fn p_expanded_item_opening(ctx: &mut ParsingContext) -> OpenExpandedItem {
     let marker_end = start.advance(&ctx.source[start.offset()..title_range.start]);
     let marker = located_source_range(ctx.source, start, marker_end);
     let ranges = item_opening_ranges(title).offset(title_range.start);
-    let identifier = ranges
-        .identifier
-        .map(|range| {
-            let range_start = start.advance(&ctx.source[start.offset()..range.start]);
-            let range_end = start.advance(&ctx.source[start.offset()..range.end]);
-            located_source_range(ctx.source, range_start, range_end)
-        });
-    let delimiter = ranges
-        .delimiter
-        .map(|range| {
-            let range_start = start.advance(&ctx.source[start.offset()..range.start]);
-            let range_end = start.advance(&ctx.source[start.offset()..range.end]);
-            located_source_range(ctx.source, range_start, range_end)
-        });
+    let identifier = ranges.identifier.map(|range| {
+        let range_start = start.advance(&ctx.source[start.offset()..range.start]);
+        let range_end = start.advance(&ctx.source[start.offset()..range.end]);
+        located_source_range(ctx.source, range_start, range_end)
+    });
+    let delimiter = ranges.delimiter.map(|range| {
+        let range_start = start.advance(&ctx.source[start.offset()..range.start]);
+        let range_end = start.advance(&ctx.source[start.offset()..range.end]);
+        located_source_range(ctx.source, range_start, range_end)
+    });
     let content = located_source_range(
         ctx.source,
         start.advance(&ctx.source[start.offset()..ranges.content.start]),
@@ -905,20 +901,21 @@ fn peek_line_kind<'a>(ctx: &ParsingContext<'_, 'a>) -> (usize, LineKind<'a>) {
     if let Ok((level, _)) = peek_heading_level(ctx) {
         return (0, LineKind::Heading { level });
     }
-    if let Ok((_, _)) = peek_is_item(ctx) {
+    if let Ok((marker, _)) = peek_is_item(ctx) {
         return (
             0,
             LineKind::UnorderedItem {
-                marker: ctx.located_with_pos(start, start.offset() + 1),
+                marker: ctx.located_with_pos(start, start.advance(&marker.to_string())),
             },
         );
     }
     let mut ctx = ctx.clone();
-    if let Ok((_, _, indentation)) = ctx.try_(p_maybe_code_block_fence) {
+    if let Ok((marker, n, indentation)) = ctx.try_(p_maybe_code_block_fence) {
+        let marker_s: String = repeat_n(marker, n).collect();
         return (
             indentation,
             LineKind::FenceStart {
-                marker: ctx.located_with_pos(start, ctx.cursor.position().offset()),
+                marker: ctx.located_with_pos(start, start.advance(&marker_s)),
             },
         );
     }
@@ -957,7 +954,7 @@ fn p_markdown_heading<'a>(
             let title_pos = ctx.cursor.position();
             return Ok(MarkdownHeading {
                 level,
-                title: ctx.located_with_pos(title_pos, title_pos.offset()),
+                title: ctx.located_with_pos(title_pos, title_pos),
                 pos: start,
             });
         }
@@ -974,14 +971,14 @@ fn p_markdown_heading<'a>(
     };
     let trimmed = rest.trim_end();
     let without_hashes = trimmed.trim_end_matches('#');
-    let title_len = if without_hashes.is_empty() {
-        0
+    let title = if without_hashes.is_empty() {
+        ""
     } else if without_hashes.ends_with([' ', '\t']) {
-        without_hashes.trim_end().len()
+        without_hashes.trim_end()
     } else {
-        trimmed.len()
+        trimmed
     };
-    let title = ctx.located_with_pos(text_pos, text_pos.offset() + title_len);
+    let title = ctx.located_with_pos(text_pos, text_pos.advance(title));
     Ok(MarkdownHeading {
         level,
         title,
@@ -1053,8 +1050,8 @@ fn p_markdown_item<'a>(
 
     Ok(Located::new(
         MarkdownItem {
-            marker: ctx.located_with_pos(start, marker_end.offset()),
-            content: ctx.located_with_pos(content_start, content_end.offset()),
+            marker: ctx.located_with_pos(start, marker_end),
+            content: ctx.located_with_pos(content_start, content_end),
         },
         SourceSpan::new(start, content_end),
     ))

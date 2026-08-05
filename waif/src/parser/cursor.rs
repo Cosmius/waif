@@ -11,7 +11,11 @@ pub struct Position {
 
 impl Position {
     pub(crate) const fn new(offset: usize, line: usize, column: usize) -> Self {
-        Self { offset, line, column }
+        Self {
+            offset,
+            line,
+            column,
+        }
     }
 
     pub fn offset(self) -> usize {
@@ -26,18 +30,23 @@ impl Position {
         self.column
     }
 
-    pub(crate) fn advance(self, text: &str) -> Self {
-        let mut position = self;
+    pub(crate) fn advance(mut self, text: &str) -> Self {
+        let mut last = '\0';
         for ch in text.chars() {
-            if ch == '\n' {
-                position.line += 1;
-                position.column = 1;
-            } else {
-                position.column += 1;
+            match ch {
+                '\n' if last == '\r' => {}
+                '\r' | '\n' => {
+                    self.column = 1;
+                    self.line += 1;
+                }
+                _ => {
+                    self.column += 1;
+                }
             }
-            position.offset += ch.len_utf8();
+            self.offset += ch.len_utf8();
+            last = ch;
         }
-        position
+        self
     }
 }
 

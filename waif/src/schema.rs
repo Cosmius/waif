@@ -665,7 +665,10 @@ fn match_item_identifier(
                     Located::new(
                         value,
                         SourceSpan::new(
-                            identifier.span().start().advance(&prefix_text[..range.start]),
+                            identifier
+                                .span()
+                                .start()
+                                .advance(&prefix_text[..range.start]),
                             identifier.span().start().advance(&prefix_text[..range.end]),
                         ),
                     )

@@ -169,7 +169,7 @@ use crate::parser::Position;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceSpan {
     start: Position,
-    end: Position
+    end: Position,
 }
 
 #[allow(dead_code)]
