@@ -96,11 +96,12 @@ impl<'a, L> Artifact<'a, L> {
             .flat_map(PlanItemSection::items_mut)
             .find(|item| item.identifier().is_some_and(|id| id.text() == identifier))
     }
-
 }
 
 impl<'a> Artifact<'a, SourceSpan> {
-    pub fn serialize(&self) -> String { serialize(self) }
+    pub fn serialize(&self) -> String {
+        serialize(self)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -198,9 +199,9 @@ impl SourceSpan {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Section<'a, L = SourceSpan> {
     Prose(Located<ProseSection<L>, L>),
-    Itemised(Located<ItemisedSection<L>, L>),
+    Itemised(Located<ItemisedSection<'a, L>, L>),
     PlanItems(Located<PlanItemSection<'a, L>, L>),
-    Findings(Located<FindingsSection<L>, L>),
+    Findings(Located<FindingsSection<'a, L>, L>),
 }
 
 #[allow(dead_code)]
@@ -248,7 +249,7 @@ impl<'a, L> Section<'a, L> {
         }
     }
 
-    pub fn as_itemised(&self) -> Option<&ItemisedSection<L>> {
+    pub fn as_itemised(&self) -> Option<&ItemisedSection<'a, L>> {
         match self {
             Self::Prose(_) | Self::PlanItems(_) | Self::Findings(_) => None,
             Self::Itemised(section) => Some(section.value()),
@@ -269,7 +270,7 @@ impl<'a, L> Section<'a, L> {
         }
     }
 
-    pub fn as_findings(&self) -> Option<&FindingsSection<L>> {
+    pub fn as_findings(&self) -> Option<&FindingsSection<'a, L>> {
         match self {
             Self::Findings(section) => Some(section.value()),
             Self::Prose(_) | Self::Itemised(_) | Self::PlanItems(_) => None,
@@ -307,14 +308,14 @@ impl<L> ProseSection<L> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ItemisedSection<L = SourceSpan> {
+pub struct ItemisedSection<'a, L = SourceSpan> {
     pub(crate) title: Located<String, L>,
-    pub(crate) items: Located<Vec<Item<L>>, L>,
+    pub(crate) items: Located<Vec<Item<'a, L>>, L>,
 }
 
 #[allow(dead_code)]
-impl<L> ItemisedSection<L> {
-    pub fn items(&self) -> &[Item<L>] {
+impl<'a, L> ItemisedSection<'a, L> {
+    pub fn items(&self) -> &[Item<'a, L>] {
         self.items.value()
     }
 
@@ -322,7 +323,7 @@ impl<L> ItemisedSection<L> {
         &self.title
     }
 
-    pub fn located_items(&self) -> &Located<Vec<Item<L>>, L> {
+    pub fn located_items(&self) -> &Located<Vec<Item<'a, L>>, L> {
         &self.items
     }
 }
@@ -334,30 +335,30 @@ pub struct PlanItemSection<'a, L = SourceSpan> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct FindingsSection<L = SourceSpan> {
+pub struct FindingsSection<'a, L = SourceSpan> {
     pub(crate) title: Located<String, L>,
-    pub(crate) body: FindingsBody<L>,
+    pub(crate) body: FindingsBody<'a, L>,
 }
 
 #[allow(dead_code)]
-impl FindingsSection {
-    pub fn title(&self) -> &Located<String> {
+impl<'a, L> FindingsSection<'a, L> {
+    pub fn title(&self) -> &Located<String, L> {
         &self.title
     }
 
-    pub fn body(&self) -> &FindingsBody {
+    pub fn body(&self) -> &FindingsBody<'a, L> {
         &self.body
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum FindingsBody<L = SourceSpan> {
+pub enum FindingsBody<'a, L = SourceSpan> {
     Sentinel(Located<String, L>),
-    Items(Located<Vec<Finding<L>>, L>),
+    Items(Located<Vec<Finding<'a, L>>, L>),
 }
 
 #[allow(dead_code)]
-impl<L> FindingsBody<L> {
+impl<'a, L> FindingsBody<'a, L> {
     pub fn span(&self) -> &L {
         match self {
             Self::Sentinel(body) => body.span(),
@@ -372,7 +373,7 @@ impl<L> FindingsBody<L> {
         }
     }
 
-    pub fn items(&self) -> Option<&[Finding<L>]> {
+    pub fn items(&self) -> Option<&[Finding<'a, L>]> {
         match self {
             Self::Items(items) => Some(items.value()),
             Self::Sentinel(_) => None,
@@ -381,25 +382,25 @@ impl<L> FindingsBody<L> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Finding<L = SourceSpan> {
-    pub(crate) expanded: Located<ExpandedItem<L>, L>,
+pub struct Finding<'a, L = SourceSpan> {
+    pub(crate) expanded: Located<ExpandedItem<'a, L>, L>,
 }
 
 #[allow(dead_code)]
-impl Finding {
-    pub fn identifier(&self) -> Option<&Located<String>> {
+impl<'a, L> Finding<'a, L> {
+    pub fn identifier(&self) -> Option<&Located<&'a str, L>> {
         self.expanded.value.identifier.as_ref()
     }
 
-    pub fn content(&self) -> &Located<String> {
+    pub fn content(&self) -> &Located<&'a str, L> {
         &self.expanded.value.content
     }
 
-    pub fn body(&self) -> &Located<String> {
+    pub fn body(&self) -> &Located<&'a str, L> {
         &self.expanded.value.body
     }
 
-    pub fn span(&self) -> &SourceSpan {
+    pub fn span(&self) -> &L {
         self.expanded.span()
     }
 }
@@ -429,18 +430,18 @@ pub struct PlanItem<'a, L = SourceSpan> {
     // for heading components and the complete record span. Plan items add only
     // a structured view over that item's body: leading metadata followed by
     // opaque prose.
-    pub(crate) expanded: Located<ExpandedItem<L>, L>,
+    pub(crate) expanded: Located<ExpandedItem<'a, L>, L>,
     pub(crate) metadata: Vec<Located<Metadata<'a, L>, L>>,
     pub(crate) prose: Located<String, L>,
 }
 
 #[allow(dead_code)]
 impl<'a, L> PlanItem<'a, L> {
-    pub fn identifier(&self) -> Option<&Located<String, L>> {
+    pub fn identifier(&self) -> Option<&Located<&'a str, L>> {
         self.expanded.value.identifier.as_ref()
     }
 
-    pub fn title(&self) -> &Located<String, L> {
+    pub fn title(&self) -> &Located<&'a str, L> {
         &self.expanded.value.content
     }
 
@@ -467,9 +468,9 @@ impl<'a, L> PlanItem<'a, L> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Item<L = SourceSpan> {
-    Compact(Located<CompactItem<L>, L>),
-    Expanded(Located<ExpandedItem<L>, L>),
+pub enum Item<'a, L = SourceSpan> {
+    Compact(Located<CompactItem<'a, L>, L>),
+    Expanded(Located<ExpandedItem<'a, L>, L>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -479,7 +480,7 @@ pub enum ItemForm {
 }
 
 #[allow(dead_code)]
-impl<L> Item<L> {
+impl<'a, L> Item<'a, L> {
     pub fn form(&self) -> ItemForm {
         match self {
             Self::Compact(_) => ItemForm::Compact,
@@ -487,24 +488,17 @@ impl<L> Item<L> {
         }
     }
 
-    pub fn identifier(&self) -> Option<&Located<String, L>> {
+    pub fn identifier(&self) -> Option<&Located<&'a str, L>> {
         match self {
             Self::Compact(item) => item.value.identifier.as_ref(),
             Self::Expanded(item) => item.value.identifier.as_ref(),
         }
     }
 
-    pub fn content(&self) -> &Located<String, L> {
+    pub fn content(&self) -> &Located<&'a str, L> {
         match self {
             Self::Compact(item) => &item.value.content,
             Self::Expanded(item) => &item.value.content,
-        }
-    }
-
-    pub fn body(&self) -> &Located<String, L> {
-        match self {
-            Self::Compact(item) => &item.value.body,
-            Self::Expanded(item) => &item.value.body,
         }
     }
 
@@ -515,7 +509,7 @@ impl<L> Item<L> {
         }
     }
 
-    pub fn as_compact(&self) -> Option<&CompactItem<L>> {
+    pub fn as_compact(&self) -> Option<&CompactItem<'a, L>> {
         match self {
             Self::Compact(item) => Some(item.value()),
             Self::Expanded(_) => None,
@@ -531,54 +525,49 @@ impl<L> Item<L> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct CompactItem<L = SourceSpan> {
-    pub(crate) marker: Located<String, L>,
-    pub(crate) identifier: Option<Located<String, L>>,
-    pub(crate) delimiter: Option<Located<String, L>>,
-    pub(crate) content: Located<String, L>,
-    pub(crate) body: Located<String, L>,
+pub struct CompactItem<'a, L = SourceSpan> {
+    pub(crate) marker: Located<&'a str, L>,
+    pub(crate) identifier: Option<Located<&'a str, L>>,
+    pub(crate) delimiter: Option<Located<&'a str, L>>,
+    pub(crate) content: Located<&'a str, L>,
 }
 
 #[allow(dead_code)]
-impl<L> CompactItem<L> {
-    pub fn marker(&self) -> &Located<String, L> {
+impl<'a, L> CompactItem<'a, L> {
+    pub fn marker(&self) -> &Located<&'a str, L> {
         &self.marker
     }
 
-    pub fn delimiter(&self) -> Option<&Located<String, L>> {
+    pub fn delimiter(&self) -> Option<&Located<&'a str, L>> {
         self.delimiter.as_ref()
-    }
-
-    pub fn body(&self) -> &Located<String, L> {
-        &self.body
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ExpandedItem<L = SourceSpan> {
-    pub(crate) marker: Located<String, L>,
-    pub(crate) identifier: Option<Located<String, L>>,
-    pub(crate) delimiter: Option<Located<String, L>>,
-    pub(crate) content: Located<String, L>,
-    pub(crate) body: Located<String, L>,
+pub struct ExpandedItem<'a, L = SourceSpan> {
+    pub(crate) marker: Located<&'a str, L>,
+    pub(crate) identifier: Option<Located<&'a str, L>>,
+    pub(crate) delimiter: Option<Located<&'a str, L>>,
+    pub(crate) content: Located<&'a str, L>,
+    pub(crate) body: Located<&'a str, L>,
 }
 
 #[allow(dead_code)]
-impl<L> ExpandedItem<L> {
-    pub fn marker(&self) -> &Located<String, L> {
+impl<'a, L> ExpandedItem<'a, L> {
+    pub fn marker(&self) -> &Located<&'a str, L> {
         &self.marker
     }
 
-    pub fn delimiter(&self) -> Option<&Located<String, L>> {
+    pub fn delimiter(&self) -> Option<&Located<&'a str, L>> {
         self.delimiter.as_ref()
     }
 
-    pub fn body(&self) -> &Located<String, L> {
+    pub fn body(&self) -> &Located<&'a str, L> {
         &self.body
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Located<T, L = SourceSpan> {
     value: T,
     span: L,
@@ -592,6 +581,10 @@ impl<T, L> Located<T, L> {
 
     pub fn value(&self) -> &T {
         &self.value
+    }
+
+    pub fn unpack(self) -> (T, L) {
+        (self.value, self.span)
     }
 
     pub fn value_mut(&mut self) -> &mut T {
@@ -668,14 +661,8 @@ mod tests {
     #[test]
     fn rejects_multiline_metadata_replacements() {
         let mut metadata: Metadata<'_, ()> = Metadata {
-            key: Located::new(
-                "Status",
-                (),
-            ),
-            value: Located::new(
-                "proposed".into(),
-                (),
-            ),
+            key: Located::new("Status", ()),
+            value: Located::new("proposed".into(), ()),
         };
 
         let error = metadata
@@ -689,14 +676,8 @@ mod tests {
     #[test]
     fn rejects_edits_to_parsed_multiline_metadata_values() {
         let mut metadata: Metadata<'_, ()> = Metadata {
-            key: Located::new(
-                "Status",
-                (),
-            ),
-            value: Located::new(
-                "proposed\n  continued".into(),
-                (),
-            ),
+            key: Located::new("Status", ()),
+            value: Located::new("proposed\n  continued".into(), ()),
         };
 
         let error = metadata

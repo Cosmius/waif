@@ -215,6 +215,12 @@ impl<'a> Cursor<'a> {
         while self.skip_whitespace_line() {}
     }
 
+    pub fn skip_remaining(&mut self) {
+        while !self.is_eof() {
+            self.take();
+        }
+    }
+
     pub fn is_eof(&self) -> bool {
         self.position.offset == self.source.len()
     }

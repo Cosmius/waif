@@ -632,7 +632,7 @@ fn expected_identifier(
 }
 
 fn match_item_identifier(
-    identifier: &Located<String>,
+    identifier: &Located<&str>,
     prefix_rule: ArtifactPrefixRule,
     family: &str,
     observed: &mut Option<ObservedArtifactPrefix>,

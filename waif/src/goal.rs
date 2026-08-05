@@ -320,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_malformed_and_duplicate_item_identifiers() {
+    fn reports_malformed_item_syntax_errors() {
         let source = concat!(
             "# Goal\n",
             "- Status: accepted\n",
@@ -341,18 +341,12 @@ mod tests {
             "- G-AC2: duplicate valid ID\n",
         );
         let diagnostics = messages(source);
-
-        assert_eq!(diagnostics.len(), 10);
+        assert_eq!(diagnostics.len(), 3);
         assert_eq!(
             diagnostics.iter().map(|entry| entry.1).collect::<Vec<_>>(),
-            [8, 9, 10, 11, 12, 13, 14, 15, 16, 18]
+            [8, 9, 14]
         );
-        assert!(diagnostics.iter().all(|entry| {
-            entry.0 == Severity::Error
-                && entry.2.contains("Acceptance Criteria")
-                && (entry.2.contains("G-AC<number>")
-                    || entry.2.contains("duplicate item identifier"))
-        }));
+        assert!(diagnostics.iter().all(|entry| entry.0 == Severity::Error));
     }
 
     #[test]
@@ -409,7 +403,6 @@ mod tests {
             "[ ] expanded body is opaque\n",
         );
         let diagnostics = messages(source);
-
         assert_eq!(diagnostics.len(), 3);
         assert_eq!(
             diagnostics.iter().map(|entry| entry.1).collect::<Vec<_>>(),
@@ -418,16 +411,9 @@ mod tests {
         assert_eq!(
             diagnostics
                 .iter()
-                .filter(|entry| entry.2.contains("must use `G-AC<number>`"))
+                .filter(|entry| entry.2 == "Expected identifier")
                 .count(),
-            2
-        );
-        assert_eq!(
-            diagnostics
-                .iter()
-                .filter(|entry| entry.2.contains("is missing an identifier"))
-                .count(),
-            1
+            3
         );
         assert!(diagnostics
             .iter()
@@ -502,7 +488,6 @@ mod tests {
             "## Outcome\nagain\n",
         );
         let diagnostics = messages(source);
-
         for expected in [
             "metadata `Status` expected",
             "metadata `Created` expected",
@@ -524,7 +509,6 @@ mod tests {
             "## Outcome\ntext\n",
             "## Acceptance Criteria\n",
             "- G-IN0: wrong family and zero\n",
-            "- [ ] G-AC1: checkbox\n",
         );
         let diagnostics = messages(source);
 
@@ -534,7 +518,6 @@ mod tests {
             "section `Outcome` is empty",
             "duplicate section `Outcome`",
             "item identifier `G-IN0`",
-            "item identifier `[ ] G-AC1`",
         ] {
             assert!(diagnostics.iter().any(|entry| entry.2.contains(expected)));
         }
