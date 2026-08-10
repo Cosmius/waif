@@ -337,54 +337,61 @@ fn p_metadata_line<'a>(
 
 fn p_sections<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Vec<Section<'a>> {
     let mut sections = Vec::new();
-    while let Some(section) = p_section(ctx) {
-        sections.push(section);
+    loop {
+        if let Some(section) = p_section(ctx) {
+            sections.push(section);
+            continue;
+        }
+
+        let pos = ctx.cursor.position();
+        match ctx.try_(p_markdown_heading) {
+            Ok(heading) if heading.level == 1 => {
+                ctx.diagnostics.push(Diagnostic::error1(
+                    pos.line(),
+                    "artifact must contain exactly one level-one heading",
+                ));
+                p_markdown_section_body(ctx, 2);
+            }
+            _ => break,
+        }
     }
     sections
 }
 
 fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
     let pos = ctx.cursor.position();
-    let heading = ctx.try_(p_markdown_heading).ok()?;
-    if heading.level != 2 {
+    let (section, span) = ctx.try_(p_markdown_section).ok()?.unpack();
+    if section.level != 2 {
         ctx.cursor.rewind(pos);
         return None;
     }
-    if heading.title.text().is_empty() {
+    if section.title.text().is_empty() {
         ctx.diagnostics.push(Diagnostic::error1(
-            heading.pos.line(),
+            pos.line(),
             "level-two section name must not be empty",
         ));
     }
-    let body_start = ctx.cursor.position();
-    let body_end = p_section_body_end(ctx);
-
-    let body_end_pos = heading
-        .pos
-        .advance(&ctx.source[heading.pos.offset()..body_end]);
-    let section_span = SourceSpan::new(heading.pos, body_end_pos);
-    let body_span = SourceSpan::new(body_start, body_end_pos);
-    let section_type = ctx.config.section_type(heading.title.text());
+    let body_start = *section.content.span().start();
+    let body_end = section.content.span().end().offset();
+    let body_span = section.content.span().clone();
+    let section_type = ctx.config.section_type(section.title.text());
     match section_type {
         SectionType::Prose => Some(Section::Prose(Located::new(
             ProseSection::new(
-                heading.title.map(|s| s.to_owned()),
-                Located::new(
-                    ctx.source[body_start.offset()..body_end].to_owned(),
-                    body_span,
-                ),
+                section.title.map(|s| s.to_owned()),
+                section.content.map(|s| s.to_owned()),
             ),
-            section_span,
+            span,
         ))),
         SectionType::Itemised => {
             ctx.cursor.rewind(body_start);
             let items = p_itemised_items(ctx, body_end);
             Some(Section::Itemised(Located::new(
                 ItemisedSection {
-                    title: heading.title.map(|s| s.to_owned()),
+                    title: section.title.map(|s| s.to_owned()),
                     items: Located::new(items, body_span),
                 },
-                section_span,
+                span,
             )))
         }
         SectionType::PlanItems => {
@@ -392,10 +399,10 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
             let items = p_plan_items(ctx, body_end);
             Some(Section::PlanItems(Located::new(
                 PlanItemSection {
-                    title: heading.title.map(|s| s.to_owned()),
+                    title: section.title.map(|s| s.to_owned()),
                     items: Located::new(items, body_span),
                 },
-                section_span,
+                span,
             )))
         }
         SectionType::Findings => {
@@ -403,40 +410,12 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
             let body = p_findings_body(ctx, body_end);
             Some(Section::Findings(Located::new(
                 FindingsSection {
-                    title: heading.title.map(|s| s.to_owned()),
+                    title: section.title.map(|s| s.to_owned()),
                     body,
                 },
-                section_span,
+                span,
             )))
         }
-    }
-}
-
-fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
-    loop {
-        if ctx.try_(p_skip_code_block).is_ok() {
-            continue;
-        }
-        if ctx.cursor.peek_line().is_none() {
-            return ctx.source.len();
-        };
-        let start = ctx.cursor.position();
-        match ctx.try_(p_markdown_heading) {
-            Ok(next) if next.level == 1 => {
-                ctx.diagnostics.push(Diagnostic::error1(
-                    start.line(),
-                    "artifact must contain exactly one level-one heading",
-                ));
-                continue;
-            }
-            Ok(next) if next.level == 2 => {
-                ctx.cursor.rewind(start);
-                return start.offset();
-            }
-            Ok(_) => continue,
-            Err(_) => {}
-        }
-        ctx.cursor.take_line();
     }
 }
 
@@ -642,6 +621,12 @@ fn p_findings_body<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Fin
         ctx.cursor.take().expect("expect .");
         let end = ctx.cursor.position();
         ctx.cursor.take_line();
+        ctx.cursor.skip_whitespace_lines();
+        if !ctx.cursor.is_eof() && peek_heading_level(ctx).is_err() {
+            let pos = ctx.cursor.position();
+            ctx.diagnostics.push(Diagnostic::error_p(pos, "expect a heading"));
+            ctx.cursor.skip_to_offset(body_end);
+        }
         FindingsBody::Sentinel(ctx.located_with_pos(start, end))
     } else {
         let start = ctx.cursor.position();
@@ -794,7 +779,6 @@ struct MarkdownHeading<'a> {
     level: usize,
     marker: Located<&'a str>,
     title: Located<&'a str>,
-    pos: Position,
 }
 
 /// Parse one ATX-style Markdown heading.
@@ -825,7 +809,6 @@ fn p_markdown_heading<'a>(
                 level,
                 marker,
                 title: ctx.located_with_pos(title_pos, title_pos),
-                pos: start,
             });
         }
         Some(ch) if ch != '\t' && ch != ' ' => {
@@ -853,7 +836,6 @@ fn p_markdown_heading<'a>(
         level,
         marker,
         title,
-        pos: start,
     })
 }
 
@@ -2536,6 +2518,24 @@ bare preamble\n
                 .expect("findings section should be structured");
             assert_eq!(section.body().as_sentinel(), Some("No findings."));
             assert_eq!(section.body().span().start_line(), 3);
+        }
+
+        #[test]
+        fn reports_an_extra_title_after_a_findings_sentinel_and_blank_line() {
+            let source = concat!(
+                "# Review\n",
+                "## Findings\n",
+                "No findings.\n",
+                "\n",
+                "# Extra title\n",
+            );
+
+            let diagnostics = parse_with_config(source, &config())
+                .expect_err("the artifact should reject an extra title");
+
+            assert!(diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message().contains("exactly one")));
         }
 
         #[test]
