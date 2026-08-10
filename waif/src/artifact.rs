@@ -66,26 +66,32 @@ impl<'a, L> Artifact<'a, L> {
     }
 
     pub fn plan_item(&self, identifier: &str) -> Option<&PlanItem<'a, L>> {
-        let mut matches =
-            self.sections
-                .iter()
-                .filter_map(Section::as_plan_items)
-                .flat_map(|section| {
-                    section.items().iter().filter(move |item| {
-                        item.identifier().is_some_and(|id| id.text() == identifier)
-                    })
-                });
+        let mut matches = self
+            .sections
+            .iter()
+            .filter_map(Section::as_plan_items)
+            .flat_map(|section| {
+                section.items().iter().filter(move |item| {
+                    item.value()
+                        .identifier()
+                        .is_some_and(|id| id.text() == identifier)
+                })
+            });
         let item = matches.next()?;
-        matches.next().is_none().then_some(item)
+        matches.next().is_none().then_some(item.value())
     }
 
-    pub fn plan_item_mut(&mut self, identifier: &str) -> Option<&mut PlanItem<'a, L>> {
+    pub fn plan_item_mut(&mut self, identifier: &str) -> Option<&mut Located<PlanItem<'a, L>, L>> {
         let count = self
             .sections
             .iter()
             .filter_map(Section::as_plan_items)
             .flat_map(PlanItemSection::items)
-            .filter(|item| item.identifier().is_some_and(|id| id.text() == identifier))
+            .filter(|item| {
+                item.value()
+                    .identifier()
+                    .is_some_and(|id| id.text() == identifier)
+            })
             .count();
         if count != 1 {
             return None;
@@ -94,7 +100,11 @@ impl<'a, L> Artifact<'a, L> {
             .iter_mut()
             .filter_map(Section::as_plan_items_mut)
             .flat_map(PlanItemSection::items_mut)
-            .find(|item| item.identifier().is_some_and(|id| id.text() == identifier))
+            .find(|item| {
+                item.value()
+                    .identifier()
+                    .is_some_and(|id| id.text() == identifier)
+            })
     }
 }
 
@@ -331,7 +341,7 @@ impl<'a, L> ItemisedSection<'a, L> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct PlanItemSection<'a, L = SourceSpan> {
     pub(crate) title: Located<String, L>,
-    pub(crate) items: Located<Vec<PlanItem<'a, L>>, L>,
+    pub(crate) items: Located<Vec<Located<PlanItem<'a, L>, L>>, L>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -407,11 +417,11 @@ impl<'a, L> Finding<'a, L> {
 
 #[allow(dead_code)]
 impl<'a, L> PlanItemSection<'a, L> {
-    pub fn items(&self) -> &[PlanItem<'a, L>] {
+    pub fn items(&self) -> &[Located<PlanItem<'a, L>, L>] {
         self.items.value()
     }
 
-    pub fn items_mut(&mut self) -> &mut [PlanItem<'a, L>] {
+    pub fn items_mut(&mut self) -> &mut [Located<PlanItem<'a, L>, L>] {
         self.items.value_mut()
     }
 
@@ -419,7 +429,7 @@ impl<'a, L> PlanItemSection<'a, L> {
         &self.title
     }
 
-    pub fn located_items(&self) -> &Located<Vec<PlanItem<'a, L>>, L> {
+    pub fn located_items(&self) -> &Located<Vec<Located<PlanItem<'a, L>, L>>, L> {
         &self.items
     }
 }
@@ -430,19 +440,19 @@ pub struct PlanItem<'a, L = SourceSpan> {
     // for heading components and the complete record span. Plan items add only
     // a structured view over that item's body: leading metadata followed by
     // opaque prose.
-    pub(crate) expanded: Located<ExpandedItem<'a, L>, L>,
+    pub(crate) item: Located<ExpandedItem<'a, L>, L>,
     pub(crate) metadata: Vec<Located<Metadata<'a, L>, L>>,
-    pub(crate) prose: Located<String, L>,
+    pub(crate) prose: Located<&'a str, L>,
 }
 
 #[allow(dead_code)]
 impl<'a, L> PlanItem<'a, L> {
     pub fn identifier(&self) -> Option<&Located<&'a str, L>> {
-        self.expanded.value.identifier.as_ref()
+        self.item.value.identifier.as_ref()
     }
 
     pub fn title(&self) -> &Located<&'a str, L> {
-        &self.expanded.value.title
+        &self.item.value.title
     }
 
     pub fn metadata(&self) -> &[Located<Metadata<'a, L>, L>] {
@@ -458,12 +468,12 @@ impl<'a, L> PlanItem<'a, L> {
         matches.next().is_none().then_some(status.value_mut())
     }
 
-    pub fn prose(&self) -> &Located<String, L> {
+    pub fn prose(&self) -> &Located<&'a str, L> {
         &self.prose
     }
 
     pub fn span(&self) -> &L {
-        self.expanded.span()
+        self.item.span()
     }
 }
 
@@ -627,7 +637,7 @@ pub fn serialize(artifact: &Artifact) -> String {
             .iter()
             .filter_map(Section::as_plan_items)
             .flat_map(PlanItemSection::items)
-            .flat_map(|item| item.metadata.iter()),
+            .flat_map(|item| item.value.metadata.iter()),
     );
     entries.sort_by_key(|entry| entry.value().located_value().span().range().start);
 

@@ -426,8 +426,9 @@ fn validate_plan_items(section: &Section, rule: PlanItemRule, diagnostics: &mut 
     let mut sequence = ItemSequence::default();
 
     for item in section.items() {
-        validate_plan_item_heading(section_name, item, &mut sequence, diagnostics);
+        validate_plan_item_heading(section_name, item.value(), &mut sequence, diagnostics);
         let statuses: Vec<_> = item
+            .value()
             .metadata()
             .iter()
             .filter(|entry| entry.value().key() == "Status")

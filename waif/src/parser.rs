@@ -143,9 +143,7 @@ pub struct ParserConfig<'a> {
 
 impl<'a> ParserConfig<'a> {
     pub fn new(sections: Vec<SectionConfig<'a>>) -> Self {
-        Self {
-            sections,
-        }
+        Self { sections }
     }
 
     fn section_type(&self, name: &str) -> SectionType {
@@ -475,41 +473,6 @@ fn p_itemised_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Ve
     items
 }
 
-fn p_plan_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Vec<PlanItem<'a>> {
-    p_expanded_items(ctx, body_end)
-        .into_iter()
-        .map(|item| p_plan_item(ctx.source, item))
-        .collect()
-}
-
-fn p_plan_item<'a>(source: &'a str, expanded: Located<ExpandedItem<'a>>) -> PlanItem<'a> {
-    let content_span = expanded.value().content().span();
-    let content_range = content_span.range();
-    let content_end = content_range.end;
-    let mut cursor = Cursor::new(source);
-    cursor.limit(content_end);
-    cursor.skip_to_offset(content_range.start);
-    let mut ctx = ParsingContext {
-        source,
-        cursor,
-        diagnostics: Vec::new(),
-        config: ParserConfig::default(),
-    };
-    let metadata = p_metadata(&mut ctx);
-    let prose_start = ctx.cursor.position();
-    PlanItem {
-        expanded,
-        metadata,
-        prose: Located::new(
-            source[prose_start.offset()..content_end].to_owned(),
-            SourceSpan::new(
-                prose_start,
-                prose_start.advance(&source[prose_start.offset()..content_end]),
-            ),
-        ),
-    }
-}
-
 fn p_expanded_items<'a>(
     ctx: &mut ParsingContext<'_, 'a>,
     body_end: usize,
@@ -657,6 +620,33 @@ fn p_compact_item<'a>(
             span,
         ),
     })
+}
+
+fn p_plan_items<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+    body_end: usize,
+) -> Vec<Located<PlanItem<'a>>> {
+    p_expanded_items(ctx, body_end)
+        .into_iter()
+        .map(|item| {
+            let mut subctx = ctx.clone();
+            // let (item, span) = li.unpack();
+            subctx.cursor.rewind(*item.value().content().span().start());
+            subctx.cursor.skip_whitespace_lines();
+            let metadata = p_metadata(&mut subctx);
+            let prose_start = subctx.cursor.position();
+            let content_end = *item.span().end();
+            let span = item.span().clone();
+            Located::new(
+                PlanItem {
+                    item,
+                    metadata,
+                    prose: ctx.located_with_pos(prose_start, content_end),
+                },
+                span,
+            )
+        })
+        .collect()
 }
 
 // ============================================================================
@@ -1001,6 +991,7 @@ fn p_maybe_code_block_fence(ctx: &mut ParsingContext) -> Result<(char, usize, us
     Ok((marker_ch, marker.len(), indentation_level))
 }
 
+#[rustfmt::skip]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1182,9 +1173,8 @@ Arbitrary prose.\n
 ### A subsection\n
 \n
 - An unstructured list\n";
-            let artifact =
-                parse_with_config(artifact_source, &ParserConfig::default())
-                    .expect("artifact should parse");
+            let artifact = parse_with_config(artifact_source, &ParserConfig::default())
+                .expect("artifact should parse");
 
             assert_eq!(artifact.title(), "Example");
             assert_eq!(artifact.source(), artifact_source);
@@ -2082,8 +2072,8 @@ Arbitrary prose.\n
         #[test]
         fn preserves_standalone_carriage_return_line_endings() {
             let source = "# Example\r- Status: proposed\r## Details\rText\r";
-            let mut artifact = parse_with_config(source, &ParserConfig::default())
-                .expect("artifact should parse");
+            let mut artifact =
+                parse_with_config(source, &ParserConfig::default()).expect("artifact should parse");
 
             artifact.metadata_mut()[0]
                 .value_mut()
@@ -2109,8 +2099,8 @@ Arbitrary prose.\n
                 "\r\n",
                 "Untouched prose.\r\n",
             );
-            let mut artifact = parse_with_config(source, &ParserConfig::default())
-                .expect("artifact should parse");
+            let mut artifact =
+                parse_with_config(source, &ParserConfig::default()).expect("artifact should parse");
             let section_span = artifact.sections()[0].span().clone();
 
             artifact.metadata_mut()[0]
@@ -2210,18 +2200,18 @@ bare preamble\n
 
             assert_eq!(section.items().len(), 2);
             let first = &section.items()[0];
-            assert_eq!(first.identifier().expect("identifier").text(), "P1");
-            assert_eq!(first.title().text(), "First item");
-            assert_eq!(first.metadata().len(), 3);
-            assert_eq!(first.metadata()[0].value().key(), "Status");
-            assert_eq!(first.metadata()[0].value().value(), "pending");
-            assert_eq!(first.metadata()[1].value().key(), "Goal criteria");
-            assert_eq!(first.metadata()[2].value().key(), "Status");
+            assert_eq!(first.value().identifier().expect("identifier").text(), "P1");
+            assert_eq!(first.value().title().text(), "First item");
+            assert_eq!(first.value().metadata().len(), 3);
+            assert_eq!(first.value().metadata()[0].value().key(), "Status");
+            assert_eq!(first.value().metadata()[0].value().value(), "pending");
+            assert_eq!(first.value().metadata()[1].value().key(), "Goal criteria");
+            assert_eq!(first.value().metadata()[2].value().key(), "Status");
             assert_eq!(
-                first.metadata()[2].value().value(),
+                first.value().metadata()[2].value().value(),
                 "opaque after boundary"
             );
-            assert!(first.prose().text().contains("#### Details"));
+            assert!(first.value().prose().text().contains("#### Details"));
             let first_source = &source[first.span().range()];
             assert!(first_source.starts_with("### P1: First item"));
             assert!(!first_source.contains("### P2: Second item"));
@@ -2252,10 +2242,10 @@ bare preamble\n
                 .items();
 
             assert_eq!(items.len(), 2);
-            assert!(items[0].prose().text().contains("# Fenced title"));
-            assert!(items[0].prose().text().contains("## Fenced section"));
-            assert!(items[0].prose().text().contains("### P999: fenced example"));
-            assert_eq!(items[1].identifier().expect("identifier").text(), "P2");
+            assert!(items[0].value().prose().text().contains("# Fenced title"));
+            assert!(items[0].value().prose().text().contains("## Fenced section"));
+            assert!(items[0].value().prose().text().contains("### P999: fenced example"));
+            assert_eq!(items[1].value().identifier().expect("identifier").text(), "P2");
         }
 
         #[test]
@@ -2283,14 +2273,14 @@ bare preamble\n
 
             let status_start = source.find("- Status: pending").expect("status start");
             let status_end = status_start + "- Status: pending\r\n".len();
-            assert_eq!(first.metadata()[0].span().range(), status_start..status_end);
-            assert_eq!(first.metadata()[0].span().start_line(), 4);
+            assert_eq!(first.value().metadata()[0].span().range(), status_start..status_end);
+            assert_eq!(first.value().metadata()[0].span().start_line(), 4);
 
-            assert_eq!(first.metadata().len(), 2);
-            assert_eq!(first.metadata()[1].value().key(), "Outcome");
-            assert_eq!(first.prose().span().range(), item_end..item_end);
-            assert_eq!(first.prose().span().start_line(), 6);
-            assert_eq!(first.prose().text(), "");
+            assert_eq!(first.value().metadata().len(), 2);
+            assert_eq!(first.value().metadata()[1].value().key(), "Outcome");
+            assert_eq!(first.value().prose().span().range(), item_end..item_end);
+            assert_eq!(first.value().prose().span().start_line(), 6);
+            assert_eq!(first.value().prose().text(), "");
         }
 
         #[test]
@@ -2317,6 +2307,7 @@ bare preamble\n
             artifact
                 .plan_item_mut("P1")
                 .expect("exact item")
+                .value_mut()
                 .status_mut()
                 .expect("unique status")
                 .set_value("done")
@@ -2352,6 +2343,7 @@ bare preamble\n
             assert!(artifact
                 .plan_item_mut("P2")
                 .expect("unique item")
+                .value_mut()
                 .status_mut()
                 .is_none());
         }
@@ -2373,6 +2365,7 @@ bare preamble\n
                 let status = artifact
                     .plan_item_mut("P1")
                     .expect("exact item")
+                    .value_mut()
                     .status_mut()
                     .expect("unique status");
                 status.set_value("done").expect("valid status value");
@@ -2409,7 +2402,7 @@ bare preamble\n
             assert_eq!(diagnostics[0].line(), 3);
             assert_eq!(diagnostics[0].message(), "unexpected code block");
             assert_eq!(items.len(), 1);
-            assert_eq!(items[0].identifier().expect("identifier").text(), "P2");
+            assert_eq!(items[0].value().identifier().expect("identifier").text(), "P2");
         }
 
         #[test]
@@ -2428,14 +2421,14 @@ bare preamble\n
                 .items();
 
             assert_eq!(items.len(), 3);
-            assert_eq!(items[0].identifier().expect("identifier").text(), "P1");
-            assert_eq!(items[0].prose().text(), "");
-            assert!(items[0].metadata().is_empty());
-            assert!(items[1].identifier().is_none());
-            assert!(items[1].expanded.value().delimiter().is_none());
-            assert!(items[2].identifier().is_none());
-            assert!(items[2].expanded.value().delimiter().is_none());
-            assert_eq!(items[2].title().text(), ": Missing identifier");
+            assert_eq!(items[0].value().identifier().expect("identifier").text(), "P1");
+            assert_eq!(items[0].value().prose().text(), "");
+            assert!(items[0].value().metadata().is_empty());
+            assert!(items[1].value().identifier().is_none());
+            assert!(items[1].value().item.value().delimiter().is_none());
+            assert!(items[2].value().identifier().is_none());
+            assert!(items[2].value().item.value().delimiter().is_none());
+            assert_eq!(items[2].value().title().text(), ": Missing identifier");
         }
 
         #[test]
@@ -2458,7 +2451,7 @@ bare preamble\n
                 .expect("plan items")
                 .items();
             assert_eq!(items.len(), 2);
-            assert!(items[1].identifier().is_none());
+            assert!(items[1].value().identifier().is_none());
             assert_eq!(artifact.sections()[1].name(), "Following section");
 
             let diagnostics = parse_with_config(
