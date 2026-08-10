@@ -363,7 +363,7 @@ impl<'a, L> FindingsSection<'a, L> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum FindingsBody<'a, L = SourceSpan> {
-    Sentinel(Located<String, L>),
+    Sentinel(Located<&'a str, L>),
     Items(Located<Vec<Finding<'a, L>>, L>),
 }
 
@@ -393,25 +393,25 @@ impl<'a, L> FindingsBody<'a, L> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Finding<'a, L = SourceSpan> {
-    pub(crate) expanded: Located<ExpandedItem<'a, L>, L>,
+    pub(crate) item: Located<ExpandedItem<'a, L>, L>,
 }
 
 #[allow(dead_code)]
 impl<'a, L> Finding<'a, L> {
     pub fn identifier(&self) -> Option<&Located<&'a str, L>> {
-        self.expanded.value.identifier.as_ref()
+        self.item.value.identifier.as_ref()
+    }
+
+    pub fn title(&self) -> &Located<&'a str, L> {
+        &self.item.value.title
     }
 
     pub fn content(&self) -> &Located<&'a str, L> {
-        &self.expanded.value.title
-    }
-
-    pub fn body(&self) -> &Located<&'a str, L> {
-        &self.expanded.value.content
+        &self.item.value.content
     }
 
     pub fn span(&self) -> &L {
-        self.expanded.span()
+        self.item.span()
     }
 }
 

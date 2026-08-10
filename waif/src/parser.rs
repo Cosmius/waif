@@ -400,7 +400,7 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
         }
         SectionType::Findings => {
             ctx.cursor.rewind(body_start);
-            let body = p_findings_body(ctx, body_end, body_span.clone());
+            let body = p_findings_body(ctx, body_end);
             Some(Section::Findings(Located::new(
                 FindingsSection {
                     title: heading.title.map(|s| s.to_owned()),
@@ -410,26 +410,6 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
             )))
         }
     }
-}
-
-fn p_findings_body<'a>(
-    ctx: &mut ParsingContext<'_, 'a>,
-    body_end: usize,
-    body_span: SourceSpan,
-) -> FindingsBody<'a> {
-    let body = &ctx.source[body_span.range()];
-    if body.trim() == "No findings." {
-        while ctx.cursor.position().offset() < body_end {
-            ctx.cursor.take_line();
-        }
-        return FindingsBody::Sentinel(Located::new(body.to_owned(), body_span));
-    }
-
-    let items = p_expanded_items(ctx, body_end)
-        .into_iter()
-        .map(|item| Finding { expanded: item })
-        .collect();
-    FindingsBody::Items(Located::new(items, body_span))
 }
 
 fn p_section_body_end(ctx: &mut ParsingContext) -> usize {
@@ -647,6 +627,31 @@ fn p_plan_items<'a>(
             )
         })
         .collect()
+}
+
+fn p_findings_body<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> FindingsBody<'a> {
+    ctx.cursor.skip_whitespace_lines();
+    if ctx
+        .cursor
+        .peek_line()
+        .is_some_and(|(_, line)| line.trim() == "No findings.")
+    {
+        ctx.cursor.skip_whitespaces_inline();
+        let start = ctx.cursor.position();
+        ctx.cursor.take_while(|ch| ch != '.');
+        ctx.cursor.take().expect("expect .");
+        let end = ctx.cursor.position();
+        ctx.cursor.take_line();
+        FindingsBody::Sentinel(ctx.located_with_pos(start, end))
+    } else {
+        let start = ctx.cursor.position();
+        let items = p_expanded_items(ctx, body_end)
+            .into_iter()
+            .map(|item| Finding { item })
+            .collect();
+        let end = ctx.cursor.position();
+        FindingsBody::Items(Located::new(items, SourceSpan::new(start, end)))
+    }
 }
 
 // ============================================================================
@@ -2529,7 +2534,7 @@ bare preamble\n
             let section = artifact.sections()[0]
                 .as_findings()
                 .expect("findings section should be structured");
-            assert_eq!(section.body().as_sentinel(), Some("No findings.\n"));
+            assert_eq!(section.body().as_sentinel(), Some("No findings."));
             assert_eq!(section.body().span().start_line(), 3);
         }
 
@@ -2550,7 +2555,7 @@ bare preamble\n
             let items = section.body().items().expect("expanded findings");
             assert_eq!(items.len(), 1);
             assert_eq!(items[0].identifier().expect("ID").text(), "F1");
-            assert_eq!(items[0].body().text(), "- Severity: opaque\n");
+            assert_eq!(items[0].content().text(), "- Severity: opaque\n");
             assert_eq!(artifact.sections()[1].name(), "Next");
         }
 
