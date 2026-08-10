@@ -123,7 +123,6 @@ fn parser_config() -> ParserConfig<'static> {
         SectionConfig::itemised("Risks and Edge Cases"),
         SectionConfig::itemised("Revisions"),
     ])
-    .with_known_metadata(["Status", "Source commit", "Created", "Updated"])
 }
 
 fn step_status(value: &str) -> Result<(), String> {

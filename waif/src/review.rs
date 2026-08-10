@@ -119,7 +119,6 @@ fn parser_config() -> ParserConfig<'static> {
         SectionConfig::itemised("Validation"),
         SectionConfig::itemised("Residual Risks"),
     ])
-    .with_known_metadata(["Step", "Decision", "Date", "Reviewer", "Workspace state"])
 }
 
 fn step_path(value: &str) -> Result<(), String> {

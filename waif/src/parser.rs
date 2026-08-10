@@ -138,31 +138,14 @@ impl<'a> SectionConfig<'a> {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ParserConfig<'a> {
-    known_metadata: Vec<&'a str>,
     sections: Vec<SectionConfig<'a>>,
 }
 
 impl<'a> ParserConfig<'a> {
     pub fn new(sections: Vec<SectionConfig<'a>>) -> Self {
         Self {
-            known_metadata: Vec::new(),
             sections,
         }
-    }
-
-    /// Declare the metadata keys recognized by this artifact contract.
-    pub fn with_known_metadata<I>(mut self, names: I) -> Self
-    where
-        I: IntoIterator<Item = &'a str>,
-    {
-        self.known_metadata = names.into_iter().collect();
-        self
-    }
-
-    fn recognizes_metadata(&self, name: &str) -> bool {
-        self.known_metadata
-            .iter()
-            .any(|candidate| *candidate == name)
     }
 
     fn section_type(&self, name: &str) -> SectionType {
@@ -300,12 +283,8 @@ fn p_metadata<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Vec<Located<Metadata<'a>>
             break;
         }
         if let Ok(entry) = ctx.try_(p_metadata_line) {
-            if ctx.config.recognizes_metadata(entry.value().key()) {
-                metadata.push(entry);
-                continue;
-            }
-            ctx.cursor.rewind(before_whitespace);
-            break;
+            metadata.push(entry);
+            continue;
         }
 
         if let Ok(heading) = ctx.try_(p_markdown_heading) {
@@ -450,10 +429,7 @@ fn p_findings_body<'a>(
 
     let items = p_expanded_items(ctx, body_end)
         .into_iter()
-        .filter_map(|item| match item {
-            Item::Expanded(expanded) => Some(Finding { expanded }),
-            Item::Compact(_) => None,
-        })
+        .map(|item| Finding { expanded: item })
         .collect();
     FindingsBody::Items(Located::new(items, body_span))
 }
@@ -492,7 +468,9 @@ fn p_itemised_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Ve
         items.push(Item::Compact(ci));
     }
     if ctx.cursor.position().offset() < body_end {
-        items.extend(p_expanded_items(ctx, body_end));
+        for ei in p_expanded_items(ctx, body_end) {
+            items.push(Item::Expanded(ei));
+        }
     }
     items
 }
@@ -500,10 +478,7 @@ fn p_itemised_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Ve
 fn p_plan_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Vec<PlanItem<'a>> {
     p_expanded_items(ctx, body_end)
         .into_iter()
-        .map(|item| match item {
-            Item::Expanded(expanded) => p_plan_item(ctx.source, expanded),
-            Item::Compact(_) => unreachable!("expanded parser returned a compact item"),
-        })
+        .map(|item| p_plan_item(ctx.source, item))
         .collect()
 }
 
@@ -518,7 +493,7 @@ fn p_plan_item<'a>(source: &'a str, expanded: Located<ExpandedItem<'a>>) -> Plan
         source,
         cursor,
         diagnostics: Vec::new(),
-        config: ParserConfig::default().with_known_metadata(["Status"]),
+        config: ParserConfig::default(),
     };
     let metadata = p_metadata(&mut ctx);
     let prose_start = ctx.cursor.position();
@@ -535,7 +510,10 @@ fn p_plan_item<'a>(source: &'a str, expanded: Located<ExpandedItem<'a>>) -> Plan
     }
 }
 
-fn p_expanded_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Vec<Item<'a>> {
+fn p_expanded_items<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+    body_end: usize,
+) -> Vec<Located<ExpandedItem<'a>>> {
     let mut items = Vec::new();
     let old_limit = ctx.cursor.limit(body_end);
 
@@ -544,7 +522,7 @@ fn p_expanded_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Ve
         match kind {
             LineKind::Heading { level: 3 } => {
                 let item = p_expanded_item(ctx).expect("level-three section should parse");
-                items.push(Item::Expanded(item));
+                items.push(item);
             }
             LineKind::FenceStart { .. } => {
                 let pos = ctx.cursor.position();
@@ -1050,11 +1028,7 @@ mod tests {
     }
 
     fn itemised_config(name: &str) -> ParserConfig {
-        ParserConfig::new(vec![SectionConfig::itemised(name)]).with_known_metadata(["Status"])
-    }
-
-    fn metadata_config<'a>(names: &[&'a str]) -> ParserConfig<'a> {
-        ParserConfig::new(vec![]).with_known_metadata(names.iter().copied())
+        ParserConfig::new(vec![SectionConfig::itemised(name)])
     }
 
     fn mixed_itemised_config(name: &str) -> ParserConfig {
@@ -1168,7 +1142,7 @@ mod tests {
         #[test]
         fn metadata_rewinds_before_the_first_section() {
             let mut ctx = context("- Status: proposed\n## Details\nbody");
-            ctx.config = metadata_config(&["Status"]);
+            ctx.config = ParserConfig::default();
 
             let metadata = p_metadata(&mut ctx);
 
@@ -1209,7 +1183,7 @@ Arbitrary prose.\n
 \n
 - An unstructured list\n";
             let artifact =
-                parse_with_config(artifact_source, &metadata_config(&["Status", "Purpose"]))
+                parse_with_config(artifact_source, &ParserConfig::default())
                     .expect("artifact should parse");
 
             assert_eq!(artifact.title(), "Example");
@@ -1234,7 +1208,7 @@ Arbitrary prose.\n
         fn tracks_metadata_spans_for_utf8_and_supported_line_endings() {
             for ending in ["\n", "\r\n", "\r"] {
                 let source = ["# α", "- Status: 値", "## Details", "text", ""].join(ending);
-                let artifact = parse_with_config(&source, &metadata_config(&["Status"]))
+                let artifact = parse_with_config(&source, &ParserConfig::default())
                     .expect("artifact should parse");
                 let metadata = &artifact.metadata()[0];
                 let start = source.find("- Status").unwrap();
@@ -1268,7 +1242,7 @@ Arbitrary prose.\n
                 "  body\n",
                 "  ```",
             );
-            let mut artifact = parse_with_config(source, &metadata_config(&["Status"]))
+            let mut artifact = parse_with_config(source, &ParserConfig::default())
                 .expect("multiline metadata should parse");
 
             assert_eq!(artifact.metadata().len(), 1);
@@ -1344,7 +1318,7 @@ Arbitrary prose.\n
                 "## Details\r\n",
                 "body\r\n",
             );
-            let artifact = parse_with_config(source, &metadata_config(&["Status", "Updated"]))
+            let artifact = parse_with_config(source, &ParserConfig::default())
                 .expect("pre-section prose should be valid");
 
             assert_eq!(artifact.metadata().len(), 2);
@@ -1372,7 +1346,7 @@ Arbitrary prose.\n
                 "## Details\r\n",
                 "body\r\n",
             );
-            let mut artifact = parse_with_config(source, &metadata_config(&["Status"]))
+            let mut artifact = parse_with_config(source, &ParserConfig::default())
                 .expect("fenced headings should remain pre-section prose");
 
             assert_eq!(
@@ -1393,40 +1367,37 @@ Arbitrary prose.\n
         }
 
         #[test]
-        fn unknown_metadata_starts_opaque_prose_for_a_contract() {
+        fn parses_all_leading_metadata_without_a_known_key_filter() {
             let source = concat!(
                 "# Example\n",
                 "- Status: drafting\n",
                 "- Extra: opaque\n",
                 "- Updated: hidden\n",
             );
-            let artifact = parse_with_config(source, &metadata_config(&["Status", "Updated"]))
-                .expect("unknown metadata should start prose");
+            let artifact = parse_with_config(source, &ParserConfig::default())
+                .expect("all leading metadata should parse");
 
-            assert_eq!(artifact.metadata().len(), 1);
-            assert_eq!(
-                artifact.pre_section_prose(),
-                "- Extra: opaque\n- Updated: hidden\n"
-            );
+            assert_eq!(artifact.metadata().len(), 3);
+            assert_eq!(artifact.metadata()[1].value().key(), "Extra");
+            assert_eq!(artifact.metadata()[2].value().key(), "Updated");
+            assert_eq!(artifact.pre_section_prose(), "");
             assert!(artifact.sections().is_empty());
         }
 
         #[test]
-        fn default_config_produces_no_metadata() {
+        fn default_config_parses_leading_metadata() {
             let source = "# Example\n- Custom: value\nplain prose\n";
             let artifact = parse(source).expect("default parsing should succeed");
 
-            assert!(artifact.metadata().is_empty());
-            assert_eq!(
-                artifact.pre_section_prose(),
-                "- Custom: value\nplain prose\n"
-            );
+            assert_eq!(artifact.metadata().len(), 1);
+            assert_eq!(artifact.metadata()[0].value().key(), "Custom");
+            assert_eq!(artifact.pre_section_prose(), "plain prose\n");
         }
 
         #[test]
         fn treats_indented_metadata_as_opaque_prose() {
             let source = concat!("# Example\n", "  - Status: drafting\n", "## Details\n",);
-            let artifact = parse_with_config(source, &metadata_config(&["Status"]))
+            let artifact = parse_with_config(source, &ParserConfig::default())
                 .expect("indented prose should be valid");
 
             assert!(artifact.metadata().is_empty());
@@ -2111,7 +2082,7 @@ Arbitrary prose.\n
         #[test]
         fn preserves_standalone_carriage_return_line_endings() {
             let source = "# Example\r- Status: proposed\r## Details\rText\r";
-            let mut artifact = parse_with_config(source, &metadata_config(&["Status"]))
+            let mut artifact = parse_with_config(source, &ParserConfig::default())
                 .expect("artifact should parse");
 
             artifact.metadata_mut()[0]
@@ -2138,7 +2109,7 @@ Arbitrary prose.\n
                 "\r\n",
                 "Untouched prose.\r\n",
             );
-            let mut artifact = parse_with_config(source, &metadata_config(&["Status", "Purpose"]))
+            let mut artifact = parse_with_config(source, &ParserConfig::default())
                 .expect("artifact should parse");
             let section_span = artifact.sections()[0].span().clone();
 
@@ -2213,11 +2184,10 @@ bare preamble\n
 
         fn config() -> ParserConfig<'static> {
             ParserConfig::new(vec![SectionConfig::plan_items("Plan Items")])
-                .with_known_metadata(["Status"])
         }
 
         #[test]
-        fn reuses_expanded_items_with_structured_status_and_opaque_prose() {
+        fn reuses_expanded_items_with_leading_metadata_and_opaque_prose() {
             let source = concat!(
                 "# Plan\n",
                 "- Status: accepted\n",
@@ -2242,14 +2212,15 @@ bare preamble\n
             let first = &section.items()[0];
             assert_eq!(first.identifier().expect("identifier").text(), "P1");
             assert_eq!(first.title().text(), "First item");
-            assert_eq!(first.metadata().len(), 1);
+            assert_eq!(first.metadata().len(), 3);
             assert_eq!(first.metadata()[0].value().key(), "Status");
             assert_eq!(first.metadata()[0].value().value(), "pending");
-            assert!(first.prose().text().contains("- Goal criteria: G-AC1"));
-            assert!(first
-                .prose()
-                .text()
-                .contains("- Status: opaque after boundary"));
+            assert_eq!(first.metadata()[1].value().key(), "Goal criteria");
+            assert_eq!(first.metadata()[2].value().key(), "Status");
+            assert_eq!(
+                first.metadata()[2].value().value(),
+                "opaque after boundary"
+            );
             assert!(first.prose().text().contains("#### Details"));
             let first_source = &source[first.span().range()];
             assert!(first_source.starts_with("### P1: First item"));
@@ -2315,9 +2286,11 @@ bare preamble\n
             assert_eq!(first.metadata()[0].span().range(), status_start..status_end);
             assert_eq!(first.metadata()[0].span().start_line(), 4);
 
-            let prose_start = source.find("- Outcome: opaque").expect("prose start");
-            assert_eq!(first.prose().span().range(), prose_start..item_end);
-            assert_eq!(first.prose().span().start_line(), 5);
+            assert_eq!(first.metadata().len(), 2);
+            assert_eq!(first.metadata()[1].value().key(), "Outcome");
+            assert_eq!(first.prose().span().range(), item_end..item_end);
+            assert_eq!(first.prose().span().start_line(), 6);
+            assert_eq!(first.prose().text(), "");
         }
 
         #[test]
@@ -2408,10 +2381,10 @@ bare preamble\n
                     artifact.serialize(),
                     source.replacen("- Status: pending", "- Status: done", 1)
                 );
-                assert_eq!(
-                    artifact.plan_item("P1").expect("item").prose().text(),
-                    format!("- Outcome: untouched{ending}")
-                );
+                let item = artifact.plan_item("P1").expect("item");
+                assert_eq!(item.metadata().len(), 2);
+                assert_eq!(item.metadata()[1].value().key(), "Outcome");
+                assert_eq!(item.prose().text(), "");
             }
         }
 

@@ -154,7 +154,7 @@ impl TaskArtifact {
     }
 
     pub fn artifact(&self) -> Result<Artifact<'_>> {
-        let config = ParserConfig::default().with_known_metadata(["Status", "Created", "Updated"]);
+        let config = ParserConfig::default();
         parser::parse_with_config(&self.source, &config).map_err(|diagnostics| {
             Box::new(InvalidTaskArtifact {
                 path: self.path.clone(),

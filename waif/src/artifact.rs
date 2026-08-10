@@ -696,7 +696,7 @@ mod tests {
     #[test]
     fn serializes_metadata_changes_without_reformatting_source() {
         let source = "# Example\r\n- Status: proposed\r\n";
-        let config = crate::parser::ParserConfig::new(vec![]).with_known_metadata(["Status"]);
+        let config = crate::parser::ParserConfig::new(vec![]);
         let mut artifact =
             crate::parser::parse_with_config(source, &config).expect("artifact should parse");
         artifact.metadata_mut()[0]
@@ -712,7 +712,7 @@ mod tests {
     #[test]
     fn exposes_empty_pre_section_prose_with_a_source_span() {
         let source = "# Example\n- Status: proposed\n## Details\n";
-        let config = crate::parser::ParserConfig::new(vec![]).with_known_metadata(["Status"]);
+        let config = crate::parser::ParserConfig::new(vec![]);
         let artifact =
             crate::parser::parse_with_config(source, &config).expect("artifact should parse");
         let prose = artifact.located_pre_section_prose();

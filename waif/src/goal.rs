@@ -62,7 +62,6 @@ fn parser_config() -> ParserConfig<'static> {
         SectionConfig::itemised("Assumptions"),
         SectionConfig::itemised("Revisions"),
     ])
-    .with_known_metadata(["Status", "Created", "Updated"])
 }
 
 #[cfg(test)]
@@ -114,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_invalid_missing_and_duplicate_metadata_at_source_lines() {
+    fn reports_invalid_and_duplicate_metadata_at_source_lines() {
         let source = concat!(
             "# Goal\n",
             "- Status: unknown\n",
@@ -142,9 +141,12 @@ mod tests {
                     == "metadata `Created` expected an RFC 3339 timestamp with a \
                                    timezone, but got `2026-07-31T12:00:00`"
         }));
-        assert!(diagnostics
-            .iter()
-            .any(|entry| { entry.1 == 1 && entry.2 == "missing required metadata `Updated`" }));
+        assert!(diagnostics.iter().any(|entry| {
+            entry.1 == 6
+                && entry.2
+                    == "metadata `Updated` expected an RFC 3339 timestamp with a \
+                                   timezone, but got `hidden in prose`"
+        }));
         assert!(diagnostics.iter().all(|entry| entry.0 == Severity::Error));
     }
 

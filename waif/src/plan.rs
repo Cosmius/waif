@@ -96,15 +96,6 @@ fn parser_config() -> ParserConfig<'static> {
         SectionConfig::itemised("Cross-Cutting Validation"),
         SectionConfig::itemised("Revisions"),
     ])
-    .with_known_metadata([
-        "Status",
-        "Goal",
-        "Branch",
-        "Base branch",
-        "Base commit",
-        "Created",
-        "Updated",
-    ])
 }
 
 #[cfg(test)]

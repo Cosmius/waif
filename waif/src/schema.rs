@@ -839,8 +839,7 @@ mod tests {
         let config = ParserConfig::new(vec![
             SectionConfig::plan_items("Plan Items"),
             SectionConfig::itemised("Changes"),
-        ])
-        .with_known_metadata(["Status"]);
+        ]);
         let valid = concat!(
             "# Step\n",
             "## Plan Items\n### P1: independent\n- Status: pending\n",
