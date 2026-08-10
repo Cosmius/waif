@@ -214,9 +214,6 @@ struct ParsingContext<'p, 'a> {
     source: &'a str,
     cursor: Cursor<'a>,
     diagnostics: Vec<Diagnostic>,
-    /// The open code fence as `(marker, opening length)`, or `None` outside
-    /// a fenced code block.
-    code_block: Option<(char, usize)>,
     config: ParserConfig<'p>,
 }
 
@@ -226,7 +223,6 @@ impl<'p, 'a> ParsingContext<'p, 'a> {
             source,
             cursor: Cursor::new(source),
             diagnostics: Vec::new(),
-            code_block: None,
             config,
         }
     }
@@ -364,7 +360,6 @@ fn p_metadata_line<'a>(
 
 fn p_pre_section_prose(ctx: &mut ParsingContext) -> Located<String> {
     let start = ctx.cursor.position();
-    ctx.code_block = None;
     loop {
         if ctx.try_(p_skip_code_block).is_ok() {
             continue;
@@ -440,7 +435,6 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
         ))),
         SectionType::Itemised => {
             ctx.cursor.rewind(body_start);
-            ctx.code_block = None;
             let items = p_itemised_items(ctx, body_end);
             Some(Section::Itemised(Located::new(
                 ItemisedSection {
@@ -452,7 +446,6 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
         }
         SectionType::PlanItems => {
             ctx.cursor.rewind(body_start);
-            ctx.code_block = None;
             let items = p_plan_items(ctx, body_end);
             Some(Section::PlanItems(Located::new(
                 PlanItemSection {
@@ -464,7 +457,6 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
         }
         SectionType::Findings => {
             ctx.cursor.rewind(body_start);
-            ctx.code_block = None;
             let body = p_findings_body(ctx, body_end, body_span.clone());
             Some(Section::Findings(Located::new(
                 FindingsSection {
@@ -560,7 +552,6 @@ fn p_plan_item<'a>(source: &'a str, expanded: Located<ExpandedItem<'a>>) -> Plan
         source,
         cursor,
         diagnostics: Vec::new(),
-        code_block: None,
         config: ParserConfig::default().with_known_metadata(["Status"]),
     };
     let metadata = p_metadata(&mut ctx);
@@ -765,6 +756,7 @@ fn p_content_with_id<'a>(
 // Markdown components
 // ============================================================================
 
+#[allow(dead_code)]
 enum LineKind<'a> {
     EOF,
     Blank,
@@ -823,15 +815,31 @@ fn p_markdown_section<'a>(
     let start = ctx.cursor.position();
     let heading = p_markdown_heading(ctx)?;
     let level = heading.level;
-    let body_start = ctx.cursor.position();
+    let body = p_markdown_section_body(ctx, heading.level);
+    let end = ctx.cursor.position();
+    Ok(Located::new(
+        MarkdownSection {
+            level,
+            marker: heading.marker,
+            title: heading.title,
+            content: body,
+        },
+        SourceSpan::new(start, end),
+    ))
+}
 
+fn p_markdown_section_body<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+    until_level: usize,
+) -> Located<&'a str> {
+    let start = ctx.cursor.position();
     while !ctx.cursor.is_eof() {
         if ctx.try_(p_skip_code_block).is_ok() {
             continue;
         }
 
         match peek_heading_level(ctx) {
-            Ok((new_level, _)) if new_level <= level => {
+            Ok((new_level, _)) if new_level <= until_level => {
                 break;
             }
             _ => {
@@ -839,17 +847,8 @@ fn p_markdown_section<'a>(
             }
         }
     }
-
     let end = ctx.cursor.position();
-    Ok(Located::new(
-        MarkdownSection {
-            level,
-            marker: heading.marker,
-            title: heading.title,
-            content: ctx.located_with_pos(body_start, end),
-        },
-        SourceSpan::new(start, end),
-    ))
+    ctx.located_with_pos(start, end)
 }
 
 struct MarkdownHeading<'a> {
@@ -1104,7 +1103,6 @@ mod tests {
                 source,
                 cursor: Cursor::new(source),
                 diagnostics: vec![],
-                code_block: None,
                 config: ParserConfig::default(),
             }
         }
