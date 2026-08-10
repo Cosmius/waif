@@ -2,7 +2,7 @@ use self::cursor::Cursor;
 pub use self::cursor::Position;
 use crate::artifact::{
     Artifact, CompactItem, ExpandedItem, Finding, FindingsBody, FindingsSection, Item,
-    ItemisedSection, Located, Metadata, PlanItem, PlanItemSection, ProseSection, Section,
+    ItemisedSection, Located, Metadata, PlanItem, PlanItemsSection, ProseSection, Section,
     SourceSpan,
 };
 use std::fmt;
@@ -235,20 +235,14 @@ fn p_artifact<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Artifact<'a> {
     let metadata = p_metadata(ctx);
     let pre_section_prose = p_markdown_section_body(ctx, 2);
     let sections = p_sections(ctx);
-    Artifact::new(
-        ctx.source.to_owned(),
-        title.text().to_owned(),
-        metadata,
-        pre_section_prose,
-        sections,
-    )
+    Artifact::new(ctx.source, title, metadata, pre_section_prose, sections)
 }
 
 fn p_title_line<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Located<&'a str> {
     let pos = ctx.cursor.position();
     if ctx.cursor.is_eof() {
         ctx.diagnostics
-            .push(Diagnostic::error1(pos.line(), "missing level-one title"));
+            .push(Diagnostic::error_p(pos, "missing level-one title"));
         return ctx.located_with_pos(pos, pos);
     }
 
@@ -256,15 +250,15 @@ fn p_title_line<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Located<&'a str> {
         level: 1, title, ..
     }) = ctx.try_(p_markdown_heading)
     else {
-        ctx.diagnostics.push(Diagnostic::error1(
-            pos.line(),
+        ctx.diagnostics.push(Diagnostic::error_p(
+            pos,
             "first non-whitespace line must be a level-one Markdown heading",
         ));
         return ctx.located_with_pos(pos, pos);
     };
     if title.value().is_empty() {
-        ctx.diagnostics.push(Diagnostic::error1(
-            pos.line(),
+        ctx.diagnostics.push(Diagnostic::error_p(
+            pos,
             "level-one title must not be empty",
         ));
     }
@@ -346,8 +340,8 @@ fn p_sections<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Vec<Section<'a>> {
         let pos = ctx.cursor.position();
         match ctx.try_(p_markdown_heading) {
             Ok(heading) if heading.level == 1 => {
-                ctx.diagnostics.push(Diagnostic::error1(
-                    pos.line(),
+                ctx.diagnostics.push(Diagnostic::error_p(
+                    pos,
                     "artifact must contain exactly one level-one heading",
                 ));
                 p_markdown_section_body(ctx, 2);
@@ -366,8 +360,8 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
         return None;
     }
     if section.title.text().is_empty() {
-        ctx.diagnostics.push(Diagnostic::error1(
-            pos.line(),
+        ctx.diagnostics.push(Diagnostic::error_p(
+            pos,
             "level-two section name must not be empty",
         ));
     }
@@ -377,10 +371,7 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
     let section_type = ctx.config.section_type(section.title.text());
     match section_type {
         SectionType::Prose => Some(Section::Prose(Located::new(
-            ProseSection::new(
-                section.title.map(|s| s.to_owned()),
-                section.content.map(|s| s.to_owned()),
-            ),
+            ProseSection::new(section.title, section.content),
             span,
         ))),
         SectionType::Itemised => {
@@ -388,7 +379,7 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
             let items = p_itemised_items(ctx, body_end);
             Some(Section::Itemised(Located::new(
                 ItemisedSection {
-                    title: section.title.map(|s| s.to_owned()),
+                    title: section.title,
                     items: Located::new(items, body_span),
                 },
                 span,
@@ -398,8 +389,8 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
             ctx.cursor.rewind(body_start);
             let items = p_plan_items(ctx, body_end);
             Some(Section::PlanItems(Located::new(
-                PlanItemSection {
-                    title: section.title.map(|s| s.to_owned()),
+                PlanItemsSection {
+                    title: section.title,
                     items: Located::new(items, body_span),
                 },
                 span,
@@ -410,7 +401,7 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
             let body = p_findings_body(ctx, body_end);
             Some(Section::Findings(Located::new(
                 FindingsSection {
-                    title: section.title.map(|s| s.to_owned()),
+                    title: section.title,
                     body,
                 },
                 span,
@@ -624,7 +615,8 @@ fn p_findings_body<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Fin
         ctx.cursor.skip_whitespace_lines();
         if !ctx.cursor.is_eof() && peek_heading_level(ctx).is_err() {
             let pos = ctx.cursor.position();
-            ctx.diagnostics.push(Diagnostic::error_p(pos, "expect a heading"));
+            ctx.diagnostics
+                .push(Diagnostic::error_p(pos, "expect a heading"));
             ctx.cursor.skip_to_offset(body_end);
         }
         FindingsBody::Sentinel(ctx.located_with_pos(start, end))
@@ -982,9 +974,9 @@ fn p_maybe_code_block_fence(ctx: &mut ParsingContext) -> Result<(char, usize, us
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::artifact::{InvalidValue, ItemForm};
+    use crate::artifact::{serialize, InvalidValue, ItemForm};
 
-    fn prose<'a>(section: &'a Section<'_>) -> &'a ProseSection {
+    fn prose<'s, 'a>(section: &'s Section<'a>) -> &'s ProseSection<'a> {
         section
             .as_prose()
             .expect("section should contain opaque prose")
@@ -1139,9 +1131,9 @@ mod tests {
             let artifact = parse(source).expect("artifact should parse");
 
             assert_eq!(artifact.sections().len(), 2);
-            assert_eq!(artifact.sections()[0].name(), "One");
+            assert_eq!(artifact.sections()[0].title(), "One");
             assert_eq!(prose(&artifact.sections()[0]).body(), "one\n");
-            assert_eq!(artifact.sections()[1].name(), "Two");
+            assert_eq!(artifact.sections()[1].title(), "Two");
             assert_eq!(prose(&artifact.sections()[1]).body(), "two\n");
         }
 
@@ -1175,7 +1167,7 @@ Arbitrary prose.\n
                 &artifact_source[artifact.metadata()[1].span().range()],
                 "- Purpose: A value: with another colon\n\n\n\n"
             );
-            assert_eq!(artifact.sections()[0].name(), "Overview");
+            assert_eq!(artifact.sections()[0].title(), "Overview");
             assert!(prose(&artifact.sections()[0])
                 .body()
                 .contains("### A subsection"));
@@ -1197,7 +1189,7 @@ Arbitrary prose.\n
                 assert_eq!(metadata.value().value(), "値");
                 let value = metadata.value().located_value();
                 assert_eq!(&source[value.span().range()], "値");
-                assert_eq!(artifact.serialize(), source);
+                assert_eq!(serialize(&artifact), source);
             }
         }
 
@@ -1232,7 +1224,7 @@ Arbitrary prose.\n
                 .set_value("accepted")
                 .expect_err("multiline metadata should be immutable");
             assert_eq!(error, InvalidValue::Immutable);
-            assert_eq!(artifact.serialize(), source);
+            assert_eq!(serialize(&artifact), source);
         }
 
         #[test]
@@ -1250,10 +1242,13 @@ Arbitrary prose.\n
 
             assert_eq!(artifact.title(), "Example");
             assert_eq!(artifact.sections().len(), 1);
-            assert_eq!(artifact.sections()[0].name(), "Details");
-            assert_eq!(artifact.sections()[0].title().text(), "Details");
+            assert_eq!(artifact.sections()[0].title(), "Details");
+            assert_eq!(artifact.sections()[0].located_title().text(), "Details");
             assert_eq!(
-                &source[artifact.sections()[0].title().span().range()],
+                &source[artifact.sections()[0]
+                    .located_title()
+                    .span()
+                    .range()],
                 "Details"
             );
             assert!(prose(&artifact.sections()[0])
@@ -1272,7 +1267,7 @@ Arbitrary prose.\n
             let artifact = parse(source).expect("unrecognized prose should parse");
 
             assert!(prose(&artifact.sections()[0]).body().contains(":::waif"));
-            assert_eq!(artifact.serialize(), source);
+            assert_eq!(serialize(&artifact), source);
         }
 
         #[test]
@@ -1307,8 +1302,8 @@ Arbitrary prose.\n
             let prose = artifact.located_pre_section_prose();
             assert_eq!(prose.span().start_line(), 5);
             assert_eq!(&source[prose.span().range()], prose.text());
-            assert_eq!(artifact.sections()[0].name(), "Details");
-            assert_eq!(artifact.serialize(), source);
+            assert_eq!(artifact.sections()[0].title(), "Details");
+            assert_eq!(serialize(&artifact), source);
         }
 
         #[test]
@@ -1331,14 +1326,14 @@ Arbitrary prose.\n
                 "```markdown\r\n## Not a section α\r\n```\r\nopaque tail\r\n"
             );
             assert_eq!(artifact.sections().len(), 1);
-            assert_eq!(artifact.sections()[0].name(), "Details");
+            assert_eq!(artifact.sections()[0].title(), "Details");
 
             artifact.metadata_mut()[0]
                 .value_mut()
                 .set_value("accepted")
                 .expect("metadata value should be valid");
             assert_eq!(
-                artifact.serialize(),
+                serialize(&artifact),
                 source.replacen("drafting", "accepted", 1)
             );
         }
@@ -1428,10 +1423,6 @@ Arbitrary prose.\n
             let items = section.items();
 
             assert_eq!(items.len(), 2);
-            assert_eq!(
-                section.located_items().span(),
-                artifact.sections()[0].body_span()
-            );
             let first_item = &items[0];
             let first = compact(first_item);
             assert_eq!(first.marker().text(), "-");
@@ -1458,7 +1449,7 @@ Arbitrary prose.\n
 
             assert_eq!(items[1].identifier().unwrap().text(), "G-AC5");
             assert_eq!(items[1].short_description().text(), "\n");
-            assert_eq!(artifact.sections()[1].name(), "Tail");
+            assert_eq!(artifact.sections()[1].title(), "Tail");
         }
 
         #[test]
@@ -1534,14 +1525,20 @@ Arbitrary prose.\n
 
             assert!(items[1].identifier().is_none());
             assert!(expanded(&items[1]).delimiter().is_none());
-            assert_eq!(expanded(&items[1]).title().text(), "missing delimiter");
+            assert_eq!(
+                expanded(&items[1]).title().text(),
+                "missing delimiter"
+            );
             assert_eq!(expanded(&items[1]).content().text(), "second body\n");
             assert!(items[2].identifier().is_none());
             assert!(expanded(&items[2]).delimiter().is_none());
-            assert_eq!(expanded(&items[2]).title().text(), ": empty identifier");
+            assert_eq!(
+                expanded(&items[2]).title().text(),
+                ": empty identifier"
+            );
             assert_eq!(items[3].identifier().unwrap().text(), "G-REV4");
             assert_eq!(items[3].short_description().text(), "");
-            assert_eq!(artifact.sections()[1].name(), "Tail");
+            assert_eq!(artifact.sections()[1].title(), "Tail");
         }
 
         #[test]
@@ -1615,7 +1612,7 @@ Arbitrary prose.\n
                     &source[item.span().range()],
                     &source[source.find("### G-α").unwrap()..]
                 );
-                assert_eq!(artifact.serialize(), source);
+                assert_eq!(serialize(&artifact), source);
             }
         }
 
@@ -1663,7 +1660,7 @@ Arbitrary prose.\n
                     &source[item.span().range()],
                     &source[source.find("- G-α").unwrap()..]
                 );
-                assert_eq!(artifact.serialize(), source);
+                assert_eq!(serialize(&artifact), source);
             }
         }
 
@@ -1796,7 +1793,7 @@ Arbitrary prose.\n
                 .expect("value should be valid");
 
             assert_eq!(
-                artifact.serialize(),
+                serialize(&artifact),
                 concat!(
                     "# Example\r\n",
                     "- Status: accepted\r\n",
@@ -1823,7 +1820,7 @@ Arbitrary prose.\n
                 .expect("value should be valid");
 
             assert_eq!(
-                artifact.serialize(),
+                serialize(&artifact),
                 concat!(
                     "# Example\r\n",
                     "- Status: accepted\r\n",
@@ -1890,7 +1887,7 @@ Arbitrary prose.\n
                     .set_value("accepted")
                     .expect("metadata should be mutable");
                 assert_eq!(
-                    artifact.serialize(),
+                    serialize(&artifact),
                     source.replacen("drafting", "accepted", 1)
                 );
             }
@@ -2014,7 +2011,7 @@ Arbitrary prose.\n
 
             assert_eq!(artifact.source(), source);
             assert_eq!(prose(&artifact.sections()[0]).body(), "\r\nText\r\n");
-            assert_eq!(artifact.serialize(), source);
+            assert_eq!(serialize(&artifact), source);
         }
 
         #[test]
@@ -2031,28 +2028,28 @@ Arbitrary prose.\n
                 let second_title = source.find("Two").unwrap();
                 let second_body = source.find('二').unwrap();
 
-                assert_eq!(first.title().span().start_line(), 2);
+                assert_eq!(first.located_title().span().start_line(), 2);
                 assert_eq!(
-                    first.title().span().range(),
+                    first.located_title().span().range(),
                     first_title..first_title + "α".len()
                 );
                 assert_eq!(first.body_span().start_line(), 3);
                 assert_eq!(first.body_span().range(), first_body..second_start);
                 assert_eq!(first.span().range(), first_start..second_start);
 
-                assert_eq!(second.title().span().start_line(), 4);
+                assert_eq!(second.located_title().span().start_line(), 4);
                 assert_eq!(
-                    second.title().span().range(),
+                    second.located_title().span().range(),
                     second_title..second_title + "Two".len()
                 );
                 assert_eq!(second.body_span().start_line(), 5);
                 assert_eq!(second.body_span().range(), second_body..source.len());
                 assert_eq!(second.span().range(), second_start..source.len());
-                assert_eq!(&source[first.title().span().range()], "α");
-                assert_eq!(&source[second.title().span().range()], "Two");
+                assert_eq!(&source[first.located_title().span().range()], "α");
+                assert_eq!(&source[second.located_title().span().range()], "Two");
                 assert_eq!(&source[first.body_span().range()], prose(first).body());
                 assert_eq!(&source[second.body_span().range()], prose(second).body());
-                assert_eq!(artifact.serialize(), source);
+                assert_eq!(serialize(&artifact), source);
             }
         }
 
@@ -2068,7 +2065,7 @@ Arbitrary prose.\n
                 .expect("value should be valid");
 
             assert_eq!(
-                artifact.serialize(),
+                serialize(&artifact),
                 "# Example\r- Status: accepted\r## Details\rText\r"
             );
         }
@@ -2096,7 +2093,7 @@ Arbitrary prose.\n
                 .expect("value should be valid");
 
             assert_eq!(
-                artifact.serialize(),
+                serialize(&artifact),
                 concat!(
                     " \r\n",
                     "# Example\r\n",
@@ -2284,7 +2281,11 @@ bare preamble\n
 
             assert!(artifact.plan_item("P").is_none());
             assert_eq!(
-                artifact.plan_item("P1").expect("exact item").title().text(),
+                artifact
+                    .plan_item("P1")
+                    .expect("exact item")
+                    .title()
+                    .text(),
                 "値"
             );
             artifact.metadata_mut()[0]
@@ -2294,14 +2295,13 @@ bare preamble\n
             artifact
                 .plan_item_mut("P1")
                 .expect("exact item")
-                .value_mut()
                 .status_mut()
                 .expect("unique status")
                 .set_value("done")
                 .expect("nested status should be mutable");
 
             assert_eq!(
-                artifact.serialize(),
+                serialize(&artifact),
                 source
                     .replacen("- Status: accepted", "- Status: amending", 1)
                     .replacen("- Status: pending", "- Status: done", 1)
@@ -2330,7 +2330,6 @@ bare preamble\n
             assert!(artifact
                 .plan_item_mut("P2")
                 .expect("unique item")
-                .value_mut()
                 .status_mut()
                 .is_none());
         }
@@ -2352,13 +2351,12 @@ bare preamble\n
                 let status = artifact
                     .plan_item_mut("P1")
                     .expect("exact item")
-                    .value_mut()
                     .status_mut()
                     .expect("unique status");
                 status.set_value("done").expect("valid status value");
 
                 assert_eq!(
-                    artifact.serialize(),
+                    serialize(&artifact),
                     source.replacen("- Status: pending", "- Status: done", 1)
                 );
                 let item = artifact.plan_item("P1").expect("item");
@@ -2415,7 +2413,10 @@ bare preamble\n
             assert!(items[1].value().item.value().delimiter().is_none());
             assert!(items[2].value().identifier().is_none());
             assert!(items[2].value().item.value().delimiter().is_none());
-            assert_eq!(items[2].value().title().text(), ": Missing identifier");
+            assert_eq!(
+                items[2].value().title().text(),
+                ": Missing identifier"
+            );
         }
 
         #[test]
@@ -2439,7 +2440,7 @@ bare preamble\n
                 .items();
             assert_eq!(items.len(), 2);
             assert!(items[1].value().identifier().is_none());
-            assert_eq!(artifact.sections()[1].name(), "Following section");
+            assert_eq!(artifact.sections()[1].title(), "Following section");
 
             let diagnostics = parse_with_config(
                 "# Plan\n## Plan Items\n### P1: Item\n# Broken hierarchy\n",
@@ -2556,7 +2557,7 @@ bare preamble\n
             assert_eq!(items.len(), 1);
             assert_eq!(items[0].identifier().expect("ID").text(), "F1");
             assert_eq!(items[0].content().text(), "- Severity: opaque\n");
-            assert_eq!(artifact.sections()[1].name(), "Next");
+            assert_eq!(artifact.sections()[1].title(), "Next");
         }
 
         #[test]
@@ -2575,7 +2576,7 @@ bare preamble\n
                 .as_findings()
                 .expect("findings section should be structured");
             assert_eq!(section.body().items().expect("items").len(), 1);
-            assert_eq!(artifact.sections()[1].name(), "Next");
+            assert_eq!(artifact.sections()[1].title(), "Next");
         }
     }
 }

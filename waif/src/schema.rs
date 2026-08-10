@@ -235,7 +235,7 @@ fn validate_sections(
     let mut observed_prefix = None;
 
     for section in artifact.sections() {
-        let name = section.name();
+        let name = section.title();
         let line = section.span().start_line();
         if !seen_sections.insert(name) {
             diagnostics.push(Diagnostic::error1(
@@ -316,7 +316,7 @@ fn validate_items(
     last_numbers: &mut HashMap<&'static str, i64>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    let section_name = section.name();
+    let section_name = section.title();
     let section = section
         .as_itemised()
         .expect("an item rule requires an itemised parser section");
@@ -419,7 +419,7 @@ fn validate_item_forms(
 }
 
 fn validate_plan_items(section: &Section, rule: PlanItemRule, diagnostics: &mut Vec<Diagnostic>) {
-    let section_name = section.name();
+    let section_name = section.title();
     let section = section
         .as_plan_items()
         .expect("a plan-item rule requires a plan-items parser section");
@@ -469,7 +469,7 @@ fn validate_findings(
     observed_prefix: &mut Option<ObservedArtifactPrefix>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    let section_name = section.name();
+    let section_name = section.title();
     let section = section
         .as_findings()
         .expect("a findings rule requires a findings parser section");

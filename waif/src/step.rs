@@ -211,7 +211,7 @@ fn validate_coverage(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
     let Some(section) = artifact
         .sections()
         .iter()
-        .find(|section| section.name() == "Plan Item Coverage")
+        .find(|section| section.title() == "Plan Item Coverage")
         .and_then(|section| section.as_itemised())
     else {
         return;

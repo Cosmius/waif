@@ -202,7 +202,7 @@ fn validate_decision_findings(artifact: &Artifact, diagnostics: &mut Vec<Diagnos
     let Some(section) = artifact
         .sections()
         .iter()
-        .find(|section| section.name() == "Findings")
+        .find(|section| section.title() == "Findings")
         .and_then(|section| section.as_findings())
     else {
         return;
