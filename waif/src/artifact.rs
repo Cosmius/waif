@@ -6,7 +6,7 @@ pub struct Artifact<'a, L = SourceSpan> {
     source: String,
     title: String,
     metadata: Vec<Located<Metadata<'a, L>, L>>,
-    pre_section_prose: Located<String, L>,
+    pre_section_prose: Located<&'a str, L>,
     sections: Vec<Section<'a, L>>,
 }
 
@@ -18,7 +18,7 @@ impl<'a, L> Artifact<'a, L> {
         source: String,
         title: String,
         metadata: Vec<Located<Metadata<'a, L>, L>>,
-        pre_section_prose: Located<String, L>,
+        pre_section_prose: Located<&'a str, L>,
         sections: Vec<Section<'a, L>>,
     ) -> Self {
         Self {
@@ -57,7 +57,7 @@ impl<'a, L> Artifact<'a, L> {
         self.pre_section_prose.text()
     }
 
-    pub fn located_pre_section_prose(&self) -> &Located<String, L> {
+    pub fn located_pre_section_prose(&self) -> &Located<&'a str, L> {
         &self.pre_section_prose
     }
 

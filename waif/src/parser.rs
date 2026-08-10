@@ -252,7 +252,7 @@ fn p_artifact<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Artifact<'a> {
     ctx.cursor.skip_whitespace_lines();
     let title = p_title_line(ctx);
     let metadata = p_metadata(ctx);
-    let pre_section_prose = p_pre_section_prose(ctx);
+    let pre_section_prose = p_markdown_section_body(ctx, 2);
     let sections = p_sections(ctx);
     Artifact::new(
         ctx.source.to_owned(),
@@ -356,40 +356,6 @@ fn p_metadata_line<'a>(
         Metadata::new(key_l, value_l),
         item.span().clone(),
     ))
-}
-
-fn p_pre_section_prose(ctx: &mut ParsingContext) -> Located<String> {
-    let start = ctx.cursor.position();
-    loop {
-        if ctx.try_(p_skip_code_block).is_ok() {
-            continue;
-        }
-        if ctx.cursor.peek_line().is_none() {
-            break;
-        };
-        let line_start = ctx.cursor.position();
-        match ctx.try_(p_markdown_heading) {
-            Ok(heading) if heading.level == 1 => {
-                ctx.diagnostics.push(Diagnostic::error1(
-                    line_start.line(),
-                    "artifact must contain exactly one level-one heading",
-                ));
-                continue;
-            }
-            Ok(heading) if heading.level == 2 => {
-                ctx.cursor.rewind(line_start);
-                break;
-            }
-            Ok(_) => continue,
-            Err(_) => {}
-        }
-        ctx.cursor.take_line();
-    }
-    let end = ctx.cursor.position();
-    Located::new(
-        ctx.source[start.offset()..end.offset()].to_owned(),
-        SourceSpan::new(start, end),
-    )
 }
 
 fn p_sections<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Vec<Section<'a>> {
