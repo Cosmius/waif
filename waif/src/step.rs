@@ -222,10 +222,10 @@ fn validate_coverage(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
             .identifier()
             .and_then(|id| id.text().rsplit_once("-PC"))
             .and_then(|(_, number)| positive_number(number));
-        let content = item.content().text();
-        let parsed = content
+        let short_description = item.short_description().text();
+        let parsed = short_description
             .strip_prefix('P')
-            .and_then(|content| content.split_once(" - "))
+            .and_then(|description| description.split_once(" - "))
             .and_then(|(number, rest)| {
                 let number = positive_number(number)?;
                 let (coverage, description) = rest.split_once(" - ")?;

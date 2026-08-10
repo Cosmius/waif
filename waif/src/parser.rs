@@ -7,7 +7,6 @@ use crate::artifact::{
 };
 use std::fmt;
 use std::iter::repeat_n;
-use std::ops::Range;
 
 mod cursor;
 
@@ -551,12 +550,12 @@ fn p_plan_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Vec<Pl
 }
 
 fn p_plan_item<'a>(source: &'a str, expanded: Located<ExpandedItem<'a>>) -> PlanItem<'a> {
-    let body_span = expanded.value().body().span();
-    let body_range = body_span.range();
-    let body_end = body_range.end;
+    let content_span = expanded.value().content().span();
+    let content_range = content_span.range();
+    let content_end = content_range.end;
     let mut cursor = Cursor::new(source);
-    cursor.limit(body_end);
-    cursor.skip_to_offset(body_range.start);
+    cursor.limit(content_end);
+    cursor.skip_to_offset(content_range.start);
     let mut ctx = ParsingContext {
         source,
         cursor,
@@ -570,164 +569,82 @@ fn p_plan_item<'a>(source: &'a str, expanded: Located<ExpandedItem<'a>>) -> Plan
         expanded,
         metadata,
         prose: Located::new(
-            source[prose_start.offset()..body_end].to_owned(),
+            source[prose_start.offset()..content_end].to_owned(),
             SourceSpan::new(
                 prose_start,
-                prose_start.advance(&source[prose_start.offset()..body_end]),
+                prose_start.advance(&source[prose_start.offset()..content_end]),
             ),
         ),
     }
 }
 
-// An expanded item whose body end is not known until the next peer or section.
-struct OpenExpandedItem<'a> {
-    start: Position,
-    body_start: Position,
-    marker: Located<&'a str>,
-    identifier: Option<Located<&'a str>>,
-    delimiter: Option<Located<&'a str>>,
-    content: Located<&'a str>,
-}
-
 fn p_expanded_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Vec<Item<'a>> {
     let mut items = Vec::new();
-    let mut open = None;
+    let old_limit = ctx.cursor.limit(body_end);
 
-    while ctx.cursor.position().offset() < body_end {
-        if ctx.try_(p_skip_code_block).is_ok() {
-            continue;
-        };
-        let start = ctx.cursor.position();
-        let (_, line) = ctx.cursor.peek_line().expect("body has a line");
-
-        if matches!(peek_heading_level(ctx), Ok((3, _))) {
-            if let Some(item) = open.take() {
-                items.push(finish_expanded_item(ctx.source, item, start));
+    while !ctx.cursor.is_eof() {
+        let (_, kind) = peek_line_kind(ctx);
+        match kind {
+            LineKind::Heading { level: 3 } => {
+                let item = p_expanded_item(ctx).expect("level-three section should parse");
+                items.push(Item::Expanded(item));
             }
-            open = Some(p_expanded_item_opening(ctx));
-            continue;
+            LineKind::FenceStart { .. } => {
+                let pos = ctx.cursor.position();
+                ctx.diagnostics
+                    .push(Diagnostic::error_p(pos, "unexpected code block"));
+                p_skip_code_block(ctx).expect("must be code block");
+            }
+            LineKind::Blank => {
+                ctx.cursor.take_line().expect("not eof");
+            }
+            _ => {
+                let pos = ctx.cursor.position();
+                ctx.diagnostics.push(Diagnostic::error_p(
+                    pos,
+                    "expected an expanded item in `### ID: title` form",
+                ));
+                ctx.cursor.take_line().expect("not eof");
+            }
         }
-
-        if open.is_none() && !line.trim().is_empty() {
-            ctx.diagnostics.push(Diagnostic::error1(
-                start.line(),
-                "expected an expanded item in `### ID: title` form",
-            ));
-        }
-        ctx.cursor.take_line();
     }
-
-    if let Some(item) = open {
-        items.push(finish_expanded_item(
-            ctx.source,
-            item,
-            ctx.cursor.position(),
-        ));
-    }
+    ctx.cursor.limit(old_limit);
     items
 }
 
-fn p_expanded_item_opening<'a>(ctx: &mut ParsingContext<'_, 'a>) -> OpenExpandedItem<'a> {
-    let start = ctx.cursor.position();
-    let heading = p_markdown_heading(ctx).expect("item has a heading");
-    debug_assert_eq!(heading.level, 3);
-    let title_range = heading.title.span().range();
-    let title = heading.title.text();
-    let marker_end = start.advance(&ctx.source[start.offset()..title_range.start]);
-    let marker = located_source_range(ctx.source, start, marker_end);
-    let ranges = item_opening_ranges(title).offset(title_range.start);
-    let identifier = ranges.identifier.map(|range| {
-        let range_start = start.advance(&ctx.source[start.offset()..range.start]);
-        let range_end = start.advance(&ctx.source[start.offset()..range.end]);
-        located_source_range(ctx.source, range_start, range_end)
-    });
-    let delimiter = ranges.delimiter.map(|range| {
-        let range_start = start.advance(&ctx.source[start.offset()..range.start]);
-        let range_end = start.advance(&ctx.source[start.offset()..range.end]);
-        located_source_range(ctx.source, range_start, range_end)
-    });
-    let content = located_source_range(
-        ctx.source,
-        start.advance(&ctx.source[start.offset()..ranges.content.start]),
-        start.advance(&ctx.source[start.offset()..ranges.content.end]),
-    );
-
-    OpenExpandedItem {
-        start,
-        body_start: ctx.cursor.position(),
-        marker,
-        identifier,
-        delimiter,
-        content,
+fn p_expanded_item<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+) -> Result<Located<ExpandedItem<'a>>, Diagnostic> {
+    let mut subctx = ctx.clone();
+    let (section, span) = p_markdown_section(ctx)?.unpack();
+    if section.level != 3 {
+        return Err(Diagnostic::error_p(
+            *section.marker.span().start(),
+            "expected a level-three section",
+        ));
     }
-}
-
-fn finish_expanded_item<'a>(
-    source: &'a str,
-    open: OpenExpandedItem<'a>,
-    end: Position,
-) -> Item<'a> {
-    Item::Expanded(Located::new(
-        ExpandedItem {
-            marker: open.marker,
-            identifier: open.identifier,
-            delimiter: open.delimiter,
-            content: open.content,
-            body: located_source_range(source, open.body_start, end),
-        },
-        SourceSpan::new(open.start, end),
-    ))
-}
-
-struct ItemOpeningRanges {
-    identifier: Option<Range<usize>>,
-    delimiter: Option<Range<usize>>,
-    content: Range<usize>,
-}
-
-impl ItemOpeningRanges {
-    fn offset(self, offset: usize) -> Self {
-        Self {
-            identifier: self.identifier.map(|range| offset_range(range, offset)),
-            delimiter: self.delimiter.map(|range| offset_range(range, offset)),
-            content: offset_range(self.content, offset),
-        }
-    }
-}
-
-fn item_opening_ranges(text: &str) -> ItemOpeningRanges {
-    let Some(colon) = text.find(':') else {
-        return ItemOpeningRanges {
-            identifier: None,
-            delimiter: None,
-            content: 0..text.len(),
-        };
+    let title_start = *section.title.span().start();
+    subctx.cursor.rewind(title_start);
+    subctx.cursor.limit(section.title.span().end().offset());
+    let (identifier, delimiter, title) = match p_content_with_id(&mut subctx) {
+        Ok(ContentWithId {
+            id,
+            content,
+            delimiter,
+        }) => (Some(id), Some(delimiter), content),
+        Err(_) => (None, None, section.title),
     };
 
-    let candidate = &text[..colon];
-    let identifier = candidate.trim();
-    let identifier_start = candidate.len() - candidate.trim_start().len();
-    let identifier_end = identifier_start + identifier.len();
-    let mut content_start = colon + 1;
-    while text[content_start..].starts_with([' ', '\t']) {
-        content_start += 1;
-    }
-    ItemOpeningRanges {
-        identifier: Some(identifier_start..identifier_end),
-        delimiter: Some(identifier_end..content_start),
-        content: content_start..text.len(),
-    }
-}
-
-fn offset_range(range: Range<usize>, offset: usize) -> Range<usize> {
-    range.start + offset..range.end + offset
-}
-
-fn located_source_range(source: &str, start: Position, end: Position) -> Located<&str> {
-    Located::new(
-        &source[start.offset()..end.offset()],
-        SourceSpan::new(start, end),
-    )
+    Ok(Located::new(
+        ExpandedItem {
+            marker: section.marker,
+            identifier,
+            title,
+            delimiter,
+            content: section.content,
+        },
+        span,
+    ))
 }
 
 // Parse compact peer items up to the section boundary or expanded phase.
@@ -781,21 +698,35 @@ fn p_compact_item<'a>(
     let (m_item, span) = p_markdown_item(ctx)?.unpack();
     subctx.cursor.rewind(*m_item.content.span().start());
     subctx.cursor.limit(m_item.content.span().end().offset());
-    let ContentWithId {
-        id,
-        delimiter,
-        content,
-    } = p_content_with_id(&mut subctx)?;
-    Ok(Located::new(
-        CompactItem {
-            marker: m_item.marker,
-            identifier: Some(id),
-            delimiter: Some(delimiter),
+    Ok(match p_content_with_id(&mut subctx) {
+        Ok(ContentWithId {
+            id,
+            delimiter,
             content,
-        },
-        span,
-    ))
+        }) => Located::new(
+            CompactItem {
+                marker: m_item.marker,
+                identifier: Some(id),
+                delimiter: Some(delimiter),
+                content,
+            },
+            span,
+        ),
+        Err(_) => Located::new(
+            CompactItem {
+                marker: m_item.marker,
+                identifier: None,
+                delimiter: None,
+                content: m_item.content,
+            },
+            span,
+        ),
+    })
 }
+
+// ============================================================================
+// common parts
+// ============================================================================
 
 struct ContentWithId<'a> {
     id: Located<&'a str>,
@@ -803,6 +734,7 @@ struct ContentWithId<'a> {
     content: Located<&'a str>,
 }
 
+// expected to work in a limited context
 fn p_content_with_id<'a>(
     ctx: &mut ParsingContext<'_, 'a>,
 ) -> Result<ContentWithId<'a>, Diagnostic> {
@@ -876,8 +808,53 @@ fn peek_line_kind<'a>(ctx: &ParsingContext<'_, 'a>) -> (usize, LineKind<'a>) {
     (indentation, LineKind::Text)
 }
 
+struct MarkdownSection<'a> {
+    level: usize,
+    marker: Located<&'a str>,
+    title: Located<&'a str>,
+    content: Located<&'a str>,
+}
+
+/// Parse a Markdown heading and its body through the next peer or parent
+/// heading. Deeper headings and fenced headings remain part of the body.
+fn p_markdown_section<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+) -> Result<Located<MarkdownSection<'a>>, Diagnostic> {
+    let start = ctx.cursor.position();
+    let heading = p_markdown_heading(ctx)?;
+    let level = heading.level;
+    let body_start = ctx.cursor.position();
+
+    while !ctx.cursor.is_eof() {
+        if ctx.try_(p_skip_code_block).is_ok() {
+            continue;
+        }
+
+        match peek_heading_level(ctx) {
+            Ok((new_level, _)) if new_level <= level => {
+                break;
+            }
+            _ => {
+                ctx.cursor.take_line();
+            }
+        }
+    }
+
+    let end = ctx.cursor.position();
+    Ok(Located::new(
+        MarkdownSection {
+            level,
+            marker: heading.marker,
+            title: heading.title,
+            content: ctx.located_with_pos(body_start, end),
+        },
+        SourceSpan::new(start, end),
+    ))
+}
+
 struct MarkdownHeading<'a> {
     level: usize,
+    marker: Located<&'a str>,
     title: Located<&'a str>,
     pos: Position,
 }
@@ -900,6 +877,7 @@ fn p_markdown_heading<'a>(
 ) -> Result<MarkdownHeading<'a>, Diagnostic> {
     let start = ctx.cursor.position();
     let (level, pos) = peek_heading_level(ctx)?;
+    let marker = ctx.located_with_pos(start, pos);
     ctx.cursor.rewind(pos);
     match ctx.cursor.take_if(|ch| ch != '\n') {
         None => {
@@ -907,6 +885,7 @@ fn p_markdown_heading<'a>(
             let title_pos = ctx.cursor.position();
             return Ok(MarkdownHeading {
                 level,
+                marker,
                 title: ctx.located_with_pos(title_pos, title_pos),
                 pos: start,
             });
@@ -934,6 +913,7 @@ fn p_markdown_heading<'a>(
     let title = ctx.located_with_pos(text_pos, text_pos.advance(title));
     Ok(MarkdownHeading {
         level,
+        marker,
         title,
         pos: start,
     })
@@ -1135,6 +1115,47 @@ mod tests {
             let parsed = p_markdown_heading(&mut heading).expect("heading should parse");
             assert_eq!(*parsed.title.value(), "Title");
             assert_eq!(heading.cursor.position().line(), 2);
+        }
+
+        #[test]
+        fn markdown_section_consumes_through_its_nested_headings() {
+            let source = concat!(
+                "### First\n",
+                "body\n",
+                "#### Nested\n",
+                "nested body\n",
+                "### Next\n",
+            );
+            let mut section_context = context(source);
+
+            let section = p_markdown_section(&mut section_context).expect("section should parse");
+
+            assert_eq!(section.value().level, 3);
+            assert_eq!(section.value().marker.text(), "###");
+            assert_eq!(section.value().title.text(), "First");
+            assert_eq!(
+                section.value().content.text(),
+                "body\n#### Nested\nnested body\n"
+            );
+            assert_eq!(section_context.cursor.peek_line(), Some((true, "### Next")));
+        }
+
+        #[test]
+        fn expanded_item_uses_a_markdown_section_body() {
+            let source = "### P1 :  First\nbody\n### P2: Second\n";
+            let mut item_context = context(source);
+
+            let item = p_expanded_item(&mut item_context).expect("expanded item should parse");
+
+            assert_eq!(item.value().marker().text(), "###");
+            assert_eq!(item.value().identifier.as_ref().unwrap().text(), "P1");
+            assert_eq!(item.value().delimiter().unwrap().text(), ":");
+            assert_eq!(item.value().title().text(), "First");
+            assert_eq!(item.value().content().text(), "body\n");
+            assert_eq!(
+                item_context.cursor.peek_line(),
+                Some((true, "### P2: Second"))
+            );
         }
 
         #[test]
@@ -1504,7 +1525,7 @@ Arbitrary prose.\n
             assert_eq!(first.marker().text(), "-");
             assert_eq!(first_item.identifier().unwrap().text(), "G-AC1");
             assert_eq!(first.delimiter().unwrap().text(), ":");
-            assert_eq!(first_item.content().text(), "α  \n");
+            assert_eq!(first_item.short_description().text(), "α  \n");
             assert_eq!(
                 &source[first.marker().span().range()],
                 first.marker().text()
@@ -1515,8 +1536,8 @@ Arbitrary prose.\n
             );
             assert_eq!(&source[first.delimiter().unwrap().span().range()], ":");
             assert_eq!(
-                &source[first_item.content().span().range()],
-                first_item.content().text()
+                &source[first_item.short_description().span().range()],
+                first_item.short_description().text()
             );
             assert_eq!(
                 &source[first_item.span().range()],
@@ -1524,7 +1545,7 @@ Arbitrary prose.\n
             );
 
             assert_eq!(items[1].identifier().unwrap().text(), "G-AC5");
-            assert_eq!(items[1].content().text(), "\n");
+            assert_eq!(items[1].short_description().text(), "\n");
             assert_eq!(artifact.sections()[1].name(), "Tail");
         }
 
@@ -1555,17 +1576,20 @@ Arbitrary prose.\n
             assert_eq!(items.len(), 4);
             let first_item = &items[0];
             let first = expanded(first_item);
-            assert_eq!(first_item.form(), crate::artifact::ItemForm::Expanded);
-            assert_eq!(first.marker().text(), "### ");
+            assert_eq!(first_item.form(), ItemForm::Expanded);
+            assert_eq!(first.marker().text(), "###");
             assert_eq!(first_item.identifier().unwrap().text(), "G-REV1");
-            assert_eq!(first.delimiter().unwrap().text(), " :  ");
-            assert_eq!(first_item.content().text(), "α");
+            assert_eq!(first.delimiter().unwrap().text(), ":");
+            assert_eq!(first_item.short_description().text(), "α");
             assert!(source[first_item.span().range()].contains("opaque body"));
-            assert!(first.body().text().contains("#### A deeper heading"));
-            assert!(first.body().text().contains("- Before:"));
-            assert!(first.body().text().contains("- G-AC1:"));
-            assert!(first.body().text().contains("- malformed compact-looking"));
-            assert!(first.body().text().contains("- nested list"));
+            assert!(first.content().text().contains("#### A deeper heading"));
+            assert!(first.content().text().contains("- Before:"));
+            assert!(first.content().text().contains("- G-AC1:"));
+            assert!(first
+                .content()
+                .text()
+                .contains("- malformed compact-looking"));
+            assert!(first.content().text().contains("- nested list"));
             assert_eq!(
                 &source[first.marker().span().range()],
                 first.marker().text()
@@ -1574,12 +1598,15 @@ Arbitrary prose.\n
                 &source[first_item.identifier().unwrap().span().range()],
                 "G-REV1"
             );
-            assert_eq!(&source[first.delimiter().unwrap().span().range()], " :  ");
+            assert_eq!(&source[first.delimiter().unwrap().span().range()], ":");
             assert_eq!(
-                &source[first_item.content().span().range()],
-                first_item.content().text()
+                &source[first_item.short_description().span().range()],
+                first_item.short_description().text()
             );
-            assert_eq!(&source[first.body().span().range()], first.body().text());
+            assert_eq!(
+                &source[first.content().span().range()],
+                first.content().text()
+            );
             assert_eq!(
                 &source[first_item.span().range()],
                 concat!(
@@ -1595,10 +1622,13 @@ Arbitrary prose.\n
 
             assert!(items[1].identifier().is_none());
             assert!(expanded(&items[1]).delimiter().is_none());
-            assert_eq!(items[1].content().text(), "missing delimiter");
-            assert_eq!(items[2].identifier().unwrap().text(), "");
+            assert_eq!(expanded(&items[1]).title().text(), "missing delimiter");
+            assert_eq!(expanded(&items[1]).content().text(), "second body\n");
+            assert!(items[2].identifier().is_none());
+            assert!(expanded(&items[2]).delimiter().is_none());
+            assert_eq!(expanded(&items[2]).title().text(), ": empty identifier");
             assert_eq!(items[3].identifier().unwrap().text(), "G-REV4");
-            assert_eq!(items[3].content().text(), "");
+            assert_eq!(items[3].short_description().text(), "");
             assert_eq!(artifact.sections()[1].name(), "Tail");
         }
 
@@ -1616,12 +1646,12 @@ Arbitrary prose.\n
 
             assert_eq!(compact_item.form(), crate::artifact::ItemForm::Compact);
             assert_eq!(compact_item.identifier().unwrap().text(), "G-AC1");
-            assert_eq!(compact_item.content().text(), "compact\n  body\n");
+            assert_eq!(compact_item.short_description().text(), "compact\n  body\n");
             assert!(compact_source[compact_item.span().range()].contains("compact\n  body"));
             assert_eq!(expanded_item.form(), crate::artifact::ItemForm::Expanded);
             assert_eq!(expanded_item.identifier().unwrap().text(), "G-AC1");
-            assert_eq!(expanded_item.content().text(), "expanded");
-            assert_eq!(expanded(expanded_item).body().text(), "body\n");
+            assert_eq!(expanded_item.short_description().text(), "expanded");
+            assert_eq!(expanded(expanded_item).content().text(), "body\n");
         }
 
         #[test]
@@ -1642,7 +1672,7 @@ Arbitrary prose.\n
             let items = itemised(&artifact.sections()[0]).items();
 
             assert_eq!(items.len(), 2);
-            let body = expanded(&items[0]).body().text();
+            let body = expanded(&items[0]).content().text();
             assert!(body.contains("### not a peer"));
             assert!(body.contains("- not a mixed form"));
             assert!(body.contains("#### deeper heading"));
@@ -1668,7 +1698,7 @@ Arbitrary prose.\n
                 assert_eq!(item.span().start_line(), 3);
                 assert_eq!(item.identifier().unwrap().text(), "G-α");
                 assert_eq!(&source[item.identifier().unwrap().span().range()], "G-α");
-                assert_eq!(item.content().text(), "値");
+                assert_eq!(expanded(item).title().text(), "値");
                 assert_eq!(
                     &source[item.span().range()],
                     &source[source.find("### G-α").unwrap()..]
@@ -1970,7 +2000,7 @@ Arbitrary prose.\n
             assert_eq!(items.len(), 1);
             assert_eq!(items[0].form(), ItemForm::Expanded);
             assert_eq!(
-                expanded(&items[0]).body().text(),
+                expanded(&items[0]).content().text(),
                 "body\n- P-D1: too late\n"
             );
         }
@@ -1993,7 +2023,7 @@ Arbitrary prose.\n
             assert_eq!(items.len(), 1);
             assert_eq!(items[0].form(), ItemForm::Expanded);
             assert_eq!(
-                expanded(&items[0]).body().text(),
+                expanded(&items[0]).content().text(),
                 "- first reason\n  - nested reason\n- prose label: still opaque\n\
                  - rationale-note: also opaque\n"
             );
@@ -2422,6 +2452,30 @@ bare preamble\n
         }
 
         #[test]
+        fn rejects_and_skips_a_fence_before_the_first_plan_item() {
+            let source = concat!(
+                "# Plan\n",
+                "## Plan Items\n",
+                "```markdown\n",
+                "### P1: fenced example\n",
+                "```\n",
+                "### P2: real item\n",
+            );
+
+            let (artifact, diagnostics) = parse_with_diagnostics(source, &config());
+            let items = artifact.sections()[0]
+                .as_plan_items()
+                .expect("plan items")
+                .items();
+
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].line(), 3);
+            assert_eq!(diagnostics[0].message(), "unexpected code block");
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].identifier().expect("identifier").text(), "P2");
+        }
+
+        #[test]
         fn exposes_missing_heading_components_and_empty_bodies() {
             let source = concat!(
                 "# Plan\n",
@@ -2442,8 +2496,9 @@ bare preamble\n
             assert!(items[0].metadata().is_empty());
             assert!(items[1].identifier().is_none());
             assert!(items[1].expanded.value().delimiter().is_none());
-            assert_eq!(items[2].identifier().expect("empty identifier").text(), "");
-            assert!(items[2].expanded.value().delimiter().is_some());
+            assert!(items[2].identifier().is_none());
+            assert!(items[2].expanded.value().delimiter().is_none());
+            assert_eq!(items[2].title().text(), ": Missing identifier");
         }
 
         #[test]

@@ -341,10 +341,10 @@ mod tests {
             "- G-AC2: duplicate valid ID\n",
         );
         let diagnostics = messages(source);
-        assert_eq!(diagnostics.len(), 3);
+        assert_eq!(diagnostics.len(), 10);
         assert_eq!(
             diagnostics.iter().map(|entry| entry.1).collect::<Vec<_>>(),
-            [8, 9, 14]
+            [8, 9, 10, 11, 12, 13, 14, 15, 16, 18]
         );
         assert!(diagnostics.iter().all(|entry| entry.0 == Severity::Error));
     }
@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(
             diagnostics
                 .iter()
-                .filter(|entry| entry.2 == "Expected identifier")
+                .filter(|entry| entry.2.contains("missing an identifier"))
                 .count(),
             3
         );

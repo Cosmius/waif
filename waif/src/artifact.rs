@@ -393,11 +393,11 @@ impl<'a, L> Finding<'a, L> {
     }
 
     pub fn content(&self) -> &Located<&'a str, L> {
-        &self.expanded.value.content
+        &self.expanded.value.title
     }
 
     pub fn body(&self) -> &Located<&'a str, L> {
-        &self.expanded.value.body
+        &self.expanded.value.content
     }
 
     pub fn span(&self) -> &L {
@@ -442,7 +442,7 @@ impl<'a, L> PlanItem<'a, L> {
     }
 
     pub fn title(&self) -> &Located<&'a str, L> {
-        &self.expanded.value.content
+        &self.expanded.value.title
     }
 
     pub fn metadata(&self) -> &[Located<Metadata<'a, L>, L>] {
@@ -495,10 +495,10 @@ impl<'a, L> Item<'a, L> {
         }
     }
 
-    pub fn content(&self) -> &Located<&'a str, L> {
+    pub fn short_description(&self) -> &Located<&'a str, L> {
         match self {
             Self::Compact(item) => &item.value.content,
-            Self::Expanded(item) => &item.value.content,
+            Self::Expanded(item) => &item.value.title,
         }
     }
 
@@ -547,9 +547,9 @@ impl<'a, L> CompactItem<'a, L> {
 pub struct ExpandedItem<'a, L = SourceSpan> {
     pub(crate) marker: Located<&'a str, L>,
     pub(crate) identifier: Option<Located<&'a str, L>>,
+    pub(crate) title: Located<&'a str, L>,
     pub(crate) delimiter: Option<Located<&'a str, L>>,
     pub(crate) content: Located<&'a str, L>,
-    pub(crate) body: Located<&'a str, L>,
 }
 
 #[allow(dead_code)]
@@ -562,8 +562,12 @@ impl<'a, L> ExpandedItem<'a, L> {
         self.delimiter.as_ref()
     }
 
-    pub fn body(&self) -> &Located<&'a str, L> {
-        &self.body
+    pub fn title(&self) -> &Located<&'a str, L> {
+        &self.title
+    }
+
+    pub fn content(&self) -> &Located<&'a str, L> {
+        &self.content
     }
 }
 

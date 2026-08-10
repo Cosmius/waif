@@ -84,11 +84,14 @@ impl<'a> Cursor<'a> {
         assert_eq!(self.position.offset, abs_offset);
     }
 
-    pub fn limit(&mut self, offset: usize) {
+    /// Set a new limit and return the old limit
+    pub fn limit(&mut self, offset: usize) -> usize {
+        let old_limit = self.limit;
         assert!(self.source.is_char_boundary(offset));
         assert!(offset >= self.position.offset);
         assert!(offset <= self.source.len());
         self.limit = offset;
+        old_limit
     }
 
     /// Return the next character without advancing the cursor.
