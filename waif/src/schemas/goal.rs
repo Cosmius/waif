@@ -3,6 +3,12 @@ use crate::schema::{
     self, metadata_validators, ArtifactPrefixRule, ItemRule, MetadataRule, Schema, SectionRule,
 };
 
+const SCHEMA: Schema = Schema {
+    prefix: ArtifactPrefixRule::Known("G-"),
+    metadata: &METADATA,
+    sections: &SECTIONS,
+};
+
 const METADATA: [MetadataRule; 3] = [
     MetadataRule {
         name: "Status",
@@ -17,41 +23,25 @@ const METADATA: [MetadataRule; 3] = [
         validator: metadata_validators::rfc3339_timestamp,
     },
 ];
+
 const SECTIONS: [SectionRule; 7] = [
     SectionRule::new("Outcome"),
     SectionRule::new("Acceptance Criteria").with_items(ItemRule::new("AC")),
-    SectionRule::new("Open Questions")
-        .optional()
-        .with_items(ItemRule::new("Q")),
-    SectionRule::new("Assumptions")
-        .optional()
-        .with_items(ItemRule::new("A")),
-    SectionRule::new("In Scope")
-        .optional()
-        .with_items(ItemRule::new("IN")),
-    SectionRule::new("Out of Scope")
-        .optional()
-        .with_items(ItemRule::new("OUT")),
-    SectionRule::new("Revisions")
-        .optional()
-        .with_items(ItemRule::new("REV").expanded_only()),
+    SectionRule::optional("Open Questions").with_items(ItemRule::new("Q")),
+    SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
+    SectionRule::optional("In Scope").with_items(ItemRule::new("IN")),
+    SectionRule::optional("Out of Scope").with_items(ItemRule::new("OUT")),
+    SectionRule::optional("Revisions").with_items(ItemRule::new("REV").expanded_only()),
 ];
-const SCHEMA: Schema = Schema {
-    prefix: ArtifactPrefixRule::Known("G-"),
-    metadata: &METADATA,
-    sections: &SECTIONS,
-};
 
 /// Parse and validate the structural schema for a goal artifact.
 ///
-/// Parser errors prevent schema validation because no typed artifact is
-/// available. A successful parse returns every schema error and warning.
-#[allow(dead_code)]
+/// Parser diagnostics and schema diagnostics are accumulated against the
+/// partially parsed artifact so independent problems are reported together.
 pub(crate) fn check(source: &str) -> Vec<Diagnostic> {
-    match parser::parse_with_config(source, &parser_config()) {
-        Ok(artifact) => schema::validate(&artifact, &SCHEMA),
-        Err(diagnostics) => diagnostics,
-    }
+    let (artifact, mut diagnostics) = parser::parse_with_diagnostics(source, &parser_config());
+    diagnostics.extend(schema::validate(&artifact, &SCHEMA));
+    diagnostics
 }
 
 fn parser_config() -> ParserConfig<'static> {

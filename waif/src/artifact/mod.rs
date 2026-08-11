@@ -48,6 +48,15 @@ impl<'a, L> Artifact<'a, L> {
         &mut self.metadata
     }
 
+    pub fn get_metadata(&self, key: &str) -> Option<&Metadata<'a, L>> {
+        let mut entries = self
+            .metadata
+            .iter()
+            .filter(|entry| entry.value().key() == key);
+        let entry = entries.next()?;
+        entries.next().is_none().then_some(entry.value())
+    }
+
     pub fn pre_section_prose(&self) -> &'a str {
         self.pre_section_prose.text()
     }

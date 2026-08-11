@@ -32,15 +32,9 @@ const METADATA: [MetadataRule; 5] = [
 
 const SECTIONS: [SectionRule; 4] = [
     SectionRule::new("Findings").with_findings(FindingsRule { family: "F" }),
-    SectionRule::new("Scope")
-        .optional()
-        .with_items(ItemRule::new("SC")),
-    SectionRule::new("Validation")
-        .optional()
-        .with_items(ItemRule::new("V")),
-    SectionRule::new("Residual Risks")
-        .optional()
-        .with_items(ItemRule::new("RR")),
+    SectionRule::optional("Scope").with_items(ItemRule::new("SC")),
+    SectionRule::optional("Validation").with_items(ItemRule::new("V")),
+    SectionRule::optional("Residual Risks").with_items(ItemRule::new("RR")),
 ];
 
 const SCHEMA: Schema = Schema {

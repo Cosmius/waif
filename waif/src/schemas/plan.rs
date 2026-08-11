@@ -4,6 +4,12 @@ use crate::schema::{
     SectionRule,
 };
 
+const SCHEMA: Schema = Schema {
+    prefix: ArtifactPrefixRule::Known("P-"),
+    metadata: &METADATA,
+    sections: &SECTIONS,
+};
+
 const METADATA: [MetadataRule; 7] = [
     MetadataRule {
         name: "Status",
@@ -38,28 +44,16 @@ const METADATA: [MetadataRule; 7] = [
 const SECTIONS: [SectionRule; 9] = [
     SectionRule::new("Technical Summary"),
     SectionRule::new("Decisions").with_items(ItemRule::new("D").with_expanded_family("DD").mixed()),
-    SectionRule::new("Open Questions")
-        .optional()
-        .with_items(ItemRule::new("Q")),
-    SectionRule::new("Assumptions")
-        .optional()
-        .with_items(ItemRule::new("A")),
+    SectionRule::optional("Open Questions").with_items(ItemRule::new("Q")),
+    SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
     SectionRule::new("Current System"),
     SectionRule::new("Plan Items").with_plan_items(PlanItemRule {
         statuses: &["pending", "done"],
     }),
     SectionRule::new("Risks").with_items(ItemRule::new("R")),
     SectionRule::new("Cross-Cutting Validation").with_items(ItemRule::new("V")),
-    SectionRule::new("Revisions")
-        .optional()
-        .with_items(ItemRule::new("REV").expanded_only()),
+    SectionRule::optional("Revisions").with_items(ItemRule::new("REV").expanded_only()),
 ];
-
-const SCHEMA: Schema = Schema {
-    prefix: ArtifactPrefixRule::Known("P-"),
-    metadata: &METADATA,
-    sections: &SECTIONS,
-};
 
 fn exact_goal(value: &str) -> Result<(), String> {
     (value == "./goal.md")

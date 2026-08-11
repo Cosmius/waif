@@ -51,9 +51,14 @@ impl SectionRule {
         }
     }
 
-    pub(crate) const fn optional(mut self) -> Self {
-        self.required = false;
-        self
+    pub(crate) const fn optional(name: &'static str) -> Self {
+        Self {
+            name,
+            required: false,
+            items: None,
+            plan_items: None,
+            findings: None,
+        }
     }
 
     pub(crate) const fn with_items(mut self, items: ItemRule) -> Self {
@@ -456,7 +461,11 @@ fn validate_plan_items(ctx: &mut ValidationContext, section: &Section, rule: Pla
             ));
             continue;
         };
-        let Some(number) = identifier.text().strip_prefix('P').and_then(valid_number) else {
+        let Some(number) = identifier
+            .text()
+            .strip_prefix('P')
+            .and_then(unpadded_decimal)
+        else {
             ctx.diagnostics.push(Diagnostic::error_p(
                 *identifier.span().start(),
                 format!(
@@ -618,7 +627,7 @@ fn match_item_identifier(
     };
     let number = text[prefix_end..]
         .strip_prefix(family)
-        .and_then(valid_number)
+        .and_then(unpadded_decimal)
         .ok_or(())?;
 
     if matches!(ctx.schema.prefix, ArtifactPrefixRule::Unknown(_)) {
@@ -684,11 +693,11 @@ fn number_at(identifier: &str, start: usize) -> Option<(i64, Range<usize>)> {
             .take_while(u8::is_ascii_digit)
             .count();
     let range = start..end;
-    valid_number(&identifier[range.clone()]).map(|number| (number, range))
+    unpadded_decimal(&identifier[range.clone()]).map(|number| (number, range))
 }
 
 // Parses decimal number into i64, no leading zeros allowed
-fn valid_number(number: &str) -> Option<i64> {
+pub(crate) fn unpadded_decimal(number: &str) -> Option<i64> {
     let mut bytes = number.bytes();
     if !matches!(bytes.next(), Some(b'1'..=b'9')) {
         return None;

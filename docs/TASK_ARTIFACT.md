@@ -21,6 +21,10 @@ code blocks using line-oriented rules and preserves original source exactly.
 Markdown container interactions such as headings or fences inside list items,
 block quotes, or raw HTML are outside the supported format.
 
+Artifact-specific checking accumulates parser and schema diagnostics against a
+partially parsed artifact. Independent structural problems can therefore be
+reported together instead of stopping at the first parser error.
+
 ## Common Artifact Envelope
 
 An artifact contains, in order:
@@ -233,19 +237,21 @@ outcomes, affected areas, risks, dependencies, or validation commands.
 
 ## Step Contract
 
-A checked file named exactly `step.md` receives this contract. When its direct
-parent matches `NN-short-name`, the positive decimal `NN` has at least two
-digits and supplies the canonical step identity. Otherwise checking warns,
-skips comparisons requiring path identity, and still requires one internally
-consistent `S<n>-` prefix. Selected paths are interpreted nominally rather
-than by canonicalizing symlink targets.
+A checked file named exactly `step.md` receives this contract. The portion of
+its direct parent's name before the first hyphen supplies the canonical step
+identity when it is a positive decimal with at least two digits. The suffix
+after that hyphen is opaque to the checker. An empty suffix produces a warning.
+If the numeric prefix cannot be resolved, checking warns, skips comparisons
+requiring path identity, and still requires one internally consistent `S<n>-`
+prefix. Selected paths are interpreted nominally rather than by canonicalizing
+symlink targets.
 
-The title is `Step NN: <non-empty title>`. Its number agrees with a canonical
-containing directory and with the unpadded number in all stable-ID prefixes.
-Thus step directory `03-check-steps` uses title `Step 03: Check steps` and IDs
-such as `S3-C1`.
+The title is `Step N: <non-empty title>`, where `N` is an unpadded positive
+decimal. Its number agrees with a resolvable containing directory and with the
+unpadded number in all stable-ID prefixes. Thus step directory
+`03-check-steps` uses title `Step 3: Check steps` and IDs such as `S3-C1`.
 
-Structurally required metadata, in order, is:
+Structurally required metadata is:
 
 ```text
 Status         drafting | accepted | amending | done

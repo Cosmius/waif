@@ -44,10 +44,11 @@ Consume one coherent part of the general plan and produce an executable
 
 Use `steps/NN-short-name`, where `NN` is a monotonically increasing,
 minimum-two-digit sequence. Choose one plus the greatest number previously
-used. Never reuse or backfill a number.
+used. Never reuse or backfill a number. Use the same number without padding in
+the step title and item-ID prefix.
 
 ```markdown
-# Step NN: <title>
+# Step N: <title>
 
 - Status: drafting
 - Source commit: not-created

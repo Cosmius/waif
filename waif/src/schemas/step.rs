@@ -1,10 +1,16 @@
 use std::path::Path;
 
-use crate::artifact::{Artifact, Metadata};
-use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
+use crate::artifact::Artifact;
+use crate::parser::{self, Diagnostic, ParserConfig, Position, SectionConfig};
 use crate::schema::{
-    self, metadata_validators, ArtifactPrefixRule, ArtifactPrefixShape, ItemRule, MetadataRule,
-    Schema, SectionRule,
+    self, metadata_validators, unpadded_decimal, ArtifactPrefixRule, ArtifactPrefixShape, ItemRule,
+    MetadataRule, Schema, SectionRule,
+};
+
+const SCHEMA: Schema = Schema {
+    prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Step),
+    metadata: &METADATA,
+    sections: &SECTIONS,
 };
 
 const METADATA: [MetadataRule; 4] = [
@@ -30,78 +36,66 @@ const SECTIONS: [SectionRule; 12] = [
     SectionRule::new("Objective"),
     SectionRule::new("Plan Item Coverage").with_items(ItemRule::new("PC")),
     SectionRule::new("Context"),
-    SectionRule::new("Open Questions")
-        .optional()
-        .with_items(ItemRule::new("Q")),
-    SectionRule::new("Assumptions")
-        .optional()
-        .with_items(ItemRule::new("A")),
+    SectionRule::optional("Open Questions").with_items(ItemRule::new("Q")),
+    SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
     SectionRule::new("Done When").with_items(ItemRule::new("D")),
-    SectionRule::new("Changes")
-        .optional()
-        .with_items(ItemRule::new("C")),
-    SectionRule::new("Size and Coherence").optional(),
-    SectionRule::new("Tests")
-        .optional()
-        .with_items(ItemRule::new("T")),
-    SectionRule::new("Validation")
-        .optional()
-        .with_items(ItemRule::new("V")),
-    SectionRule::new("Risks and Edge Cases")
-        .optional()
-        .with_items(ItemRule::new("R")),
-    SectionRule::new("Revisions")
-        .optional()
-        .with_items(ItemRule::new("REV").expanded_only()),
+    SectionRule::optional("Changes").with_items(ItemRule::new("C")),
+    SectionRule::optional("Size and Coherence"),
+    SectionRule::optional("Tests").with_items(ItemRule::new("T")),
+    SectionRule::optional("Validation").with_items(ItemRule::new("V")),
+    SectionRule::optional("Risks and Edge Cases").with_items(ItemRule::new("R")),
+    SectionRule::optional("Revisions").with_items(ItemRule::new("REV").expanded_only()),
 ];
-
-const SCHEMA: Schema = Schema {
-    prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Step),
-    metadata: &METADATA,
-    sections: &SECTIONS,
-};
 
 pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
     let (artifact, mut diagnostics) = parser::parse_with_diagnostics(source, &parser_config());
     let (schema_diagnostics, prefix) = schema::validate_with_prefix(&artifact, &SCHEMA);
     diagnostics.extend(schema_diagnostics);
 
-    let title_number = validate_title(&artifact, &mut diagnostics);
-    validate_metadata_order(&artifact, &mut diagnostics);
-    validate_lifecycle(&artifact, &mut diagnostics);
-    validate_coverage(&artifact, &mut diagnostics);
+    let title_number = validate_title(&mut diagnostics, &artifact);
+    validate_lifecycle(&mut diagnostics, &artifact);
+    validate_coverage(&mut diagnostics, &artifact);
 
-    let path_number = step_directory_number(path);
-    if path_number.is_none() {
-        diagnostics.push(Diagnostic::warning1(
-            1,
+    let path_dir = step_directory_number(path);
+    if path_dir.is_none() {
+        diagnostics.push(Diagnostic::warning_p(
+            Position::ZERO,
             "cannot resolve a step number from the containing directory; \
              skipping path-dependent identity checks",
         ));
+    } else if path_dir
+        .as_ref()
+        .is_some_and(|(_, short_name)| short_name.is_empty())
+    {
+        diagnostics.push(Diagnostic::warning_p(
+            Position::ZERO,
+            "step directory short name is empty",
+        ));
     }
+    let path_number = path_dir.map(|(number, _)| number);
     if let Some(observed) = prefix {
         let component = &observed.components()[0];
         let observed_number = *component.value();
-        let line = component.span().start_line();
+        let pos = *component.span().start();
         compare_identity(
             "title",
             title_number,
             observed_number,
-            line,
+            pos,
             &mut diagnostics,
         );
         compare_identity(
             "containing directory",
             path_number,
             observed_number,
-            line,
+            pos,
             &mut diagnostics,
         );
     }
     if let (Some(title), Some(path)) = (title_number, path_number) {
         if title != path {
-            diagnostics.push(Diagnostic::error1(
-                1,
+            diagnostics.push(Diagnostic::error_p(
+                Position::ZERO,
                 format!("step title number `{title}` does not match containing directory `{path}`"),
             ));
         }
@@ -148,45 +142,25 @@ fn source_commit(value: &str) -> Result<(), String> {
     }
 }
 
-fn validate_title(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) -> Option<i64> {
+fn validate_title(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) -> Option<i64> {
     let number = artifact
         .title()
         .strip_prefix("Step ")
         .and_then(|title| title.split_once(": "))
         .filter(|(_, title)| !title.is_empty())
-        .and_then(|(number, _)| padded_step_number(number));
+        .and_then(|(number, _)| unpadded_decimal(number));
     if number.is_none() {
-        diagnostics.push(Diagnostic::error1(
-            1,
-            "step title must use `Step NN: <non-empty title>` with a positive, \
-             at-least-two-digit step number",
+        diagnostics.push(Diagnostic::error_p(
+            Position::ZERO,
+            "step title must use `Step N: <non-empty title>` with a positive step number",
         ));
     }
     number
 }
 
-fn validate_metadata_order(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
-    let mut greatest = None;
-    for entry in artifact.metadata() {
-        let Some(rank) = METADATA
-            .iter()
-            .position(|rule| rule.name == entry.value().key())
-        else {
-            continue;
-        };
-        if greatest.is_some_and(|previous| rank < previous) {
-            diagnostics.push(Diagnostic::error1(
-                entry.span().start_line(),
-                format!("metadata `{}` is out of order", entry.value().key()),
-            ));
-        }
-        greatest = Some(greatest.map_or(rank, |previous: usize| previous.max(rank)));
-    }
-}
-
-fn validate_lifecycle(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
-    let status = metadata(artifact, "Status");
-    let commit = metadata(artifact, "Source commit");
+fn validate_lifecycle(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) {
+    let status = artifact.get_metadata("Status");
+    let commit = artifact.get_metadata("Source commit");
     let Some((status, commit)) = status.zip(commit) else {
         return;
     };
@@ -198,8 +172,8 @@ fn validate_lifecycle(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
         true
     };
     if !valid {
-        diagnostics.push(Diagnostic::error1(
-            commit.located_value().span().start_line(),
+        diagnostics.push(Diagnostic::error_p(
+            *commit.located_value().span().start(),
             format!(
                 "metadata `Source commit` is incompatible with step status `{}`",
                 status.value()
@@ -208,7 +182,7 @@ fn validate_lifecycle(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-fn validate_coverage(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
+fn validate_coverage(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) {
     let Some(section) = artifact
         .sections()
         .iter()
@@ -221,27 +195,27 @@ fn validate_coverage(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
         let id_number = item
             .identifier()
             .and_then(|id| id.text().rsplit_once("-PC"))
-            .and_then(|(_, number)| positive_number(number));
+            .and_then(|(_, number)| unpadded_decimal(number));
         let short_description = item.short_description().text();
         let parsed = short_description
             .strip_prefix('P')
             .and_then(|description| description.split_once(" - "))
             .and_then(|(number, rest)| {
-                let number = positive_number(number)?;
+                let number = unpadded_decimal(number)?;
                 let (coverage, description) = rest.split_once(" - ")?;
                 matches!(coverage, "partial" | "complete").then_some((number, description))
             });
         match (id_number, parsed) {
             (Some(id), Some((plan, description))) if !description.trim().is_empty() => {
                 if id != plan {
-                    diagnostics.push(Diagnostic::error1(
-                        item.span().start_line(),
+                    diagnostics.push(Diagnostic::error_p(
+                        *item.span().start(),
                         format!("coverage ID suffix `{id}` must match covered plan ID `P{plan}`"),
                     ));
                 }
             }
-            (Some(_), _) => diagnostics.push(Diagnostic::error1(
-                item.span().start_line(),
+            (Some(_), _) => diagnostics.push(Diagnostic::error_p(
+                *item.span().start(),
                 "coverage entry must use `P<number> - partial | complete - <description>`",
             )),
             _ => {}
@@ -249,56 +223,26 @@ fn validate_coverage(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-fn metadata<'a, 'b>(artifact: &'a Artifact<'b>, key: &str) -> Option<&'a Metadata<'b>> {
-    let mut entries = artifact
-        .metadata()
-        .iter()
-        .filter(|entry| entry.value().key() == key);
-    let entry = entries.next()?;
-    entries.next().is_none().then_some(entry.value())
-}
-
-fn step_directory_number(path: &Path) -> Option<i64> {
+fn step_directory_number(path: &Path) -> Option<(i64, &str)> {
     let name = path.parent()?.file_name()?.to_str()?;
     let (number, short_name) = name.split_once('-')?;
-    if short_name.is_empty()
-        || short_name.starts_with('-')
-        || short_name.ends_with('-')
-        || short_name.contains("--")
-        || !short_name
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    {
-        return None;
-    }
-    padded_step_number(number)
-}
-
-fn padded_step_number(number: &str) -> Option<i64> {
-    (number.len() >= 2 && number.bytes().all(|byte| byte.is_ascii_digit()))
+    let number = (number.len() >= 2 && number.bytes().all(|byte| byte.is_ascii_digit()))
         .then(|| number.parse().ok())
         .flatten()
-        .filter(|number| *number > 0)
-}
-
-fn positive_number(number: &str) -> Option<i64> {
-    let mut bytes = number.bytes();
-    matches!(bytes.next(), Some(b'1'..=b'9'))
-        .then(|| bytes.all(|byte| byte.is_ascii_digit()))
-        .filter(|valid| *valid)
-        .and_then(|_| number.parse().ok())
+        .filter(|number| *number > 0)?;
+    Some((number, short_name))
 }
 
 fn compare_identity(
     source: &str,
     expected: Option<i64>,
     observed: i64,
-    line: usize,
+    position: Position,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     if expected.is_some_and(|expected| expected != observed) {
-        diagnostics.push(Diagnostic::error1(
-            line,
+        diagnostics.push(Diagnostic::error_p(
+            position,
             format!("step item prefix `S{observed}-` does not match {source} identity"),
         ));
     }
@@ -310,7 +254,7 @@ mod tests {
     use crate::parser::Severity;
 
     const VALID: &str = concat!(
-        "# Step 03: Check steps\n",
+        "# Step 3: Check steps\n",
         "- Status: accepted\n",
         "- Source commit: not-created\n",
         "- Created: 2026-08-02T12:00:00+09:00\n",
@@ -355,7 +299,6 @@ mod tests {
             .replace("S3-D1", "S4-D1");
         let found = messages("steps/03-check/step.md", &source);
         assert!(found.len() >= 5, "{found:?}");
-        assert!(found.iter().any(|entry| entry.2.contains("out of order")));
         assert!(found.iter().any(|entry| entry.2.contains("incompatible")));
         assert!(found
             .iter()
@@ -381,10 +324,26 @@ mod tests {
     }
 
     #[test]
+    fn requires_a_nonempty_but_otherwise_opaque_directory_suffix() {
+        let found = messages("steps/03-/step.md", VALID);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].0, Severity::Warning);
+        assert!(found[0].2.contains("short name is empty"));
+        assert_eq!(
+            step_directory_number(Path::new("steps/03-/step.md")),
+            Some((3, ""))
+        );
+
+        for path in ["steps/03-Bad/step.md", "steps/03-a--b/step.md"] {
+            assert_eq!(messages(path, VALID), [], "{path}");
+        }
+    }
+
+    #[test]
     fn validates_title_directory_and_plain_done_when() {
         for source in [
-            VALID.replace("Step 03: Check steps", "Step 3: Check steps"),
-            VALID.replace("Step 03: Check steps", "Step 03:"),
+            VALID.replace("Step 3: Check steps", "Step 03: Check steps"),
+            VALID.replace("Step 3: Check steps", "Step 3:"),
             VALID.replace("- S3-D1: done", "- [ ] S3-D1: done"),
         ] {
             assert!(messages("steps/03-check/step.md", &source)
@@ -427,11 +386,11 @@ mod tests {
 
         assert_eq!(
             step_directory_number(Path::new("linked/03-check/step.md")),
-            Some(3)
+            Some((3, "check"))
         );
         assert_eq!(
             step_directory_number(Path::new("real/99-target/step.md")),
-            Some(99)
+            Some((99, "target"))
         );
     }
 }

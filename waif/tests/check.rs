@@ -37,7 +37,7 @@ const VALID_PLAN: &str = concat!(
 );
 
 const VALID_STEP: &str = concat!(
-    "# Step 01: Example\n",
+    "# Step 1: Example\n",
     "- Status: accepted\n",
     "- Source commit: not-created\n",
     "- Created: 2026-08-02T12:00:00+09:00\n",
