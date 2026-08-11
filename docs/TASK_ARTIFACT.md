@@ -39,17 +39,13 @@ An artifact contains, in order:
 Whitespace-only lines have no artifact-level meaning. Programmatic changes
 preserve existing whitespace and line endings.
 
-An artifact contract declares every recognized metadata key. Every recognized
-key is required and unique; contracts do not define optional recognized
-metadata. Recognized keys may occur in any relative order while the parser is
-inside structured metadata.
+Every syntactically valid leading metadata entry is structured. A contract
+declares the keys it requires and validates; other keys are accepted. All
+top-level metadata keys must be unique and may normally occur in any order.
 
-The first ordinary content or unknown metadata-looking entry ends structured
+The first ordinary content or malformed metadata-looking entry ends structured
 metadata and begins opaque pre-section prose. It and all following content
-before the first level-two section remain prose, including later
-recognized-key-looking entries. A misspelled key therefore begins prose and
-causes the actual recognized key to be reported missing rather than
-reinterpreting later source.
+before the first level-two section remain prose.
 
 A metadata entry begins with `-` in column one and must have whitespace between
 `-` and its key. Extra whitespace around the key, colon, and value is
@@ -125,9 +121,9 @@ The `Plan Items` section contains expanded nested records. Bare content outside
 a record is invalid. Each plan item begins with `### P<number>: <title>` and
 ends at the next plan item, level-two section, or end of file.
 
-Only leading metadata keys recognized by the plan-item contract are structured.
-The first unknown metadata-looking entry or ordinary content begins the opaque
-plan-item prose body; later recognized-key-looking entries remain prose.
+Every syntactically valid leading metadata entry in a plan item is structured.
+`Status` is the only required and validated key. The first ordinary content or
+malformed metadata-looking entry begins the opaque plan-item prose body.
 
 Level-four and deeper headings are permitted in opaque plan-item prose.
 Level-one, level-two, and non-plan-item level-three headings are invalid because
@@ -223,11 +219,11 @@ Optional explanatory prose.
 Deeper headings are valid opaque prose.
 ```
 
-`Status` is the only structurally recognized plan-item metadata key. It is
-required and accepts `pending` or `done`. `Goal criteria`, `Outcome`, `Areas`,
-`Depends on`, and `Validation` are semantic author-facing fields inside opaque
-prose. They may span lines and are preserved exactly; deterministic checking
-does not interpret their references or meaning.
+`Status` is the only plan-item metadata key required and validated by the
+schema. It must be unique and accepts `pending` or `done`. `Goal criteria`,
+`Outcome`, `Areas`, `Depends on`, and `Validation` are semantic author-facing
+metadata. They may span lines and are preserved exactly; deterministic
+checking does not interpret their references or meaning.
 
 Plan-item IDs use `P<number>`, are unique and increasing, and share the common
 signed-64-bit numeric bound. A plan item must have a non-empty title.
@@ -262,8 +258,9 @@ Updated        RFC 3339 timestamp with Z or a numeric UTC offset
 
 `Source commit` is `not-created` for `drafting`, `accepted`, and `amending`
 steps. A `done` step requires a full commit hash. Authoring metadata such as
-`Plan items`, `Goal criteria`, and `Estimated non-test/doc changes` follows
-the structural metadata as opaque pre-section prose and is not checked.
+`Plan items`, `Goal criteria`, and `Estimated non-test/doc changes` follows the
+validated metadata. It remains structured metadata, but its values are not
+checked.
 
 Known sections have this relative order:
 
@@ -298,19 +295,16 @@ empty-section warnings follow the common rules.
 
 ## Implementation Review Contract
 
-A checked file named `reviewN.md` in an immediate step directory receives this
-contract, where `N` is a positive decimal review number. Its title is
-`Implementation Review N`. The filename, title, and review-number component of
-every stable ID agree.
+A checked file named `reviewN.md` receives this contract, where `N` is a
+positive decimal review number. Its title is `Implementation Review N`. The
+filename, title, and review-number component of every stable ID agree.
 
-When the direct parent matches `NN-short-name`, its positive, at-least-two-digit
-number supplies the canonical step identity. Otherwise checking warns, skips
-comparisons requiring path identity, and still requires one internally
-consistent `S<n>-R<m>-` prefix. Selected paths are interpreted nominally
-rather than by canonicalizing symlink targets. Directory padding is omitted
-from IDs: `steps/04-check/review1.md` uses `S4-R1-F1`.
+When the containing directory supplies a step identity, it must agree with
+every stable ID. Otherwise checking warns and still requires one internally
+consistent `S<n>-R<m>-` prefix. Paths are interpreted nominally. Directory
+padding is omitted from IDs: `steps/04-check/review1.md` uses `S4-R1-F1`.
 
-Required metadata, in order, is:
+Required metadata, in relative order, is:
 
 ```text
 Step             ./step.md
@@ -331,11 +325,11 @@ have this relative order:
 | Validation     | itemised; S<n>-R<m>-V<k>        | optional |
 | Residual Risks | itemised; S<n>-R<m>-RR<k>       | optional |
 
-`Findings` contains either the exact prose `No findings.` or one or more
-expanded findings headed `### S<n>-R<m>-F<k>: <opaque content>`. A `pass`
-decision requires the sentinel and a `changes-requested` decision requires at
-least one finding. Finding content and bodies are opaque; deterministic
-checking does not interpret severity, title, location, or recommendations.
+`Findings` contains either the `No findings.` sentinel or one or more expanded
+findings headed `### S<n>-R<m>-F<k>: <opaque content>`. A `pass` decision
+requires the sentinel and a `changes-requested` decision requires at least one
+finding. Finding content and bodies are opaque; deterministic checking does
+not interpret severity, title, location, or recommendations.
 
 Ordinary itemised sections accept compact or expanded items consistently.
 Review item numbers are canonical positive decimals through `2^63 - 1`,

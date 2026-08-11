@@ -180,6 +180,7 @@ workflow protocol state.
 ## Repository Contents
 
 - `protocol/workflow.md` is the canonical workflow specification.
+- `protocol/waif-helper.md`: deterministic CLI commands for agents.
 - `skills/dev-draft-charter/` creates or revises project-wide rules.
 - `skills/dev-draft-goal/` drafts or revises the task goal.
 - `skills/dev-draft-plan/` drafts or revises the technical plan.
