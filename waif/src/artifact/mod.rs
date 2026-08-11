@@ -52,6 +52,10 @@ impl<'a, L> Artifact<'a, L> {
         self.pre_section_prose.text()
     }
 
+    pub fn located_title(&self) -> &Located<&'a str, L> {
+        &self.title
+    }
+
     pub fn located_pre_section_prose(&self) -> &Located<&'a str, L> {
         &self.pre_section_prose
     }
