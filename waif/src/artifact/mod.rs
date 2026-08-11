@@ -3,6 +3,8 @@ use std::ops::Range;
 
 use crate::parser::Position;
 
+//region artifact structure
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Artifact<'a, L = SourceSpan> {
     source: &'a str,
@@ -454,6 +456,10 @@ impl<'a, L> Finding<'a, L> {
     }
 }
 
+//endregion artifact structure
+
+//region source location
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Located<T, L = SourceSpan> {
     value: T,
@@ -521,9 +527,11 @@ impl SourceSpan {
     }
 }
 
+//endregion source location
+
 /// Serialize an artifact while retaining all source text not explicitly
 /// changed through the structured API.
-pub fn serialize(artifact: &Artifact) -> String {
+pub fn serialize(artifact: &Artifact<'_, SourceSpan>) -> String {
     let mut entries: Vec<_> = artifact.metadata.iter().collect();
     entries.extend(
         artifact
@@ -556,7 +564,7 @@ pub fn serialize(artifact: &Artifact) -> String {
     output
 }
 
-impl fmt::Display for Artifact<'_> {
+impl fmt::Display for Artifact<'_, SourceSpan> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&serialize(self))
     }

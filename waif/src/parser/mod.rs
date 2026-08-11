@@ -11,9 +11,7 @@ pub use self::cursor::Position;
 
 mod cursor;
 
-// ============================================================================
-// Diagnostics
-// ============================================================================
+//region diagnostics
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Severity {
@@ -97,9 +95,9 @@ impl fmt::Display for Diagnostic {
     }
 }
 
-// ============================================================================
-// Parser entry point
-// ============================================================================
+//endregion diagnostics
+
+//region parser entry point
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SectionType {
@@ -187,9 +185,9 @@ pub fn parse_with_diagnostics<'a, 'b: 'a>(
     (artifact, ctx.diagnostics)
 }
 
-// ============================================================================
-// Parser state
-// ============================================================================
+//endregion parser entry point
+
+//region parser state
 
 #[derive(Clone)]
 struct ParsingContext<'p, 'a> {
@@ -226,9 +224,9 @@ impl<'p, 'a> ParsingContext<'p, 'a> {
     }
 }
 
-// ============================================================================
-// Artifact envelope
-// ============================================================================
+//endregion parser state
+
+//region artifact envelope
 
 fn p_artifact<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Artifact<'a> {
     ctx.cursor.skip_whitespace_lines();
@@ -630,9 +628,9 @@ fn p_findings_body<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Fin
     }
 }
 
-// ============================================================================
-// common parts
-// ============================================================================
+//endregion artifact envelope
+
+//region common parts
 
 struct ContentWithId<'a> {
     id: Located<&'a str>,
@@ -667,9 +665,9 @@ fn p_content_with_id<'a>(
     })
 }
 
-// ============================================================================
-// Markdown components
-// ============================================================================
+//endregion common parts
+
+//region markdown components
 
 #[allow(dead_code)]
 enum LineKind<'a> {
@@ -968,6 +966,8 @@ fn p_maybe_code_block_fence(ctx: &mut ParsingContext) -> Result<(char, usize, us
     }
     Ok((marker_ch, marker.len(), indentation_level))
 }
+
+//endregion markdown components
 
 #[cfg(test)]
 mod tests;
