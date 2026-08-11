@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use crate::artifact::{
-    Artifact, Finding, FindingsBody, Item, ItemForm, Located, PlanItem, Section, SourceSpan,
-};
+use crate::artifact::{Artifact, FindingsBody, Item, ItemForm, Located, Section, SourceSpan};
 use crate::parser::{Diagnostic, Position};
 
 //region schema definition
@@ -155,13 +153,13 @@ impl ValidationContext {
         number: i64,
         position: Position,
         id_text: &str,
+        prefix_for_error_info: &str,
     ) {
         let item_seq = self.item_seq_map.entry(family).or_insert_with(|| ItemSeq {
             seen: HashSet::new(),
             last: 0,
         });
-        let duplicate = !item_seq.seen.insert(number);
-        if duplicate {
+        if !item_seq.seen.insert(number) {
             self.diagnostics.push(Diagnostic::error_p(
                 position,
                 format!("duplicate item identifier `{id_text}` in section `{section_name}`"),
@@ -172,9 +170,7 @@ impl ValidationContext {
                 format!(
                     "item identifier `{id_text}` in section `{}` must be \
                      greater than `{}{}`",
-                    section_name,
-                    expected_identifier(self.schema.prefix, family, self.observed_prefix.as_ref()),
-                    item_seq.last,
+                    section_name, prefix_for_error_info, item_seq.last,
                 ),
             ));
         }
@@ -203,12 +199,6 @@ impl ObservedArtifactPrefix {
 struct ItemSeq {
     seen: HashSet<i64>,
     last: i64,
-}
-
-#[derive(Default)]
-struct LegacyItemSequence {
-    seen: HashSet<i64>,
-    last_number: Option<i64>,
 }
 
 pub(crate) fn validate(artifact: &Artifact, schema: &Schema) -> Vec<Diagnostic> {
@@ -354,12 +344,7 @@ fn validate_items(ctx: &mut ValidationContext, section: &Section, rule: ItemRule
             ItemForm::Compact => rule.family,
             ItemForm::Expanded => rule.expanded_family.unwrap_or(rule.family),
         };
-        let Ok(number) = match_item_identifier(
-            identifier,
-            ctx.schema.prefix,
-            family,
-            &mut ctx.observed_prefix,
-        ) else {
+        let Ok(number) = match_item_identifier(ctx, family, identifier) else {
             ctx.diagnostics.push(Diagnostic::error_p(
                 *identifier.span().start(),
                 format!(
@@ -371,12 +356,15 @@ fn validate_items(ctx: &mut ValidationContext, section: &Section, rule: ItemRule
             ));
             continue;
         };
+        let prefix_for_error_info =
+            expected_identifier(ctx.schema.prefix, family, ctx.observed_prefix.as_ref());
         ctx.on_seeing_id(
             section_name,
             family,
             number,
             *identifier.span().start(),
             identifier_text,
+            &prefix_for_error_info,
         );
     }
 }
@@ -414,18 +402,15 @@ fn validate_item_forms(
 
 fn validate_plan_items(ctx: &mut ValidationContext, section: &Section, rule: PlanItemRule) {
     let section_name = section.title();
-    let section = section
-        .as_plan_items()
-        .expect("a plan-item rule requires a plan-items parser section");
-    let mut sequence = LegacyItemSequence::default();
+    let Some(section) = section.as_plan_items() else {
+        ctx.diagnostics.push(Diagnostic::error_p(
+            *section.located_title().span().start(),
+            format!("section {section_name} must be a plan items section"),
+        ));
+        return;
+    };
 
     for item in section.items() {
-        validate_plan_item_heading(
-            section_name,
-            item.value(),
-            &mut sequence,
-            &mut ctx.diagnostics,
-        );
         let statuses: Vec<_> = item
             .value()
             .metadata()
@@ -433,8 +418,8 @@ fn validate_plan_items(ctx: &mut ValidationContext, section: &Section, rule: Pla
             .filter(|entry| entry.value().key() == "Status")
             .collect();
         if statuses.is_empty() {
-            ctx.diagnostics.push(Diagnostic::error1(
-                item.span().start_line(),
+            ctx.diagnostics.push(Diagnostic::error_p(
+                *item.span().start(),
                 format!(
                     "plan item in section `{section_name}` is missing required metadata `Status`"
                 ),
@@ -442,8 +427,8 @@ fn validate_plan_items(ctx: &mut ValidationContext, section: &Section, rule: Pla
         }
         for status in &statuses {
             if !rule.statuses.contains(&status.value().value()) {
-                ctx.diagnostics.push(Diagnostic::error1(
-                    status.span().start_line(),
+                ctx.diagnostics.push(Diagnostic::error_p(
+                    *status.span().start(),
                     format!(
                         "plan-item metadata `Status` expected {}, but got `{}`",
                         joined_choices(rule.statuses),
@@ -453,148 +438,94 @@ fn validate_plan_items(ctx: &mut ValidationContext, section: &Section, rule: Pla
             }
         }
         for duplicate in statuses.iter().skip(1) {
-            ctx.diagnostics.push(Diagnostic::error1(
-                duplicate.span().start_line(),
+            ctx.diagnostics.push(Diagnostic::error_p(
+                *duplicate.span().start(),
                 "duplicate plan-item metadata key `Status`",
             ));
         }
+        if item.value().title().text().is_empty() {
+            ctx.diagnostics.push(Diagnostic::error_p(
+                *item.value().span().start(),
+                format!("plan item in section `{section_name}` is missing a title"),
+            ));
+        }
+        let Some(identifier) = item.value().identifier() else {
+            ctx.diagnostics.push(Diagnostic::error_p(
+                *item.value().span().start(),
+                format!("plan item in section `{section_name}` is missing an identifier"),
+            ));
+            continue;
+        };
+        let Some(number) = identifier.text().strip_prefix('P').and_then(valid_number) else {
+            ctx.diagnostics.push(Diagnostic::error_p(
+                *identifier.span().start(),
+                format!(
+                    "plan item identifier `{}` in section `{section_name}` must use \
+                 `P<number>`, where number is from 1 through `2^63 - 1`",
+                    identifier.text()
+                ),
+            ));
+            continue;
+        };
+        ctx.on_seeing_id(
+            section_name,
+            "P",
+            number,
+            *identifier.span().start(),
+            identifier.text(),
+            "P",
+        );
     }
 }
 
 fn validate_findings(ctx: &mut ValidationContext, section: &Section, rule: FindingsRule) {
     let section_name = section.title();
-    let section = section
-        .as_findings()
-        .expect("a findings rule requires a findings parser section");
+    let Some(section) = section.as_findings() else {
+        ctx.diagnostics.push(Diagnostic::error_p(
+            *section.located_title().span().start(),
+            format!("section {section_name} must be a findings section"),
+        ));
+        return;
+    };
+
     let FindingsBody::Items(items) = section.body() else {
         return;
     };
-    let mut sequence = LegacyItemSequence::default();
     for finding in items.value() {
-        validate_finding(
-            section_name,
-            finding,
-            ctx.schema.prefix,
-            rule.family,
-            &mut ctx.observed_prefix,
-            &mut sequence,
-            &mut ctx.diagnostics,
-        );
-    }
-}
-
-fn validate_finding(
-    section_name: &str,
-    finding: &Finding,
-    prefix_rule: ArtifactPrefixRule,
-    family: &'static str,
-    observed_prefix: &mut Option<ObservedArtifactPrefix>,
-    sequence: &mut LegacyItemSequence,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    let Some(identifier) = finding.identifier() else {
-        diagnostics.push(Diagnostic::error1(
-            finding.span().start_line(),
-            format!("finding in section `{section_name}` is missing an identifier"),
-        ));
-        return;
-    };
-    let Ok(number) = match_item_identifier(identifier, prefix_rule, family, observed_prefix) else {
-        diagnostics.push(Diagnostic::error1(
-            identifier.span().start_line(),
-            format!(
-                "finding identifier `{}` in section `{section_name}` must use \
+        let Some(identifier) = finding.identifier() else {
+            ctx.diagnostics.push(Diagnostic::error_p(
+                *finding.span().start(),
+                format!("finding in section `{section_name}` is missing an identifier"),
+            ));
+            continue;
+        };
+        let Ok(number) = match_item_identifier(ctx, rule.family, identifier) else {
+            ctx.diagnostics.push(Diagnostic::error_p(
+                *identifier.span().start(),
+                format!(
+                    "finding identifier `{}` in section `{section_name}` must use \
                  `{}<number>`, where number is from 1 through `2^63 - 1`",
-                identifier.text(),
-                expected_identifier(prefix_rule, family, observed_prefix.as_ref())
-            ),
-        ));
-        return;
-    };
-    if !sequence.seen.insert(number) {
-        diagnostics.push(Diagnostic::error1(
-            identifier.span().start_line(),
-            format!(
-                "duplicate finding identifier `{}` in section `{section_name}`",
-                identifier.text()
-            ),
-        ));
-    } else if sequence
-        .last_number
-        .is_some_and(|previous| number < previous)
-    {
-        diagnostics.push(Diagnostic::error1(
-            identifier.span().start_line(),
-            format!(
-                "finding identifier `{}` must be greater than `{}{}`",
-                identifier.text(),
-                expected_identifier(prefix_rule, family, observed_prefix.as_ref()),
-                sequence.last_number.expect("previous number exists")
-            ),
-        ));
-    }
-    if sequence
-        .last_number
-        .is_none_or(|previous| number > previous)
-    {
-        sequence.last_number = Some(number);
-    }
-}
+                    identifier.text(),
+                    expected_identifier(
+                        ctx.schema.prefix,
+                        rule.family,
+                        ctx.observed_prefix.as_ref()
+                    )
+                ),
+            ));
+            continue;
+        };
 
-fn validate_plan_item_heading(
-    section_name: &str,
-    item: &PlanItem,
-    sequence: &mut LegacyItemSequence,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    if item.title().text().is_empty() {
-        diagnostics.push(Diagnostic::error1(
-            item.span().start_line(),
-            format!("plan item in section `{section_name}` is missing a title"),
-        ));
-    }
-    let Some(identifier) = item.identifier() else {
-        diagnostics.push(Diagnostic::error1(
-            item.span().start_line(),
-            format!("plan item in section `{section_name}` is missing an identifier"),
-        ));
-        return;
-    };
-    let Some(number) = identifier.text().strip_prefix('P').and_then(valid_number) else {
-        diagnostics.push(Diagnostic::error1(
-            identifier.span().start_line(),
-            format!(
-                "plan item identifier `{}` in section `{section_name}` must use \
-                 `P<number>`, where number is from 1 through `2^63 - 1`",
-                identifier.text()
-            ),
-        ));
-        return;
-    };
-    let duplicate = !sequence.seen.insert(number);
-    if duplicate {
-        diagnostics.push(Diagnostic::error1(
-            identifier.span().start_line(),
-            format!("duplicate plan item identifier `{}`", identifier.text()),
-        ));
-    } else if sequence
-        .last_number
-        .is_some_and(|previous| number < previous)
-    {
-        diagnostics.push(Diagnostic::error1(
-            identifier.span().start_line(),
-            format!(
-                "plan item identifier `{}` must be greater than `P{}`",
-                identifier.text(),
-                sequence.last_number.expect("previous number exists")
-            ),
-        ));
-    }
-    if sequence
-        .last_number
-        .is_none_or(|previous| number > previous)
-    {
-        sequence.last_number = Some(number);
+        let prefix_for_error_info =
+            expected_identifier(ctx.schema.prefix, rule.family, ctx.observed_prefix.as_ref());
+        ctx.on_seeing_id(
+            section_name,
+            rule.family,
+            number,
+            *finding.span().start(),
+            identifier.text(),
+            &prefix_for_error_info,
+        );
     }
 }
 
@@ -671,13 +602,12 @@ fn joined_choices(choices: &[&str]) -> String {
 }
 
 fn match_item_identifier(
-    identifier: &Located<&str>,
-    prefix_rule: ArtifactPrefixRule,
+    ctx: &mut ValidationContext,
     family: &str,
-    observed: &mut Option<ObservedArtifactPrefix>,
+    identifier: &Located<&str>,
 ) -> Result<i64, ()> {
     let text = identifier.text();
-    let (prefix_end, components) = match prefix_rule {
+    let (prefix_end, components) = match ctx.schema.prefix {
         ArtifactPrefixRule::Known(prefix) => {
             if !text.starts_with(prefix) {
                 return Err(());
@@ -691,9 +621,9 @@ fn match_item_identifier(
         .and_then(valid_number)
         .ok_or(())?;
 
-    if matches!(prefix_rule, ArtifactPrefixRule::Unknown(_)) {
+    if matches!(ctx.schema.prefix, ArtifactPrefixRule::Unknown(_)) {
         let prefix_text = &text[..prefix_end];
-        if let Some(previous) = observed.as_ref() {
+        if let Some(previous) = ctx.observed_prefix.as_ref() {
             if previous.text != prefix_text {
                 return Err(());
             }
@@ -701,19 +631,15 @@ fn match_item_identifier(
             let components = components
                 .into_iter()
                 .map(|(value, range)| {
-                    Located::new(
-                        value,
-                        SourceSpan::new(
-                            identifier
-                                .span()
-                                .start()
-                                .advance(&prefix_text[..range.start]),
-                            identifier.span().start().advance(&prefix_text[..range.end]),
-                        ),
-                    )
+                    let start = identifier
+                        .span()
+                        .start()
+                        .advance(&prefix_text[..range.start]);
+                    let end = identifier.span().start().advance(&prefix_text[..range.end]);
+                    Located::new(value, SourceSpan::new(start, end))
                 })
                 .collect();
-            *observed = Some(ObservedArtifactPrefix {
+            ctx.observed_prefix = Some(ObservedArtifactPrefix {
                 text: prefix_text.to_owned(),
                 components,
             });
@@ -750,6 +676,7 @@ fn parse_unknown_prefix(
     Ok((end, components))
 }
 
+// Parses decimal numbers at offset, returns value and range
 fn number_at(identifier: &str, start: usize) -> Option<(i64, Range<usize>)> {
     let end = start
         + identifier[start..]
@@ -760,6 +687,7 @@ fn number_at(identifier: &str, start: usize) -> Option<(i64, Range<usize>)> {
     valid_number(&identifier[range.clone()]).map(|number| (number, range))
 }
 
+// Parses decimal number into i64, no leading zeros allowed
 fn valid_number(number: &str) -> Option<i64> {
     let mut bytes = number.bytes();
     if !matches!(bytes.next(), Some(b'1'..=b'9')) {

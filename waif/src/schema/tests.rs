@@ -28,12 +28,12 @@ fn reports_multiple_finding_id_errors() {
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic
             .message()
-            .contains("duplicate finding identifier `F2`")
+            .contains("duplicate item identifier `F2`")
     }));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic
             .message()
-            .contains("finding identifier `F1` must be greater than `F2`")
+            .contains("item identifier `F1` in section `Findings` must be greater than `F2`")
     }));
 }
 
