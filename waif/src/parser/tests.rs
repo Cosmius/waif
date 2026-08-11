@@ -103,7 +103,7 @@ mod component_parsers {
     #[test]
     fn metadata_line_consumes_success() {
         let mut metadata = context("- Status: proposed\nbody");
-        let parsed = p_metadata_line(&mut metadata).expect("metadata should parse");
+        let parsed = p_metadatum(&mut metadata).expect("metadata should parse");
         assert_eq!(parsed.value().value(), "proposed");
         assert_eq!(metadata.cursor.position().line(), 2);
     }

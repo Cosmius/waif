@@ -275,7 +275,7 @@ fn p_metadata<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Vec<Located<Metadata<'a>>
             ctx.cursor.rewind(before_whitespace);
             break;
         }
-        if let Ok(entry) = ctx.try_(p_metadata_line) {
+        if let Ok(entry) = ctx.try_(p_metadatum) {
             metadata.push(entry);
             continue;
         }
@@ -292,9 +292,7 @@ fn p_metadata<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Vec<Located<Metadata<'a>>
     metadata
 }
 
-fn p_metadata_line<'a>(
-    ctx: &mut ParsingContext<'_, 'a>,
-) -> Result<Located<Metadata<'a>>, Diagnostic> {
+fn p_metadatum<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Result<Located<Metadata<'a>>, Diagnostic> {
     let mut subctx = ctx.clone();
     let item = p_markdown_item(ctx)?;
     let item_content = &item.value().content;
