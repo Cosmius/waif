@@ -1,10 +1,17 @@
 use std::path::Path;
 
 use crate::artifact::{Artifact, FindingsBody, Metadata};
-use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
+use crate::parser::{self, Diagnostic, ParserConfig, Position, SectionConfig};
 use crate::schema::{
-    self, metadata_validators, ArtifactPrefixRule, ArtifactPrefixShape, FindingsRule, ItemRule,
-    MetadataRule, Schema, SectionRule,
+    self, metadata_validators, unpadded_decimal, ArtifactPrefixRule, ArtifactPrefixShape,
+    FindingsRule, ItemRule, MetadataRule, Schema, SectionRule,
+};
+use crate::schemas::step::step_directory_number;
+
+const SCHEMA: Schema = Schema {
+    prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Review),
+    metadata: &METADATA,
+    sections: &SECTIONS,
 };
 
 const METADATA: [MetadataRule; 5] = [
@@ -37,18 +44,12 @@ const SECTIONS: [SectionRule; 4] = [
     SectionRule::optional("Residual Risks").with_items(ItemRule::new("RR")),
 ];
 
-const SCHEMA: Schema = Schema {
-    prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Review),
-    metadata: &METADATA,
-    sections: &SECTIONS,
-};
-
 pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
     let (artifact, mut diagnostics) = parser::parse_with_diagnostics(source, &parser_config());
     let (schema_diagnostics, prefix) = schema::validate_with_prefix(&artifact, &SCHEMA);
     diagnostics.extend(schema_diagnostics);
 
-    let title_number = validate_title(&artifact, &mut diagnostics);
+    let title_number = validate_title(&mut diagnostics, &artifact);
     let filename_number = review_filename_number(path);
     if filename_number.is_none() {
         diagnostics.push(Diagnostic::error1(
@@ -56,18 +57,16 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
             "review filename must use `reviewN.md` with a positive decimal number",
         ));
     }
-    validate_metadata_order(&artifact, &mut diagnostics);
-    validate_decision_findings(&artifact, &mut diagnostics);
+    validate_decision_findings(&mut diagnostics, &artifact);
 
-    let path_step_number = step_directory_number(path);
+    let path_step_number = step_directory_number(&mut diagnostics, path);
     if path_step_number.is_none() {
-        diagnostics.push(Diagnostic::warning1(
-            1,
+        diagnostics.push(Diagnostic::warning_p(
+            Position::ZERO,
             "cannot resolve a step number from the containing directory; \
              skipping path-dependent identity checks",
         ));
     }
-
     if let Some(observed) = prefix {
         let step = &observed.components()[0];
         let review = &observed.components()[1];
@@ -75,7 +74,7 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
             "containing directory",
             path_step_number,
             *step.value(),
-            step.span().start_line(),
+            *step.span().start(),
             "step",
             &mut diagnostics,
         );
@@ -83,7 +82,7 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
             "title",
             title_number,
             *review.value(),
-            review.span().start_line(),
+            *review.span().start(),
             "review",
             &mut diagnostics,
         );
@@ -91,18 +90,19 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
             "filename",
             filename_number,
             *review.value(),
-            review.span().start_line(),
+            *review.span().start(),
             "review",
             &mut diagnostics,
         );
     }
-    compare_pair(
-        "review title number",
-        title_number,
-        "filename",
-        filename_number,
-        &mut diagnostics,
-    );
+    if let (Some(left), Some(right)) = (title_number, filename_number) {
+        if left != right {
+            diagnostics.push(Diagnostic::error_p(
+                Position::ZERO,
+                format!("review title number `{left}` does not match filename `{right}`"),
+            ));
+        }
+    }
     diagnostics
 }
 
@@ -158,41 +158,22 @@ fn choices(value: &str, expected: &[&str]) -> Result<(), String> {
     }
 }
 
-fn validate_title(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) -> Option<i64> {
+fn validate_title(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) -> Option<i64> {
     let number = artifact
         .title()
         .strip_prefix("Implementation Review ")
-        .and_then(positive_number);
+        .and_then(unpadded_decimal);
     if number.is_none() {
-        diagnostics.push(Diagnostic::error1(
-            1,
+        diagnostics.push(Diagnostic::error_p(
+            *artifact.located_title().span().start(),
             "review title must use `Implementation Review N` with a positive decimal number",
         ));
     }
     number
 }
 
-fn validate_metadata_order(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
-    let mut greatest = None;
-    for entry in artifact.metadata() {
-        let Some(rank) = METADATA
-            .iter()
-            .position(|rule| rule.name == entry.value().key())
-        else {
-            continue;
-        };
-        if greatest.is_some_and(|previous| rank < previous) {
-            diagnostics.push(Diagnostic::error1(
-                entry.span().start_line(),
-                format!("metadata `{}` is out of order", entry.value().key()),
-            ));
-        }
-        greatest = Some(greatest.map_or(rank, |previous: usize| previous.max(rank)));
-    }
-}
-
-fn validate_decision_findings(artifact: &Artifact, diagnostics: &mut Vec<Diagnostic>) {
-    let decision = metadata(artifact, "Decision").map(Metadata::value);
+fn validate_decision_findings(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) {
+    let decision = artifact.get_metadata("Decision").map(Metadata::value);
     let Some(section) = artifact
         .sections()
         .iter()
@@ -206,19 +187,19 @@ fn validate_decision_findings(artifact: &Artifact, diagnostics: &mut Vec<Diagnos
         FindingsBody::Items(items) => (items.value().is_empty(), false),
     };
     if empty {
-        diagnostics.push(Diagnostic::error1(
-            section.body().span().start_line(),
+        diagnostics.push(Diagnostic::error_p(
+            *section.body().span().start(),
             "section `Findings` must contain `No findings.` or at least one finding",
         ));
     }
     match decision {
-        Some("pass") if !sentinel => diagnostics.push(Diagnostic::error1(
-            section.body().span().start_line(),
+        Some("pass") if !sentinel => diagnostics.push(Diagnostic::error_p(
+            *section.body().span().start(),
             "decision `pass` requires the exact `No findings.` sentinel",
         )),
         Some("changes-requested") if sentinel || empty => {
-            diagnostics.push(Diagnostic::error1(
-                section.body().span().start_line(),
+            diagnostics.push(Diagnostic::error_p(
+                *section.body().span().start(),
                 "decision `changes-requested` requires at least one finding",
             ));
         }
@@ -226,78 +207,27 @@ fn validate_decision_findings(artifact: &Artifact, diagnostics: &mut Vec<Diagnos
     }
 }
 
-fn metadata<'a, 'b>(artifact: &'a Artifact<'b>, key: &str) -> Option<&'a Metadata<'b>> {
-    let mut entries = artifact
-        .metadata()
-        .iter()
-        .filter(|entry| entry.value().key() == key);
-    let entry = entries.next()?;
-    entries.next().is_none().then_some(entry.value())
-}
-
 fn review_filename_number(path: &Path) -> Option<i64> {
     path.file_name()?
         .to_str()?
         .strip_prefix("review")?
         .strip_suffix(".md")
-        .and_then(positive_number)
-}
-
-fn step_directory_number(path: &Path) -> Option<i64> {
-    let name = path.parent()?.file_name()?.to_str()?;
-    let (number, short_name) = name.split_once('-')?;
-    if short_name.is_empty()
-        || short_name.starts_with('-')
-        || short_name.ends_with('-')
-        || short_name.contains("--")
-        || !short_name
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-    {
-        return None;
-    }
-    (number.len() >= 2)
-        .then(|| positive_number(number))
-        .flatten()
-}
-
-fn positive_number(number: &str) -> Option<i64> {
-    (!number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()))
-        .then(|| number.parse().ok())
-        .flatten()
-        .filter(|number| *number > 0)
+        .and_then(unpadded_decimal)
 }
 
 fn compare_identity(
     source: &str,
     expected: Option<i64>,
     observed: i64,
-    line: usize,
+    position: Position,
     component: &str,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     if expected.is_some_and(|expected| expected != observed) {
-        diagnostics.push(Diagnostic::error1(
-            line,
+        diagnostics.push(Diagnostic::error_p(
+            position,
             format!("review item {component} identity `{observed}` does not match {source}"),
         ));
-    }
-}
-
-fn compare_pair(
-    left_name: &str,
-    left: Option<i64>,
-    right_name: &str,
-    right: Option<i64>,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    if let (Some(left), Some(right)) = (left, right) {
-        if left != right {
-            diagnostics.push(Diagnostic::error1(
-                1,
-                format!("{left_name} `{left}` does not match {right_name} `{right}`"),
-            ));
-        }
     }
 }
 
@@ -354,7 +284,6 @@ mod tests {
         for expected in [
             "metadata `Step` expected `./step.md`",
             "metadata `Reviewer` expected",
-            "metadata `Decision` is out of order",
             "metadata `Workspace state` expected `uncommitted`",
             "duplicate section `Findings`",
             "duplicate section `Scope`",

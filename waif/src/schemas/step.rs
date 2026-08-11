@@ -56,23 +56,14 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
     validate_lifecycle(&mut diagnostics, &artifact);
     validate_coverage(&mut diagnostics, &artifact);
 
-    let path_dir = step_directory_number(path);
-    if path_dir.is_none() {
+    let path_number = step_directory_number(&mut diagnostics, path);
+    if path_number.is_none() {
         diagnostics.push(Diagnostic::warning_p(
             Position::ZERO,
             "cannot resolve a step number from the containing directory; \
              skipping path-dependent identity checks",
         ));
-    } else if path_dir
-        .as_ref()
-        .is_some_and(|(_, short_name)| short_name.is_empty())
-    {
-        diagnostics.push(Diagnostic::warning_p(
-            Position::ZERO,
-            "step directory short name is empty",
-        ));
     }
-    let path_number = path_dir.map(|(number, _)| number);
     if let Some(observed) = prefix {
         let component = &observed.components()[0];
         let observed_number = *component.value();
@@ -223,14 +214,20 @@ fn validate_coverage(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) {
     }
 }
 
-fn step_directory_number(path: &Path) -> Option<(i64, &str)> {
+pub(crate) fn step_directory_number(diagnostics: &mut Vec<Diagnostic>, path: &Path) -> Option<i64> {
     let name = path.parent()?.file_name()?.to_str()?;
     let (number, short_name) = name.split_once('-')?;
     let number = (number.len() >= 2 && number.bytes().all(|byte| byte.is_ascii_digit()))
         .then(|| number.parse().ok())
         .flatten()
         .filter(|number| *number > 0)?;
-    Some((number, short_name))
+    if short_name.is_empty() {
+        diagnostics.push(Diagnostic::warning_p(
+            Position::ZERO,
+            "step directory short name is empty",
+        ));
+    }
+    Some(number)
 }
 
 fn compare_identity(
@@ -329,10 +326,12 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].0, Severity::Warning);
         assert!(found[0].2.contains("short name is empty"));
+        let mut diagnostics = Vec::new();
         assert_eq!(
-            step_directory_number(Path::new("steps/03-/step.md")),
-            Some((3, ""))
+            step_directory_number(&mut diagnostics, Path::new("steps/03-/step.md")),
+            Some(3)
         );
+        assert_eq!(diagnostics.len(), 1);
 
         for path in ["steps/03-Bad/step.md", "steps/03-a--b/step.md"] {
             assert_eq!(messages(path, VALID), [], "{path}");
@@ -384,13 +383,15 @@ mod tests {
         );
         assert_eq!(messages("steps/03-check/step.md", &fenced), []);
 
+        let mut diagnostics = Vec::new();
         assert_eq!(
-            step_directory_number(Path::new("linked/03-check/step.md")),
-            Some((3, "check"))
+            step_directory_number(&mut diagnostics, Path::new("linked/03-check/step.md")),
+            Some(3)
         );
         assert_eq!(
-            step_directory_number(Path::new("real/99-target/step.md")),
-            Some((99, "target"))
+            step_directory_number(&mut diagnostics, Path::new("real/99-target/step.md")),
+            Some(99)
         );
+        assert!(diagnostics.is_empty());
     }
 }

@@ -304,7 +304,7 @@ every stable ID. Otherwise checking warns and still requires one internally
 consistent `S<n>-R<m>-` prefix. Paths are interpreted nominally. Directory
 padding is omitted from IDs: `steps/04-check/review1.md` uses `S4-R1-F1`.
 
-Required metadata, in relative order, is:
+Required metadata is:
 
 ```text
 Step             ./step.md
