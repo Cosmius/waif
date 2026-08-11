@@ -1,0 +1,6 @@
+newline_style = "Unix"
+skip_macro_invocations = [
+  "assert",
+  "assert_eq",
+  "assert_ne",
+]

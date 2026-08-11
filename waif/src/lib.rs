@@ -4,14 +4,15 @@ use clap::Parser;
 
 mod artifact;
 mod commands;
-mod goal;
 mod parser;
-mod plan;
 mod protocol;
-mod review;
 mod schema;
-#[allow(dead_code)]
-mod step;
+mod schemas {
+    pub mod goal;
+    pub mod plan;
+    pub mod review;
+    pub mod step;
+}
 #[cfg(test)]
 mod test_support;
 

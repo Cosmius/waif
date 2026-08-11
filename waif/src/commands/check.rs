@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 use clap::Args;
 
 use super::relative_path;
-use crate::goal;
 use crate::parser::{self, Severity};
-use crate::plan;
 use crate::protocol::WorkflowDir;
-use crate::review;
-use crate::step;
+use crate::schemas::goal;
+use crate::schemas::plan;
+use crate::schemas::review;
+use crate::schemas::step;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
