@@ -785,9 +785,9 @@ mod configured_itemised_sections {
             .iter()
             .all(|diagnostic| diagnostic.severity() == Severity::Error));
 
-        let warning = Diagnostic::warning1(4, "section is empty");
+        let warning = Diagnostic::warning_p(Position::ZERO, "section is empty");
         assert_eq!(warning.severity(), Severity::Warning);
-        assert_eq!(warning.line(), 4);
+        assert_eq!(warning.line(), 1);
         assert_eq!(warning.message(), "section is empty");
     }
 
