@@ -3,7 +3,8 @@ use std::path::Path;
 use crate::artifact::{Artifact, Metadata};
 use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
 use crate::schema::{
-    self, ArtifactPrefixRule, ArtifactPrefixShape, ItemRule, MetadataRule, Schema, SectionRule,
+    self, metadata_validators, ArtifactPrefixRule, ArtifactPrefixShape, ItemRule, MetadataRule,
+    Schema, SectionRule,
 };
 
 const METADATA: [MetadataRule; 4] = [
@@ -17,11 +18,11 @@ const METADATA: [MetadataRule; 4] = [
     },
     MetadataRule {
         name: "Created",
-        validator: schema::rfc3339_timestamp,
+        validator: metadata_validators::rfc3339_timestamp,
     },
     MetadataRule {
         name: "Updated",
-        validator: schema::rfc3339_timestamp,
+        validator: metadata_validators::rfc3339_timestamp,
     },
 ];
 

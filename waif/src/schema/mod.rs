@@ -1,114 +1,35 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use chrono::DateTime;
-
 use crate::artifact::{
     Artifact, Finding, FindingsBody, Item, ItemForm, Located, PlanItem, Section, SourceSpan,
 };
 use crate::parser::Diagnostic;
 
-pub(crate) type ValueValidator = fn(&str) -> Result<(), String>;
+//region schema definition
 
-#[derive(Clone, Copy)]
-pub(crate) struct MetadataRule {
-    pub(crate) name: &'static str,
-    pub(crate) validator: ValueValidator,
+pub(crate) struct Schema {
+    pub(crate) prefix: ArtifactPrefixRule,
+    pub(crate) metadata: &'static [MetadataRule],
+    pub(crate) sections: &'static [SectionRule],
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum ItemForms {
-    Consistent,
-    ExpandedOnly,
-    // The parser represents itemised sections as compact items followed by
-    // expanded items. Once an expanded item starts, compact-looking bullets
-    // are its opaque body, so a compact item cannot structurally follow it.
-    Mixed,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct ItemRule {
-    pub(crate) family: &'static str,
-    pub(crate) expanded_family: Option<&'static str>,
-    pub(crate) forms: ItemForms,
-}
-
-impl ItemRule {
-    pub(crate) const fn new(family: &'static str) -> Self {
-        Self {
-            family,
-            expanded_family: None,
-            forms: ItemForms::Consistent,
-        }
-    }
-
-    pub(crate) const fn with_expanded_family(mut self, family: &'static str) -> Self {
-        self.expanded_family = Some(family);
-        self
-    }
-
-    pub(crate) const fn expanded_only(mut self) -> Self {
-        self.forms = ItemForms::ExpandedOnly;
-        self
-    }
-
-    pub(crate) const fn mixed(mut self) -> Self {
-        self.forms = ItemForms::Mixed;
-        self
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct PlanItemRule {
-    pub(crate) statuses: &'static [&'static str],
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-pub(crate) struct FindingsRule {
-    pub(crate) family: &'static str,
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
 pub(crate) enum ArtifactPrefixRule {
     Known(&'static str),
     Unknown(ArtifactPrefixShape),
 }
 
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
 pub(crate) enum ArtifactPrefixShape {
     Step,
     Review,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct ObservedArtifactPrefix {
-    text: String,
-    components: Vec<Located<i64>>,
-}
-
-#[derive(Default)]
-struct ItemSequence {
-    seen: HashSet<i64>,
-    last_number: Option<i64>,
-}
-
-type PrefixComponent = (i64, Range<usize>);
-// The byte offset after an unknown prefix's trailing dash, followed by its
-// numeric values and their identifier-relative byte ranges.
-type ParsedPrefix = (usize, Vec<PrefixComponent>);
-
-#[allow(dead_code)]
-impl ObservedArtifactPrefix {
-    pub(crate) fn text(&self) -> &str {
-        &self.text
-    }
-
-    pub(crate) fn components(&self) -> &[Located<i64>] {
-        &self.components
-    }
+#[derive(Clone, Copy)]
+pub(crate) struct MetadataRule {
+    pub(crate) name: &'static str,
+    pub(crate) validator: MetadataValidator,
 }
 
 #[derive(Clone, Copy)]
@@ -146,34 +67,95 @@ impl SectionRule {
         self
     }
 
-    #[allow(dead_code)]
     pub(crate) const fn with_findings(mut self, findings: FindingsRule) -> Self {
         self.findings = Some(findings);
         self
     }
 }
 
-pub(crate) struct Schema {
-    pub(crate) prefix: ArtifactPrefixRule,
-    pub(crate) metadata: &'static [MetadataRule],
-    pub(crate) sections: &'static [SectionRule],
+#[derive(Clone, Copy)]
+pub(crate) struct ItemRule {
+    pub(crate) family: &'static str,
+    pub(crate) expanded_family: Option<&'static str>,
+    pub(crate) forms: ItemForms,
 }
 
-pub(crate) fn artifact_status(value: &str) -> Result<(), String> {
-    if matches!(value, "drafting" | "accepted" | "amending") {
-        Ok(())
-    } else {
-        Err(format!(
-            "expected `drafting`, `accepted`, or `amending`, but got `{value}`"
-        ))
+impl ItemRule {
+    pub(crate) const fn new(family: &'static str) -> Self {
+        Self {
+            family,
+            expanded_family: None,
+            forms: ItemForms::Consistent,
+        }
+    }
+
+    pub(crate) const fn expanded_only(mut self) -> Self {
+        self.forms = ItemForms::ExpandedOnly;
+        self
+    }
+
+    pub(crate) const fn mixed(mut self) -> Self {
+        self.forms = ItemForms::Mixed;
+        self
+    }
+
+    pub(crate) const fn with_expanded_family(mut self, family: &'static str) -> Self {
+        self.expanded_family = Some(family);
+        self
     }
 }
 
-pub(crate) fn rfc3339_timestamp(value: &str) -> Result<(), String> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|_| ())
-        .map_err(|_| format!("expected an RFC 3339 timestamp with a timezone, but got `{value}`"))
+#[derive(Clone, Copy)]
+pub(crate) enum ItemForms {
+    Consistent,
+    ExpandedOnly,
+    // The parser represents itemised sections as compact items followed by
+    // expanded items. Once an expanded item starts, compact-looking bullets
+    // are its opaque body, so a compact item cannot structurally follow it.
+    Mixed,
 }
+
+#[derive(Clone, Copy)]
+pub(crate) struct PlanItemRule {
+    pub(crate) statuses: &'static [&'static str],
+}
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(crate) struct FindingsRule {
+    pub(crate) family: &'static str,
+}
+
+//endregion schema definition
+
+//region validations
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct ObservedArtifactPrefix {
+    text: String,
+    components: Vec<Located<i64>>,
+}
+
+impl ObservedArtifactPrefix {
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub(crate) fn components(&self) -> &[Located<i64>] {
+        &self.components
+    }
+}
+
+#[derive(Default)]
+struct ItemSequence {
+    seen: HashSet<i64>,
+    last_number: Option<i64>,
+}
+
+// The byte offset after an unknown prefix's trailing dash, followed by its
+// numeric values and their identifier-relative byte ranges.
+type ParsedPrefix = (usize, Vec<PrefixComponent>);
+type PrefixComponent = (i64, Range<usize>);
 
 pub(crate) fn validate(artifact: &Artifact, schema: &Schema) -> Vec<Diagnostic> {
     validate_with_prefix(artifact, schema).0
@@ -604,6 +586,36 @@ fn validate_plan_item_heading(
         sequence.last_number = Some(number);
     }
 }
+
+//endregion validations
+
+//region metadata validators
+
+pub(crate) type MetadataValidator = fn(&str) -> Result<(), String>;
+
+pub(crate) mod metadata_validators {
+    use chrono::DateTime;
+
+    pub(crate) fn artifact_status(value: &str) -> Result<(), String> {
+        if matches!(value, "drafting" | "accepted" | "amending") {
+            Ok(())
+        } else {
+            Err(format!(
+                "expected `drafting`, `accepted`, or `amending`, but got `{value}`"
+            ))
+        }
+    }
+
+    pub(crate) fn rfc3339_timestamp(value: &str) -> Result<(), String> {
+        DateTime::parse_from_rfc3339(value)
+            .map(|_| ())
+            .map_err(|_| {
+                format!("expected an RFC 3339 timestamp with a timezone, but got `{value}`")
+            })
+    }
+}
+
+//endregion metadata validators
 
 fn joined_choices(choices: &[&str]) -> String {
     choices

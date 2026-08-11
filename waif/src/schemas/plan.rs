@@ -1,12 +1,13 @@
 use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
 use crate::schema::{
-    self, ArtifactPrefixRule, ItemRule, MetadataRule, PlanItemRule, Schema, SectionRule,
+    self, metadata_validators, ArtifactPrefixRule, ItemRule, MetadataRule, PlanItemRule, Schema,
+    SectionRule,
 };
 
 const METADATA: [MetadataRule; 7] = [
     MetadataRule {
         name: "Status",
-        validator: schema::artifact_status,
+        validator: metadata_validators::artifact_status,
     },
     MetadataRule {
         name: "Goal",
@@ -26,11 +27,11 @@ const METADATA: [MetadataRule; 7] = [
     },
     MetadataRule {
         name: "Created",
-        validator: schema::rfc3339_timestamp,
+        validator: metadata_validators::rfc3339_timestamp,
     },
     MetadataRule {
         name: "Updated",
-        validator: schema::rfc3339_timestamp,
+        validator: metadata_validators::rfc3339_timestamp,
     },
 ];
 
