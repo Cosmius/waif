@@ -1,5 +1,4 @@
 use self::cursor::Cursor;
-pub use self::cursor::Position;
 use crate::artifact::{
     Artifact, CompactItem, ExpandedItem, Finding, FindingsBody, FindingsSection, Item,
     ItemisedSection, Located, Metadata, PlanItem, PlanItemsSection, ProseSection, Section,
@@ -7,6 +6,8 @@ use crate::artifact::{
 };
 use std::fmt;
 use std::iter::repeat_n;
+
+pub use self::cursor::Position;
 
 mod cursor;
 

@@ -16,10 +16,7 @@ fn compact<'a, 'b>(item: &'a Item<'b>) -> &'a CompactItem<'b> {
 }
 
 fn expanded<'a, 'b>(item: &'a Item<'b>) -> &'a ExpandedItem<'b> {
-    match item {
-        Item::Expanded(item) => item.value(),
-        Item::Compact(_) => panic!("item should use expanded form"),
-    }
+    item.as_expanded().expect("item should use expanded form")
 }
 
 fn itemised_config(name: &str) -> ParserConfig {
@@ -1307,7 +1304,7 @@ mod plan_items {
         artifact
             .plan_item_mut("P1")
             .expect("exact item")
-            .status_mut()
+            .metadatum_mut("Status")
             .expect("unique status")
             .set_value("done")
             .expect("nested status should be mutable");
@@ -1341,7 +1338,7 @@ mod plan_items {
         assert!(artifact
             .plan_item_mut("P2")
             .expect("unique item")
-            .status_mut()
+            .metadatum_mut("Status")
             .is_none());
     }
 
@@ -1362,7 +1359,7 @@ mod plan_items {
             let status = artifact
                 .plan_item_mut("P1")
                 .expect("exact item")
-                .status_mut()
+                .metadatum_mut("Status")
                 .expect("unique status");
             status.set_value("done").expect("valid status value");
 

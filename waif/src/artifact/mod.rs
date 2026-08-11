@@ -283,7 +283,7 @@ impl<'a, L> Item<'a, L> {
         }
     }
 
-    pub fn as_expanded(&self) -> Option<&ExpandedItem<L>> {
+    pub fn as_expanded(&self) -> Option<&ExpandedItem<'a, L>> {
         match self {
             Self::Compact(_) => None,
             Self::Expanded(item) => Some(item.value()),
@@ -376,11 +376,11 @@ impl<'a, L> PlanItem<'a, L> {
         &self.metadata
     }
 
-    pub fn status_mut(&mut self) -> Option<&mut Metadata<'a, L>> {
+    pub fn metadatum_mut(&mut self, key: &str) -> Option<&mut Metadata<'a, L>> {
         let mut matches = self
             .metadata
             .iter_mut()
-            .filter(|entry| entry.value().key() == "Status");
+            .filter(|entry| entry.value().key() == key);
         let status = matches.next()?;
         matches.next().is_none().then_some(status.value_mut())
     }
