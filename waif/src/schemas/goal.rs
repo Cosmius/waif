@@ -1,3 +1,4 @@
+use crate::artifact::Artifact;
 use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
 use crate::schema::{
     self, metadata_validators, ArtifactPrefixRule, ItemRule, MetadataRule, Schema, SectionRule,
@@ -33,6 +34,10 @@ const SECTIONS: [SectionRule; 7] = [
     SectionRule::optional("Out of Scope").with_items(ItemRule::new("OUT")),
     SectionRule::optional("Revisions").with_items(ItemRule::new("REV").expanded_only()),
 ];
+
+pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {
+    parser::parse_with_config(source, &parser_config())
+}
 
 /// Parse and validate the structural schema for a goal artifact.
 ///

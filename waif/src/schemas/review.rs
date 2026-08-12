@@ -44,6 +44,10 @@ const SECTIONS: [SectionRule; 4] = [
     SectionRule::optional("Residual Risks").with_items(ItemRule::new("RR")),
 ];
 
+pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {
+    parser::parse_with_config(source, &parser_config())
+}
+
 pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
     let (artifact, mut diagnostics) = parser::parse_with_diagnostics(source, &parser_config());
     let (schema_diagnostics, prefix) = schema::validate_with_prefix(&artifact, &SCHEMA);

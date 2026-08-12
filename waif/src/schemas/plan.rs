@@ -1,3 +1,4 @@
+use crate::artifact::Artifact;
 use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
 use crate::schema::{
     self, metadata_validators, ArtifactPrefixRule, ItemRule, MetadataRule, PlanItemRule, Schema,
@@ -71,6 +72,10 @@ fn full_commit(value: &str) -> Result<(), String> {
     (value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
         .then_some(())
         .ok_or_else(|| format!("expected a full 40-character Git commit hash, but got `{value}`"))
+}
+
+pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {
+    parser::parse_with_config(source, &parser_config())
 }
 
 pub(crate) fn check(source: &str) -> Vec<Diagnostic> {

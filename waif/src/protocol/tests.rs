@@ -3,6 +3,7 @@ use super::*;
 use chrono::Local;
 
 use std::fs;
+use std::path::PathBuf;
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
@@ -307,70 +308,248 @@ fn task_goal_is_none_when_goal_file_is_missing() {
     let workspace = TestDir::new("missing-goal");
     let task = Task::new(workspace.path.join(".waif/tasks/example-task"));
 
-    assert!(task.goal().expect("missing goal should not fail").is_none());
+    assert!(task
+        .with_goal(|_| ())
+        .expect("missing goal should not fail")
+        .is_none());
 }
 
 #[test]
-fn task_goal_parses_metadata_through_its_artifact_accessor() {
+fn task_singleton_accessors_use_configured_schema_parsers() {
     let workspace = TestDir::new("goal-metadata");
     let task = Task::new(workspace.path.join(".waif/tasks/example-task"));
     fs::create_dir_all(&task.path).expect("task dir should be created");
     fs::write(
-        task.goal_path(),
+        task.path.join("goal.md"),
         "\
 # Goal: Test the workflow
-
 - Status: drafting
 - Created: 2026-07-04T09:00:00+09:00
-
-## Goal
-
+## Outcome
 Create tests.
+## Acceptance Criteria
+- G-AC1: Tests exist.
 ",
     )
     .expect("goal should be written");
+    fs::write(
+        task.path.join("plan.md"),
+        "\
+# Plan
+- Status: drafting
+## Plan Items
+### P1: First
+- Status: pending
+",
+    )
+    .expect("plan should be written");
 
-    let goal = task
-        .goal()
-        .expect("goal should load")
-        .expect("goal should exist");
-    let artifact = goal.artifact().expect("goal should parse");
+    let status = task
+        .with_goal(|goal| goal.metadata()[0].value().value().to_owned())
+        .expect("goal should parse");
+    let plan_items_are_structured = task
+        .with_plan(|plan| plan.sections()[0].as_plan_items().is_some())
+        .expect("plan should parse");
 
-    assert_eq!(artifact.metadata()[0].value().key(), "Status");
-    assert_eq!(artifact.metadata()[0].value().value(), "drafting");
-    assert_eq!(artifact.metadata()[1].value().key(), "Created");
-    assert_eq!(
-        artifact.metadata()[1].value().value(),
-        "2026-07-04T09:00:00+09:00"
-    );
+    assert_eq!(status.as_deref(), Some("drafting"));
+    assert_eq!(plan_items_are_structured, Some(true));
 }
 
 #[test]
-fn task_goal_defers_invalid_artifact_errors_until_parsing() {
+fn task_singleton_accessor_reports_path_aware_parser_errors() {
     let workspace = TestDir::new("invalid-goal");
     let task = Task::new(workspace.path.join(".waif/tasks/example-task"));
     fs::create_dir_all(&task.path).expect("task dir should be created");
     fs::write(
-        task.goal_path(),
+        task.path.join("goal.md"),
         "\
 - Status: drafting
-
-## Goal
-
-Create tests.
 ",
     )
     .expect("goal should be written");
 
-    let goal = task
-        .goal()
-        .expect("reading should not parse the artifact")
-        .expect("goal should exist");
-    let error = goal
-        .artifact()
+    let error = task
+        .with_goal(|_| ())
         .expect_err("invalid goal should fail when parsed");
 
     assert!(error
         .to_string()
         .contains("goal.md:1: first non-whitespace line must be a level-one"));
+}
+
+#[test]
+fn artifact_file_classifies_nominal_paths_and_retains_contents() {
+    let workspace = TestDir::new("artifact-kinds");
+    for (name, expected) in [
+        ("goal.md", ArtifactKind::Goal),
+        ("plan.md", ArtifactKind::Plan),
+        ("step.md", ArtifactKind::Step),
+        ("review12.md", ArtifactKind::ImplementationReview),
+        ("review.md", ArtifactKind::Generic),
+        ("review-latest.md", ArtifactKind::Generic),
+    ] {
+        let path = workspace.path.join(name);
+        fs::write(&path, "# Artifact\n").expect("artifact should be written");
+        let file = ArtifactFile::read(path).expect("artifact should load");
+
+        assert_eq!(file.kind(), expected, "wrong kind for {name}");
+        assert_eq!(file.contents(), "# Artifact\n");
+    }
+}
+
+#[test]
+fn artifact_file_parsers_use_each_schema_structure() {
+    let workspace = TestDir::new("artifact-parsers");
+    let cases = [
+        (
+            "goal.md",
+            "# Goal\n## Acceptance Criteria\n- G-AC1: One\n",
+            "Acceptance Criteria",
+        ),
+        (
+            "plan.md",
+            "# Plan\n## Plan Items\n### P1: One\n- Status: pending\n",
+            "Plan Items",
+        ),
+        (
+            "step.md",
+            "# Step 1\n## Done When\n- S1-D1: One\n",
+            "Done When",
+        ),
+        (
+            "review1.md",
+            "# Implementation Review 1\n## Findings\nNo findings.\n",
+            "Findings",
+        ),
+    ];
+
+    for (name, source, section_name) in cases {
+        let path = workspace.path.join(name);
+        fs::write(&path, source).expect("artifact should be written");
+        let file = ArtifactFile::read(path).expect("artifact should load");
+        let artifact = match file.kind() {
+            ArtifactKind::Goal => file.parse_goal(),
+            ArtifactKind::Plan => file.parse_plan(),
+            ArtifactKind::Step => file.parse_step(),
+            ArtifactKind::ImplementationReview => file.parse_review(),
+            ArtifactKind::Generic => unreachable!(),
+        }
+        .expect("artifact should parse");
+
+        let section = artifact
+            .sections()
+            .iter()
+            .find(|section| section.title() == section_name)
+            .expect("configured section should exist");
+        let configured = match file.kind() {
+            ArtifactKind::Plan => section.as_plan_items().is_some(),
+            ArtifactKind::ImplementationReview => section.as_findings().is_some(),
+            _ => section.as_itemised().is_some(),
+        };
+        assert!(configured, "section should be configured for {name}");
+    }
+}
+
+#[test]
+fn generic_parse_and_diagnostics_keep_schema_validation_separate() {
+    let workspace = TestDir::new("separate-parse-check");
+    let goal_path = workspace.path.join("goal.md");
+    fs::write(&goal_path, "# Goal\n- Status: invalid\n## Outcome\nText.\n")
+        .expect("goal should be written");
+    let goal = ArtifactFile::read(goal_path).expect("goal should load");
+
+    assert!(goal.parse_goal().is_ok());
+    assert!(goal.diagnostics().iter().any(|diagnostic| diagnostic
+        .message()
+        .contains("metadata `Status`")));
+
+    let generic_path = workspace.path.join("review.md");
+    fs::write(&generic_path, "# Review\n## Notes\nOpaque.\n").expect("review should be written");
+    let generic = ArtifactFile::read(generic_path).expect("generic artifact should load");
+    assert!(generic.parse_generic().is_ok());
+    assert!(generic.diagnostics().is_empty());
+}
+
+#[test]
+fn task_artifact_discovery_preserves_the_existing_layout() {
+    let directory = TestDir::new("protocol-directory-discovery");
+    let step_dir = directory.path.join("steps/01-example");
+    let unrelated_dir = directory.path.join("other/deep");
+    fs::create_dir_all(&step_dir).expect("step directory should be created");
+    fs::create_dir_all(&unrelated_dir).expect("unrelated directory should be created");
+    for path in [
+        directory.path.join("goal.md"),
+        directory.path.join("step.md"),
+        directory.path.join("notes.md"),
+        step_dir.join("step.md"),
+        step_dir.join("goal.md"),
+        step_dir.join("review1.md"),
+        step_dir.join("review-latest.md"),
+        unrelated_dir.join("goal.md"),
+    ] {
+        fs::write(path, "test").expect("test file should be written");
+    }
+
+    let paths = discover_artifact_paths(&directory.path).expect("discovery should succeed");
+    let task = Task::new(directory.path.clone());
+
+    assert_eq!(task.artifact_paths().expect("task discovery should work"), paths);
+    assert_eq!(paths.len(), 3);
+    assert!(paths.iter().any(|path| path == &directory.path.join("goal.md")));
+    assert!(paths.iter().any(|path| path == &step_dir.join("step.md")));
+    assert!(paths
+        .iter()
+        .any(|path| path == &step_dir.join("review1.md")));
+}
+
+#[test]
+fn explicit_file_discovery_preserves_the_selected_nominal_path() {
+    let path = PathBuf::from("missing/../selected/goal.md");
+
+    assert_eq!(
+        discover_artifact_paths(&path).expect("file discovery should work"),
+        [path]
+    );
+}
+
+#[test]
+fn task_step_and_review_accessors_reject_wrong_or_outside_files() {
+    let workspace = TestDir::new("task-artifact-access");
+    let task = Task::new(workspace.path.join("task"));
+    let step_dir = task.path.join("steps/01-example");
+    fs::create_dir_all(&step_dir).expect("step directory should be created");
+    let step_path = step_dir.join("step.md");
+    let review_path = step_dir.join("review1.md");
+    let outside_path = workspace.path.join("outside/step.md");
+    fs::create_dir_all(outside_path.parent().expect("outside parent"))
+        .expect("outside directory should be created");
+    fs::write(&step_path, "# Step 1\n").expect("step should be written");
+    fs::write(&review_path, "# Implementation Review 1\n").expect("review should be written");
+    fs::write(&outside_path, "# Step 1\n").expect("outside step should be written");
+    let step = ArtifactFile::read(step_path).expect("step should load");
+    let review = ArtifactFile::read(review_path).expect("review should load");
+    let outside = ArtifactFile::read(outside_path).expect("outside should load");
+
+    assert_eq!(
+        task.with_step(&step, |artifact| artifact.title().to_owned())
+            .expect("step should parse"),
+        "Step 1"
+    );
+    assert_eq!(
+        task.with_review(&review, |artifact| artifact.title().to_owned())
+            .expect("review should parse"),
+        "Implementation Review 1"
+    );
+    assert_eq!(
+        task.with_step(&review, |_| ())
+            .expect_err("review should not pass as step")
+            .to_string(),
+        "artifact kind does not match task accessor"
+    );
+    assert_eq!(
+        task.with_step(&outside, |_| ())
+            .expect_err("outside step should fail")
+            .to_string(),
+        "artifact is outside the task directory"
+    );
 }
