@@ -92,7 +92,76 @@ fn check_accepts_an_explicit_valid_file() {
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
-    assert_eq!(stdout, "checked 1 artifact(s); 0 invalid\n");
+    assert_eq!(stdout, "checked 1 artifact(s); 0 invalid; GOOD\n");
+}
+
+#[test]
+fn check_reports_format_agnostic_macros_as_incomplete() {
+    let directory = TestDir::new("incomplete-generic");
+    let artifact = directory.path.join("notes.md");
+    fs::write(&artifact, "# Notes\n\nbefore __NOW__ after\n").expect("notes should be written");
+
+    let output = run_check(&directory.path, &[artifact.as_os_str()]);
+
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).ends_with("notes.md: INCOMPLETE\n"));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "checked 1 artifact(s); 0 invalid; INCOMPLETE\n");
+}
+
+#[test]
+fn check_allows_embedded_macros_in_each_goal_metadata_value() {
+    let directory = TestDir::new("goal-metadata-macros");
+
+    for (name, original) in [
+        ("status", "accepted"),
+        ("created", "2026-07-31T12:00:00Z"),
+        ("updated", "2026-07-31T21:00:00+09:00"),
+    ] {
+        let artifact = directory.path.join("goal.md");
+        let source = VALID_GOAL.replacen(original, "prefix__NOW__suffix", 1);
+        fs::write(&artifact, source).expect("goal should be written");
+
+        let output = run_check(&directory.path, &[artifact.as_os_str()]);
+        assert!(output.status.success(), "metadata field `{name}`");
+        assert!(String::from_utf8_lossy(&output.stderr).ends_with("goal.md: INCOMPLETE\n"), "metadata field `{name}`");
+        assert!(String::from_utf8_lossy(&output.stdout).ends_with("INCOMPLETE\n"), "metadata field `{name}`");
+    }
+}
+
+#[test]
+fn check_preserves_bad_precedence_and_exact_backtick_exclusion() {
+    let directory = TestDir::new("macro-precedence");
+    let bad = directory.path.join("goal.md");
+    fs::write(&bad, "not a title __NOW__\n").expect("goal should be written");
+
+    let output = run_check(&directory.path, &[bad.as_os_str()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stdout).ends_with("BAD\n"));
+
+    let excluded = directory.path.join("notes.md");
+    fs::write(&excluded, "# Notes\n\nbefore`__NOW__`after\n").expect("notes should be written");
+    let output = run_check(&directory.path, &[excluded.as_os_str()]);
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).ends_with("GOOD\n"));
+}
+
+#[test]
+fn check_aggregates_good_and_incomplete_artifacts_as_incomplete() {
+    let directory = TestDir::new("aggregate-incomplete");
+    fs::write(directory.path.join("goal.md"), VALID_GOAL).expect("goal should be written");
+    fs::write(
+        directory.path.join("plan.md"),
+        VALID_PLAN.replace(
+            "## Technical Summary\nText.",
+            "## Technical Summary\n__NOW__",
+        ),
+    )
+    .expect("plan should be written");
+
+    let output = run_check(&directory.path, &[directory.path.as_os_str()]);
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).ends_with("plan.md: INCOMPLETE\n"));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "checked 2 artifact(s); 0 invalid; INCOMPLETE\n");
 }
 
 #[test]

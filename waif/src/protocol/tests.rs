@@ -451,7 +451,7 @@ fn artifact_file_parsers_use_each_schema_structure() {
 }
 
 #[test]
-fn generic_parse_and_diagnostics_keep_schema_validation_separate() {
+fn generic_parse_and_check_keep_schema_validation_separate() {
     let workspace = TestDir::new("separate-parse-check");
     let goal_path = workspace.path.join("goal.md");
     fs::write(&goal_path, "# Goal\n- Status: invalid\n## Outcome\nText.\n")
@@ -459,15 +459,36 @@ fn generic_parse_and_diagnostics_keep_schema_validation_separate() {
     let goal = ArtifactFile::read(goal_path).expect("goal should load");
 
     assert!(goal.parse_goal().is_ok());
-    assert!(goal.diagnostics().iter().any(|diagnostic| diagnostic
-        .message()
-        .contains("metadata `Status`")));
+    assert!(goal.check().diagnostics().iter().any(|diagnostic| diagnostic.message().contains("metadata `Status`")));
 
     let generic_path = workspace.path.join("review.md");
     fs::write(&generic_path, "# Review\n## Notes\nOpaque.\n").expect("review should be written");
     let generic = ArtifactFile::read(generic_path).expect("generic artifact should load");
     assert!(generic.parse_generic().is_ok());
-    assert!(generic.diagnostics().is_empty());
+    assert!(generic.check().diagnostics().is_empty());
+}
+
+#[test]
+fn artifact_check_classifies_macros_errors_and_warnings_by_precedence() {
+    let workspace = TestDir::new("artifact-classification");
+
+    let generic_path = workspace.path.join("notes.md");
+    fs::write(&generic_path, "# Notes\n\n__NOW__\n").expect("notes should be written");
+    let generic = ArtifactFile::read(generic_path).expect("notes should load");
+    assert_eq!(generic.check().classification(), ArtifactClassification::Incomplete);
+
+    let bad_path = workspace.path.join("goal.md");
+    fs::write(&bad_path, "not a title __NOW__\n").expect("goal should be written");
+    let bad = ArtifactFile::read(bad_path).expect("goal should load");
+    assert_eq!(bad.check().classification(), ArtifactClassification::Bad);
+
+    let warning_path = workspace.path.join("warning.md");
+    fs::write(&warning_path, "# Notes\n## Empty\n").expect("warning should be written");
+    let warning = ArtifactFile::read(warning_path).expect("warning should load");
+    assert_eq!(warning.check().classification(), ArtifactClassification::Good);
+
+    assert_eq!(ArtifactClassification::worse(ArtifactClassification::Good, ArtifactClassification::Incomplete), ArtifactClassification::Incomplete);
+    assert_eq!(ArtifactClassification::worse(ArtifactClassification::Incomplete, ArtifactClassification::Bad), ArtifactClassification::Bad);
 }
 
 #[test]

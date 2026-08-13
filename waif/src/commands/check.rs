@@ -6,7 +6,7 @@ use clap::Args;
 
 use super::relative_path;
 use crate::parser::Severity;
-use crate::protocol::{discover_artifact_paths, ArtifactFile, WorkflowDir};
+use crate::protocol::{discover_artifact_paths, ArtifactClassification, ArtifactFile, WorkflowDir};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -31,16 +31,16 @@ impl CheckCommand {
         };
 
         let mut bad_artifacts = 0;
+        let mut classification = ArtifactClassification::Good;
         for path in &paths {
             let display_path = relative_path(&workspace_dir, path);
             match ArtifactFile::read(path.clone()) {
                 Ok(file) => {
-                    let diagnostics = file.diagnostics();
-                    let has_errors = diagnostics
-                        .iter()
-                        .any(|diagnostic| diagnostic.severity() == Severity::Error);
+                    let check = file.check();
+                    classification =
+                        ArtifactClassification::worse(classification, check.classification());
 
-                    for diagnostic in diagnostics {
+                    for diagnostic in check.diagnostics() {
                         let severity = match diagnostic.severity() {
                             Severity::Error => "ERROR",
                             Severity::Warning => "WARNING",
@@ -52,22 +52,27 @@ impl CheckCommand {
                         );
                     }
 
-                    if has_errors {
-                        bad_artifacts += 1;
+                    match check.classification() {
+                        ArtifactClassification::Incomplete => {
+                            eprintln!("{display_path}: INCOMPLETE");
+                        }
+                        ArtifactClassification::Bad => bad_artifacts += 1,
+                        ArtifactClassification::Good => {}
                     }
                 }
                 Err(error) => {
                     bad_artifacts += 1;
+                    classification = ArtifactClassification::Bad;
                     eprintln!("{display_path}: {error}");
                 }
             }
         }
 
         println!(
-            "checked {} artifact(s); {bad_artifacts} invalid",
-            paths.len()
+            "checked {} artifact(s); {bad_artifacts} invalid; {classification}",
+            paths.len(),
         );
-        if bad_artifacts == 0 {
+        if classification != ArtifactClassification::Bad {
             Ok(())
         } else {
             Err(Box::new(CheckFailed))

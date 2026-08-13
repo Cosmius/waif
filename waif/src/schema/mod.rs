@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use crate::artifact::{Artifact, FindingsBody, Item, ItemForm, Located, Section, SourceSpan};
+use crate::macro_processor;
 use crate::parser::{Diagnostic, Position};
 
 //region schema definition
@@ -235,11 +236,14 @@ fn validate_metadata(ctx: &mut ValidationContext, artifact: &Artifact) {
         }
 
         if let Some(rule) = ctx.schema.metadata.iter().find(|rule| rule.name == key) {
-            if let Err(message) = (rule.validator)(metadata.value()) {
-                ctx.diagnostics.push(Diagnostic::error_p(
-                    pos,
-                    format!("metadata `{}` {message}", rule.name),
-                ));
+            let value = metadata.value();
+            if macro_processor::scan(value).is_empty() {
+                if let Err(message) = (rule.validator)(value) {
+                    ctx.diagnostics.push(Diagnostic::error_p(
+                        pos,
+                        format!("metadata `{}` {message}", rule.name),
+                    ));
+                }
             }
         }
     }

@@ -237,3 +237,34 @@ fn unbound_step_diagnostic_includes_prefix_trailing_dash() {
         .contains("must use `S<number>-C<number>`"));
     assert!(prefix.is_none());
 }
+
+#[test]
+fn metadata_macro_skips_only_its_value_validator() {
+    fn reject_value(value: &str) -> Result<(), String> {
+        Err(format!("rejected `{value}`"))
+    }
+
+    const SCHEMA: Schema = Schema {
+        prefix: ArtifactPrefixRule::Known(""),
+        metadata: &[MetadataRule {
+            name: "Value",
+            validator: reject_value,
+        }],
+        sections: &[],
+    };
+    let config = ParserConfig::default();
+
+    let source = "# Artifact\n- Value: prefix__NOW__suffix\n";
+    let artifact = parser::parse_with_config(source, &config).expect("parsed artifact");
+    assert!(validate(&artifact, &SCHEMA).is_empty());
+
+    let source = "# Artifact\n- Value: `__NOW__`\n";
+    let artifact = parser::parse_with_config(source, &config).expect("parsed artifact");
+    assert_eq!(validate(&artifact, &SCHEMA).len(), 1);
+
+    let source = "# Artifact\n- Value: __NOW__\n- Value: __NOW__\n";
+    let artifact = parser::parse_with_config(source, &config).expect("parsed artifact");
+    let diagnostics = validate(&artifact, &SCHEMA);
+    assert_eq!(diagnostics.len(), 1);
+    assert!(diagnostics[0].message().contains("duplicate metadata key `Value`"));
+}

@@ -4,6 +4,7 @@ use clap::Parser;
 
 mod artifact;
 mod commands;
+mod macro_processor;
 mod parser;
 mod protocol;
 mod schema;

@@ -5,7 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::artifact::Artifact;
-use crate::parser::{self, Diagnostic};
+use crate::macro_processor;
+use crate::parser::{self, Diagnostic, Severity};
 use crate::schemas::{goal, plan, review, step};
 
 use super::Result;
@@ -22,6 +23,44 @@ pub(crate) enum ArtifactKind {
 pub struct ArtifactFile {
     path: PathBuf,
     contents: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum ArtifactClassification {
+    Good,
+    Incomplete,
+    Bad,
+}
+
+impl ArtifactClassification {
+    pub(crate) fn worse(left: Self, right: Self) -> Self {
+        left.max(right)
+    }
+}
+
+impl fmt::Display for ArtifactClassification {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Good => formatter.write_str("GOOD"),
+            Self::Incomplete => formatter.write_str("INCOMPLETE"),
+            Self::Bad => formatter.write_str("BAD"),
+        }
+    }
+}
+
+pub(crate) struct ArtifactCheck {
+    classification: ArtifactClassification,
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl ArtifactCheck {
+    pub(crate) fn classification(&self) -> ArtifactClassification {
+        self.classification
+    }
+
+    pub(crate) fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
 }
 
 impl ArtifactFile {
@@ -62,13 +101,31 @@ impl ArtifactFile {
         self.parse_with(parser::parse)
     }
 
-    pub fn diagnostics(&self) -> Vec<Diagnostic> {
+    fn diagnostics(&self) -> Vec<Diagnostic> {
         match self.kind() {
             ArtifactKind::Goal => goal::check(&self.contents),
             ArtifactKind::Plan => plan::check(&self.contents),
             ArtifactKind::Step => step::check(&self.path, &self.contents),
             ArtifactKind::ImplementationReview => review::check(&self.path, &self.contents),
             ArtifactKind::Generic => parser::parse(&self.contents).err().unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn check(&self) -> ArtifactCheck {
+        let diagnostics = self.diagnostics();
+        let classification = if diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity() == Severity::Error)
+        {
+            ArtifactClassification::Bad
+        } else if macro_processor::scan(&self.contents).is_empty() {
+            ArtifactClassification::Good
+        } else {
+            ArtifactClassification::Incomplete
+        };
+        ArtifactCheck {
+            classification,
+            diagnostics,
         }
     }
 
