@@ -5,7 +5,7 @@ mod artifact;
 mod task;
 mod workflow;
 
-pub(crate) use artifact::{ArtifactClassification, ArtifactFile, ArtifactKind};
+pub(crate) use artifact::{ArtifactCheck, ArtifactClassification, ArtifactFile, ArtifactKind};
 pub(crate) use task::{discover_artifact_paths, Task};
 pub(crate) use workflow::WorkflowDir;
 

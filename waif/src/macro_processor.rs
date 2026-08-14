@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Range;
 
 use chrono::{DateTime, Local, SecondsFormat};
@@ -13,11 +14,11 @@ impl MacroContext {
     }
 }
 
-type MacroResolver = fn(MacroContext) -> Result<String, String>;
+type MacroResolver = fn(&MacroContext) -> Result<String, String>;
 
 const CATALOGUE: &[(&str, MacroResolver)] = &[("__NOW__", resolve_now)];
 
-fn resolve_now(context: MacroContext) -> Result<String, String> {
+fn resolve_now(context: &MacroContext) -> Result<String, String> {
     Ok(context.now.to_rfc3339_opts(SecondsFormat::Secs, false))
 }
 
@@ -49,6 +50,37 @@ pub(crate) fn scan(source: &str) -> Vec<MacroOccurrence> {
 
     occurrences.sort_by_key(|occurrence| occurrence.range.start);
     occurrences
+}
+
+pub(crate) fn expand(source: &str) -> Result<Option<String>, String> {
+    let occurrences = scan(source);
+    if occurrences.is_empty() {
+        return Ok(None);
+    }
+
+    let context = MacroContext::new();
+    let mut resolutions = HashMap::<&str, String>::new();
+    let mut candidate = String::with_capacity(source.len());
+    let mut copied_until = 0;
+
+    for occurrence in occurrences {
+        candidate.push_str(&source[copied_until..occurrence.range.start]);
+        let replacement = match resolutions.get(occurrence.literal) {
+            None => {
+                let replacement = (occurrence.resolver)(&context)?;
+                resolutions.insert(occurrence.literal, replacement);
+                resolutions
+                    .get(occurrence.literal)
+                    .expect("resolution was just added")
+            }
+            Some(v) => v,
+        };
+        candidate.push_str(replacement);
+        copied_until = occurrence.range.end;
+    }
+    candidate.push_str(&source[copied_until..]);
+
+    Ok(Some(candidate))
 }
 
 #[cfg(test)]
@@ -94,10 +126,31 @@ mod tests {
     fn macro_resolver_uses_the_shared_context_value() {
         let found = scan("__NOW__ and __NOW__");
         let context = MacroContext::new();
-        let first = (found[0].resolver)(context.clone()).expect("macro should resolve");
-        let second = (found[1].resolver)(context).expect("macro should resolve");
+        let first = (found[0].resolver)(&context).expect("macro should resolve");
+        let second = (found[1].resolver)(&context).expect("macro should resolve");
 
         assert_eq!(first, second);
         assert!(DateTime::parse_from_rfc3339(&first).is_ok());
+    }
+
+    #[test]
+    fn macro_expansion_preserves_text_and_uses_one_timestamp() {
+        let source = "é __NOW____NOW__ `__NOW__` tail";
+        let candidate = expand(source)
+            .expect("macros should resolve")
+            .expect("macros should be found");
+        let expanded = candidate
+            .strip_prefix("é ")
+            .and_then(|candidate| candidate.strip_suffix(" `__NOW__` tail"))
+            .expect("surrounding source should be preserved");
+        let midpoint = expanded.len() / 2;
+
+        assert_eq!(&expanded[..midpoint], &expanded[midpoint..]);
+        assert!(DateTime::parse_from_rfc3339(&expanded[..midpoint]).is_ok());
+    }
+
+    #[test]
+    fn macro_expansion_reports_no_work_without_changing_source() {
+        assert_eq!(expand("plain `__NOW__` text").expect("scan should work"), None);
     }
 }

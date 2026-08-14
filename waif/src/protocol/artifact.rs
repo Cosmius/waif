@@ -48,6 +48,7 @@ impl fmt::Display for ArtifactClassification {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct ArtifactCheck {
     classification: ArtifactClassification,
     diagnostics: Vec<Diagnostic>,
@@ -67,6 +68,10 @@ impl ArtifactFile {
     pub fn read(path: PathBuf) -> Result<Self> {
         let contents = fs::read_to_string(&path)?;
         Ok(Self { path, contents })
+    }
+
+    pub(crate) fn from_contents(path: PathBuf, contents: String) -> Self {
+        Self { path, contents }
     }
 
     pub fn path(&self) -> &Path {
@@ -143,7 +148,7 @@ impl ArtifactFile {
 }
 
 impl ArtifactKind {
-    fn for_path(path: &Path) -> Self {
+    pub(crate) fn for_path(path: &Path) -> Self {
         let Some(name) = path.file_name() else {
             return Self::Generic;
         };
@@ -158,6 +163,10 @@ impl ArtifactKind {
         } else {
             Self::Generic
         }
+    }
+
+    pub(crate) fn is_recognized(self) -> bool {
+        self != Self::Generic
     }
 }
 
