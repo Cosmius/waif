@@ -15,10 +15,10 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 enum ProtocolError {
     ArtifactKindMismatch,
     ArtifactOutsideTask,
-    CurrentTaskEscapesTasksDir,
     InvalidCurrentTask,
     InvalidTaskSlug,
     InvalidTaskName,
+    MalformedTaskName,
     TaskDoesNotExist,
     TasksDirMissing,
     WorkflowDirMissing,
@@ -33,15 +33,16 @@ impl fmt::Display for ProtocolError {
             Self::ArtifactOutsideTask => {
                 write!(formatter, "artifact is outside the task directory")
             }
-            Self::CurrentTaskEscapesTasksDir => {
-                write!(formatter, "current task must resolve inside .waif/tasks")
-            }
             Self::InvalidCurrentTask => write!(formatter, "current task is invalid"),
             Self::InvalidTaskSlug => write!(
                 formatter,
                 "task slug must be lowercase letters, numbers, and hyphens"
             ),
             Self::InvalidTaskName => write!(formatter, "current task name is invalid"),
+            Self::MalformedTaskName => write!(
+                formatter,
+                "task name must use YYYYMMDD-N-lowercase-hyphenated-slug"
+            ),
             Self::TaskDoesNotExist => write!(formatter, "task dir does not exist"),
             Self::TasksDirMissing => write!(formatter, "workflow tasks dir is missing"),
             Self::WorkflowDirMissing => write!(formatter, "workflow dir is missing"),

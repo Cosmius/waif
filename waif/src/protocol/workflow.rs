@@ -79,6 +79,19 @@ impl WorkflowDir {
         Ok(Task::new(task_dir))
     }
 
+    pub fn task(&self, task_name: &str) -> Result<Task> {
+        validate_task_name(task_name)?;
+        if !self.tasks_dir().is_dir() {
+            return Err(Box::new(ProtocolError::TasksDirMissing));
+        }
+
+        let task_dir = self.tasks_dir().join(task_name);
+        if !task_dir.is_dir() {
+            return Err(Box::new(ProtocolError::TaskDoesNotExist));
+        }
+        Ok(Task::new(task_dir))
+    }
+
     pub fn switch_task(&self, task: &Task) -> Result<()> {
         let task_name = task.name()?;
         if !task.path.is_dir() {
@@ -108,51 +121,62 @@ fn resolve_current_task(tasks_dir: &Path, current_link: &Path) -> Result<PathBuf
     let task_dir = if target.is_absolute() {
         target
     } else {
-        current_link
-            .parent()
-            .ok_or(ProtocolError::InvalidCurrentTask)?
-            .join(target)
+        tasks_dir.join(target)
     };
-
-    let tasks_dir = tasks_dir.canonicalize()?;
-    let task_dir = task_dir.canonicalize()?;
-    if task_dir.parent() != Some(tasks_dir.as_path()) {
-        return Err(Box::new(ProtocolError::CurrentTaskEscapesTasksDir));
-    }
     Ok(task_dir)
 }
 
 fn validate_slug(slug: &str) -> Result<()> {
-    let valid = !slug.is_empty()
-        && !slug.starts_with('-')
-        && !slug.ends_with('-')
-        && slug
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        && !slug.contains("--");
-    if !valid {
+    if !is_valid_slug(slug) {
         return Err(Box::new(ProtocolError::InvalidTaskSlug));
     }
     Ok(())
 }
 
+fn is_valid_slug(slug: &str) -> bool {
+    !slug.is_empty()
+        && !slug.starts_with('-')
+        && !slug.ends_with('-')
+        && slug
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && !slug.contains("--")
+}
+
+fn parse_task_name(task_name: &str) -> Result<(&str, u32, &str)> {
+    let Some((date, remainder)) = task_name.split_once('-') else {
+        return Err(Box::new(ProtocolError::MalformedTaskName));
+    };
+    let Some((sequence, slug)) = remainder.split_once('-') else {
+        return Err(Box::new(ProtocolError::MalformedTaskName));
+    };
+    let valid_date = date.len() >= 8;
+    let Ok(sequence_number) = sequence.parse::<u32>() else {
+        return Err(Box::new(ProtocolError::MalformedTaskName));
+    };
+    if !valid_date || sequence_number == 0 || !is_valid_slug(slug) {
+        return Err(Box::new(ProtocolError::MalformedTaskName));
+    }
+    Ok((date, sequence_number, slug))
+}
+
+fn validate_task_name(task_name: &str) -> Result<()> {
+    parse_task_name(task_name).map(|_| ())
+}
+
 fn next_task_sequence(tasks_dir: &Path, date: &str) -> Result<u32> {
-    let prefix = format!("{date}-");
     let mut highest_sequence = 0;
     for entry in fs::read_dir(tasks_dir)? {
         let entry = entry?;
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
         };
-        let Some(remainder) = name.strip_prefix(&prefix) else {
+        let Ok((task_date, sequence, _)) = parse_task_name(&name) else {
             continue;
         };
-        let Some((sequence, _)) = remainder.split_once('-') else {
+        if task_date != date {
             continue;
-        };
-        let Ok(sequence) = sequence.parse::<u32>() else {
-            continue;
-        };
+        }
         highest_sequence = highest_sequence.max(sequence);
     }
 

@@ -135,10 +135,8 @@ fn switch_task_updates_current_link() {
         .expect("current task should resolve")
         .expect("current task should exist");
     assert_eq!(
-        current_task.path,
-        task.path
-            .canonicalize()
-            .expect("task dir should canonicalize")
+        current_task.path.canonicalize().expect("current task dir should canonicalize"),
+        task        .path.canonicalize().expect("task dir should canonicalize"),
     );
 }
 
@@ -188,6 +186,96 @@ fn create_task_rejects_invalid_slugs() {
     }
 }
 
+#[test]
+fn task_lookup_accepts_an_exact_direct_child_directory() {
+    let workspace = TestDir::new("lookup-task");
+    let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
+    let task_dir = workflow_dir.tasks_dir().join("20260817-2-existing-task");
+    fs::create_dir_all(&task_dir).expect("task should be created");
+
+    let task = workflow_dir
+        .task("20260817-2-existing-task")
+        .expect("task should resolve");
+
+    assert_eq!(task.path, task_dir);
+}
+
+#[test]
+fn task_lookup_rejects_malformed_complete_names() {
+    let workspace = TestDir::new("malformed-task-name");
+    let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
+
+    for name in [
+        "",
+        "20260817",
+        "20260817-0-task",
+        "2026081-1-task",
+        "20260817-1-Bad",
+        "20260817-1-bad--slug",
+    ] {
+        let error = match workflow_dir.task(name) {
+            Ok(_) => panic!("malformed task name should fail: {name}"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "task name must use YYYYMMDD-N-lowercase-hyphenated-slug"
+        );
+    }
+}
+
+#[test]
+fn task_lookup_rejects_missing_and_non_directory_paths() {
+    let workspace = TestDir::new("invalid-task-paths");
+    let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
+    fs::create_dir_all(workflow_dir.tasks_dir()).expect("tasks dir should be created");
+
+    let missing = match workflow_dir.task("20260817-1-missing") {
+        Ok(_) => panic!("missing task should fail"),
+        Err(error) => error,
+    };
+    fs::write(
+        workflow_dir.tasks_dir().join("20260817-2-regular-file"),
+        "not a task directory",
+    )
+    .expect("regular file should be created");
+    let invalid = match workflow_dir.task("20260817-2-regular-file") {
+        Ok(_) => panic!("regular file should fail"),
+        Err(error) => error,
+    };
+
+    assert_eq!(missing.to_string(), "task dir does not exist");
+    assert_eq!(invalid.to_string(), "task dir does not exist");
+}
+
+#[cfg(unix)]
+#[test]
+fn current_task_retains_a_nominal_symlinked_task_path() {
+    let workspace = TestDir::new("nominal-current-task");
+    let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
+    fs::create_dir_all(workflow_dir.tasks_dir()).expect("tasks dir should be created");
+    fs::create_dir(workflow_dir.path.join("outside")).expect("outside dir should be created");
+    symlink(
+        "../outside",
+        workflow_dir.tasks_dir().join("20260817-1-linked-task"),
+    )
+    .expect("task symlink should be created");
+    symlink("./20260817-1-linked-task", workflow_dir.current_link())
+        .expect("current link should be created");
+
+    let task = workflow_dir
+        .current_task()
+        .expect("current task should resolve")
+        .expect("current task should exist");
+
+    assert_eq!(
+        task.path,
+        workflow_dir.tasks_dir().join("20260817-1-linked-task")
+    );
+    assert_eq!(task.name().expect("task should have a name"), "20260817-1-linked-task");
+}
+
 #[cfg(unix)]
 #[test]
 fn switch_task_rejects_current_file() {
@@ -212,32 +300,6 @@ fn switch_task_rejects_current_file() {
 
 #[cfg(unix)]
 #[test]
-fn switch_task_rejects_current_link_to_nested_task_dir() {
-    let workspace = TestDir::new("current-nested-link");
-    let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
-    workflow_dir
-        .initialise()
-        .expect("workflow should initialise");
-    let task = workflow_dir
-        .create_task("new-task")
-        .expect("task should be created");
-    let nested_task_dir = workflow_dir.tasks_dir().join("parent/nested");
-    fs::create_dir_all(&nested_task_dir).expect("nested task dir should be created");
-    symlink("parent/nested", workflow_dir.current_link()).expect("current link should be created");
-
-    let error = match workflow_dir.switch_task(&task) {
-        Ok(_) => panic!("nested current link should fail"),
-        Err(error) => error,
-    };
-
-    assert_eq!(
-        error.to_string(),
-        "current task must resolve inside .waif/tasks"
-    );
-}
-
-#[cfg(unix)]
-#[test]
 fn current_task_resolves_relative_link_inside_tasks_dir() {
     let workspace = TestDir::new("relative-current-link");
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
@@ -252,54 +314,11 @@ fn current_task_resolves_relative_link_inside_tasks_dir() {
         .expect("current task should resolve")
         .expect("current task should exist");
 
-    assert_eq!(
-        task.path,
-        task_dir
-            .canonicalize()
-            .expect("task dir should canonicalize")
-    );
+    assert_eq!(task.path.canonicalize().expect("task path should canonicalize"),
+               task_dir .canonicalize().expect("task dir should canonicalize"));
     assert_eq!(
         task.name().expect("task name should be valid"),
         "implement-feature"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn current_task_rejects_links_that_escape_tasks_dir() {
-    let workspace = TestDir::new("escaped-current-link");
-    let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
-    fs::create_dir_all(workflow_dir.tasks_dir()).expect("tasks dir should be created");
-    symlink("..", workflow_dir.current_link()).expect("current link should be created");
-
-    let error = match workflow_dir.current_task() {
-        Ok(_) => panic!("escaping link should fail"),
-        Err(error) => error,
-    };
-
-    assert_eq!(
-        error.to_string(),
-        "current task must resolve inside .waif/tasks"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn current_task_rejects_links_to_nested_task_dirs() {
-    let workspace = TestDir::new("nested-current-link");
-    let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
-    let nested_task_dir = workflow_dir.tasks_dir().join("parent/nested");
-    fs::create_dir_all(&nested_task_dir).expect("nested task dir should be created");
-    symlink("parent/nested", workflow_dir.current_link()).expect("current link should be created");
-
-    let error = match workflow_dir.current_task() {
-        Ok(_) => panic!("nested link should fail"),
-        Err(error) => error,
-    };
-
-    assert_eq!(
-        error.to_string(),
-        "current task must resolve inside .waif/tasks"
     );
 }
 

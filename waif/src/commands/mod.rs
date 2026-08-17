@@ -7,6 +7,7 @@ mod check;
 mod fill;
 mod inspect;
 mod new;
+mod switch;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -20,6 +21,8 @@ pub enum Command {
     Inspect(inspect::InspectCommand),
     /// Create a new workflow task and make it current.
     New(new::NewCommand),
+    /// Select an existing workflow task.
+    Switch(switch::SwitchCommand),
 }
 
 impl Command {
@@ -29,6 +32,7 @@ impl Command {
             Self::Fill(command) => command.run(),
             Self::Inspect(command) => command.run(),
             Self::New(command) => command.run(),
+            Self::Switch(command) => command.run(),
         }
     }
 }
