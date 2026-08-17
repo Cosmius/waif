@@ -2,7 +2,7 @@ use std::error::Error;
 
 use clap::Args;
 
-use super::relative_path;
+use super::{print_tabular_row, relative_path};
 use crate::protocol::WorkflowDir;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -20,15 +20,18 @@ impl SwitchCommand {
         let task = workflow_dir.task(&self.task_name)?;
         workflow_dir.switch_task(&task)?;
 
-        println!("Current task:       {}", task.name()?);
-        println!(
-            "Current task dir:   {}",
-            relative_path(&workspace_dir, &task.path)
+        print_tabular_row("Current task:", task.name()?);
+        print_tabular_row(
+            "Current task dir:",
+            relative_path(&workspace_dir, &task.path),
         );
-        println!(
-            "Current reference:  {} -> ./{}",
-            relative_path(&workspace_dir, &workflow_dir.current_link()),
-            task.name()?
+        print_tabular_row(
+            "Current reference:",
+            format!(
+                "{} -> ./{}",
+                relative_path(&workspace_dir, &workflow_dir.current_link()),
+                task.name()?
+            ),
         );
         Ok(())
     }

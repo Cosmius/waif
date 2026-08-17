@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::fmt::Display;
 use std::path::Path;
 
 use clap::Subcommand;
@@ -42,4 +43,8 @@ fn relative_path(workspace_dir: &Path, path: &Path) -> String {
         .unwrap_or(path)
         .display()
         .to_string()
+}
+
+fn print_tabular_row(label: &str, value: impl Display) {
+    println!("{label:<20}{value}");
 }

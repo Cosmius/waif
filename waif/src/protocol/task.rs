@@ -102,11 +102,11 @@ pub fn discover_artifact_paths(path: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-fn read_optional(path: PathBuf) -> Result<Option<ArtifactFile>> {
-    match fs::symlink_metadata(&path) {
-        Ok(_) => ArtifactFile::read(path).map(Some),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(Box::new(error)),
+pub(super) fn read_optional(path: PathBuf) -> Result<Option<ArtifactFile>> {
+    if path.exists() {
+        ArtifactFile::read(path).map(Some)
+    } else {
+        Ok(None)
     }
 }
 

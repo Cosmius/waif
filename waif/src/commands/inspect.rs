@@ -1,10 +1,11 @@
 use std::error::Error;
+use std::fmt;
 use std::path::Path;
 
 use clap::Args;
 
-use super::relative_path;
-use crate::protocol::{Task, WorkflowDir};
+use super::{print_tabular_row, relative_path};
+use crate::protocol::{ArtifactClassification, Task, WorkflowDir};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -15,41 +16,92 @@ impl InspectCommand {
     pub fn run(self) -> Result<()> {
         let workspace_dir = std::env::current_dir()?;
         let workflow_dir = WorkflowDir::for_workspace(workspace_dir.clone());
-        println!(
-            "Workflow dir:       {}",
-            relative_path(&workspace_dir, &workflow_dir.path)
+        print_tabular_row(
+            "Workflow dir:",
+            relative_path(&workspace_dir, &workflow_dir.path),
         );
-        match workflow_dir.current_task()? {
-            Some(task) => print_current_task(&workspace_dir, task)?,
-            None => println!("Current task:       none"),
+
+        if !workflow_dir.exists() {
+            print_tabular_row("Current task:", "none");
+            print_tabular_row("Next:", "Create task");
+            return unusable();
         }
-        Ok(())
+
+        let task = match workflow_dir.current_task() {
+            Ok(Some(task)) if task.path.is_dir() => task,
+            _ => {
+                print_tabular_row("Current task:", "none");
+                print_tabular_row("Next:", "Create or select task");
+                return unusable();
+            }
+        };
+        print_current_task(&workspace_dir, task)
     }
 }
 
 fn print_current_task(workspace_dir: &Path, task: Task) -> Result<()> {
-    let task_name = task.name()?;
-
-    println!("Current task:       {task_name}");
-    println!(
-        "Current task dir:   {}",
-        relative_path(workspace_dir, &task.path)
+    let task_name = task.name().map_err(|_| UnusableInspection)?;
+    print_tabular_row("Current task:", task_name);
+    print_tabular_row(
+        "Current task dir:",
+        relative_path(workspace_dir, &task.path),
     );
     println!("Goal:");
-    let goal = task.with_goal(|goal| {
-        let status = goal
-            .get_metadata("Status")
-            .map(|metadata| metadata.value())
-            .unwrap_or("BAD VALUE");
-        println!(
-            "  Path:             {}",
-            relative_path(workspace_dir, &task.path.join("goal.md"))
-        );
-        println!("  Status:           {status}");
-    })?;
-    if goal.is_none() {
-        println!("  not created yet");
+
+    let goal_path = task.path.join("goal.md");
+    let inspection = match task.inspect_goal() {
+        Ok(Some(inspection)) => inspection,
+        Ok(None) => {
+            println!("  not created yet");
+            print_tabular_row("Next:", "Draft goal");
+            return Ok(());
+        }
+        Err(_) => {
+            print_tabular_row("  Path:", relative_path(workspace_dir, &goal_path));
+            print_tabular_row("  Status:", "BAD");
+            print_tabular_row("Next:", "Check goal");
+            return unusable();
+        }
+    };
+
+    print_tabular_row("  Path:", relative_path(workspace_dir, &goal_path));
+    if inspection.classification() == ArtifactClassification::Bad {
+        print_tabular_row("  Status:", "BAD");
+        print_tabular_row("Next:", "Check goal");
+        return unusable();
     }
 
+    let status = inspection.status().unwrap_or("BAD");
+    print_tabular_row("  Status:", status);
+    if let Some(ready) = inspection.ready_to_accept() {
+        print_tabular_row("  Ready to accept:", if ready { "yes" } else { "no" });
+    }
+
+    if inspection.classification() == ArtifactClassification::Incomplete {
+        print_tabular_row("Next:", "Fill goal");
+    } else if matches!(status, "drafting" | "amending") {
+        if inspection.has_open_questions() {
+            print_tabular_row("Next:", "Revise goal");
+        } else {
+            print_tabular_row("Next:", "Revise or accept goal");
+        }
+    } else if status == "accepted" {
+        print_tabular_row("Next:", "Draft plan");
+    }
     Ok(())
 }
+
+fn unusable<T>() -> Result<T> {
+    Err(Box::new(UnusableInspection))
+}
+
+#[derive(Debug)]
+struct UnusableInspection;
+
+impl fmt::Display for UnusableInspection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("workflow context is unusable")
+    }
+}
+
+impl Error for UnusableInspection {}

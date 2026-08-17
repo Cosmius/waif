@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fmt;
 
 mod artifact;
+mod inspection;
 mod task;
 mod workflow;
 

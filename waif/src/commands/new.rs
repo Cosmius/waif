@@ -2,7 +2,7 @@ use std::error::Error;
 
 use clap::Args;
 
-use super::relative_path;
+use super::{print_tabular_row, relative_path};
 use crate::protocol::WorkflowDir;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -24,17 +24,17 @@ impl NewCommand {
         let task = workflow_dir.create_task(&self.task_slug)?;
         workflow_dir.switch_task(&task)?;
 
-        println!(
-            "Workflow dir:       {}",
-            relative_path(&workspace_dir, &workflow_dir.path)
+        print_tabular_row(
+            "Workflow dir:",
+            relative_path(&workspace_dir, &workflow_dir.path),
         );
-        println!("Current task:       {}", task.name()?);
-        println!(
-            "Current task dir:   {}",
-            relative_path(&workspace_dir, &task.path)
+        print_tabular_row("Current task:", task.name()?);
+        print_tabular_row(
+            "Current task dir:",
+            relative_path(&workspace_dir, &task.path),
         );
         if let Some(error) = git_error {
-            println!("Workflow git:       not initialised ({error})");
+            print_tabular_row("Workflow git:", format!("not initialised ({error})"));
         }
         Ok(())
     }

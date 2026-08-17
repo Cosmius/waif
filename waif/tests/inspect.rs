@@ -1,7 +1,7 @@
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 mod test_support;
@@ -10,51 +10,182 @@ use test_support::TestDir;
 
 #[cfg(unix)]
 #[test]
-fn inspect_reads_goal_metadata_with_the_artifact_parser() {
-    let workspace = current_task_workspace("valid-goal");
-    fs::write(
-        current_task_path(&workspace).join("goal.md"),
-        "\
-# Goal: Example
-
-- Status: drafting
-
-## Goal
-
-Build the example.
-",
-    )
-    .expect("goal should be written");
+fn inspect_reports_ready_drafting_goal_in_the_existing_layout() {
+    let workspace = current_task_workspace("ready-goal");
+    write_goal(&workspace, "drafting", "2026-08-17T12:00:00+09:00", "");
 
     let output = run_inspect(&workspace.path);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(output.status.success());
-    assert!(stdout.contains("Status:           drafting"));
+    assert!(stdout.contains("Workflow dir:       .waif"));
+    assert!(stdout.contains("Current task:       20260728-1-example"));
+    assert!(stdout.contains("Current task dir:   .waif/tasks/./20260728-1-example"));
+    assert!(stdout.contains(
+        "Goal:\n  Path:             .waif/tasks/./20260728-1-example/goal.md"
+    ));
+    assert!(stdout.contains("  Status:           drafting"));
+    assert!(stdout.contains("  Ready to accept:  yes"));
+    assert!(stdout.contains("Next:               Revise or accept goal\n"));
 }
 
 #[cfg(unix)]
 #[test]
-fn inspect_rejects_a_goal_without_a_title() {
-    let workspace = current_task_workspace("invalid-goal");
-    fs::write(
-        current_task_path(&workspace).join("goal.md"),
-        "\
-- Status: drafting
-
-## Goal
-
-Build the example.
-",
-    )
-    .expect("goal should be written");
+fn inspect_reports_open_questions_as_not_ready() {
+    let workspace = current_task_workspace("open-questions");
+    write_goal(
+        &workspace,
+        "drafting",
+        "2026-08-17T12:00:00+09:00",
+        QUESTIONS,
+    );
 
     let output = run_inspect(&workspace.path);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
 
-    assert_eq!(output.status.code(), Some(1));
-    assert!(stderr
-        .contains("goal.md:1: first non-whitespace line must be a level-one Markdown heading"));
+    assert!(output.status.success());
+    assert!(stdout.contains("  Status:           drafting"));
+    assert!(stdout.contains("  Ready to accept:  no"));
+    assert!(stdout.contains("Next:               Revise goal\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_incomplete_amending_goal() {
+    let workspace = current_task_workspace("incomplete");
+    write_goal(&workspace, "amending", "__NOW__", "");
+
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("  Status:           amending"));
+    assert!(stdout.contains("  Ready to accept:  no"));
+    assert!(stdout.contains("Next:               Fill goal\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_accepted_goal_without_readiness() {
+    let workspace = current_task_workspace("accepted");
+    write_goal(&workspace, "accepted", "2026-08-17T12:00:00+09:00", "");
+
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("  Status:           accepted"));
+    assert!(!stdout.contains("Ready to accept:"));
+    assert!(stdout.contains("Next:               Draft plan\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_treats_empty_open_questions_as_ready() {
+    let workspace = current_task_workspace("empty-questions");
+    write_goal(
+        &workspace,
+        "drafting",
+        "2026-08-17T12:00:00+09:00",
+        "\n## Open Questions\n",
+    );
+
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("  Status:           drafting"));
+    assert!(stdout.contains("  Ready to accept:  yes"));
+    assert!(stdout.contains("Next:               Revise or accept goal\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_missing_and_bad_goals_without_diagnostics() {
+    let missing = current_task_workspace("missing-goal");
+    let missing_output = run_inspect(&missing.path);
+    let missing_stdout = String::from_utf8_lossy(&missing_output.stdout);
+
+    assert!(missing_output.status.success());
+    assert!(missing_stdout.contains(
+        "Goal:\n  not created yet\nNext:               Draft goal\n"
+    ));
+
+    let bad = current_task_workspace("bad-goal");
+    fs::write(current_task_path(&bad).join("goal.md"), "not a goal\n")
+        .expect("goal should be written");
+    let bad_output = run_inspect(&bad.path);
+    let bad_stdout = String::from_utf8_lossy(&bad_output.stdout);
+    let bad_stderr = String::from_utf8_lossy(&bad_output.stderr);
+
+    assert_eq!(bad_output.status.code(), Some(1));
+    assert!(bad_stdout.contains("  Status:           BAD\nNext:               Check goal\n"));
+    assert_eq!(bad_stderr, "workflow context is unusable\n");
+    assert!(!bad_stdout.contains("first non-whitespace line"));
+    assert!(!bad_stderr.contains("first non-whitespace line"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_unavailable_context_with_one_next_instruction() {
+    let missing = TestDir::new("missing-workflow");
+    let missing_output = run_inspect(&missing.path);
+    let missing_stdout = String::from_utf8_lossy(&missing_output.stdout);
+
+    assert_eq!(missing_output.status.code(), Some(1));
+    assert!(missing_stdout.contains(
+        "Current task:       none\nNext:               Create task\n"
+    ));
+
+    let no_current = TestDir::new("missing-current");
+    fs::create_dir_all(no_current.path.join(".waif/tasks")).expect("tasks should be created");
+    let no_current_output = run_inspect(&no_current.path);
+    let no_current_stdout = String::from_utf8_lossy(&no_current_output.stdout);
+
+    assert_eq!(no_current_output.status.code(), Some(1));
+    assert!(no_current_stdout.contains(
+        "Current task:       none\nNext:               Create or select task\n"
+    ));
+
+    let selectable = TestDir::new("selectable-task");
+    fs::create_dir_all(selectable.path.join(".waif/tasks/20260818-1-existing-task"))
+        .expect("task should be created");
+    let selectable_output = run_inspect(&selectable.path);
+    let selectable_stdout = String::from_utf8_lossy(&selectable_output.stdout);
+
+    assert_eq!(selectable_output.status.code(), Some(1));
+    assert!(selectable_stdout.contains(
+        "Current task:       none\nNext:               Create or select task\n"
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_is_read_only_and_rejects_arguments() {
+    let workspace = current_task_workspace("read-only");
+    write_goal(&workspace, "drafting", "2026-08-17T12:00:00+09:00", "");
+    let goal_path = current_task_path(&workspace).join("goal.md");
+    let before_goal = fs::read(&goal_path).expect("goal should be readable");
+    let before_current = fs::read_link(workspace.path.join(".waif/tasks/current"))
+        .expect("current link should be readable");
+
+    let first = run_inspect(&workspace.path);
+    let second = run_inspect(&workspace.path);
+    let extra = Command::new(env!("CARGO_BIN_EXE_waif"))
+        .args(["inspect", "extra"])
+        .current_dir(&workspace.path)
+        .output()
+        .expect("waif inspect should run");
+
+    assert!(first.status.success());
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(fs::read(&goal_path).expect("goal should remain readable"), before_goal);
+    assert_eq!(
+        fs::read_link(workspace.path.join(".waif/tasks/current"))
+            .expect("current link should remain readable"),
+        before_current
+    );
+    assert_eq!(extra.status.code(), Some(2));
 }
 
 #[cfg(unix)]
@@ -71,10 +202,28 @@ fn current_task_path(workspace: &TestDir) -> PathBuf {
     workspace.path.join(".waif/tasks/20260728-1-example")
 }
 
-fn run_inspect(current_dir: &std::path::Path) -> Output {
+fn write_goal(workspace: &TestDir, status: &str, updated: &str, questions: &str) {
+    fs::write(
+        current_task_path(workspace).join("goal.md"),
+        format!(
+            "# Goal: Example\n\n\
+             - Status: {status}\n\
+             - Created: 2026-08-17T12:00:00+09:00\n\
+             - Updated: {updated}\n\n\
+             ## Outcome\n\nAn outcome\n\n\
+             ## Acceptance Criteria\n\n- G-AC1: A criterion\n\
+             {questions}"
+        ),
+    )
+    .expect("goal should be written");
+}
+
+fn run_inspect(current_dir: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_waif"))
         .arg("inspect")
         .current_dir(current_dir)
         .output()
         .expect("waif inspect should run")
 }
+
+const QUESTIONS: &str = "\n## Open Questions\n\n- G-Q1: A question\n";
