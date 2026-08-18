@@ -49,7 +49,7 @@ pub(crate) fn check(source: &str) -> Vec<Diagnostic> {
     diagnostics
 }
 
-fn parser_config() -> ParserConfig<'static> {
+pub(crate) fn parser_config() -> ParserConfig<'static> {
     ParserConfig::new(vec![
         SectionConfig::prose("Outcome"),
         SectionConfig::itemised("Acceptance Criteria"),

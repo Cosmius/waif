@@ -87,7 +87,19 @@ impl ArtifactFile {
     }
 
     pub fn parse_goal(&self) -> Result<Artifact<'_>> {
-        self.parse_with(goal::parse)
+        let (artifact, diagnostics) =
+            parser::parse_with_diagnostics(&self.contents, &goal::parser_config());
+        if diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity() == Severity::Error)
+        {
+            Err(Box::new(InvalidTaskArtifact {
+                path: self.path.clone(),
+                diagnostics,
+            }))
+        } else {
+            Ok(artifact)
+        }
     }
 
     pub fn parse_plan(&self) -> Result<Artifact<'_>> {

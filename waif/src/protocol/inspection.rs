@@ -1,5 +1,6 @@
 use super::task::read_optional;
 use super::{ArtifactClassification, Result, Task};
+use crate::artifact::Artifact;
 
 pub(crate) struct GoalInspection {
     classification: ArtifactClassification,
@@ -8,6 +9,24 @@ pub(crate) struct GoalInspection {
 }
 
 impl GoalInspection {
+    pub(crate) fn from_artifact(
+        classification: ArtifactClassification,
+        goal: &Artifact<'_>,
+    ) -> Self {
+        Self {
+            classification,
+            status: goal
+                .get_metadata("Status")
+                .map(|metadata| metadata.value().to_owned()),
+            has_open_questions: goal.sections().iter().any(|section| {
+                section.title() == "Open Questions"
+                    && section
+                        .as_itemised()
+                        .is_some_and(|questions| !questions.items().is_empty())
+            }),
+        }
+    }
+
     pub(crate) fn classification(&self) -> ArtifactClassification {
         self.classification
     }
@@ -43,20 +62,10 @@ impl Task {
         }
 
         let goal = file.parse_goal()?;
-        let status = goal
-            .get_metadata("Status")
-            .map(|metadata| metadata.value().to_owned());
-        let has_open_questions = goal.sections().iter().any(|section| {
-            section.title() == "Open Questions"
-                && section
-                    .as_itemised()
-                    .is_some_and(|questions| !questions.items().is_empty())
-        });
-        Ok(Some(GoalInspection {
-            classification: check.classification(),
-            status,
-            has_open_questions,
-        }))
+        Ok(Some(GoalInspection::from_artifact(
+            check.classification(),
+            &goal,
+        )))
     }
 }
 

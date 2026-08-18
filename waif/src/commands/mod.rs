@@ -6,6 +6,7 @@ use clap::Subcommand;
 
 mod check;
 mod fill;
+mod goal;
 mod inspect;
 mod new;
 mod switch;
@@ -18,6 +19,9 @@ pub enum Command {
     Check(check::CheckCommand),
     /// Replace known macros in a text file.
     Fill(fill::FillCommand),
+    /// Perform operations on the current goal.
+    #[command(subcommand)]
+    Goal(goal::GoalCommand),
     /// Inspect the current workflow task.
     Inspect(inspect::InspectCommand),
     /// Create a new workflow task and make it current.
@@ -31,6 +35,7 @@ impl Command {
         match self {
             Self::Check(command) => command.run(),
             Self::Fill(command) => command.run(),
+            Self::Goal(command) => command.run(),
             Self::Inspect(command) => command.run(),
             Self::New(command) => command.run(),
             Self::Switch(command) => command.run(),

@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::parser::Severity;
+
 mod artifact;
 mod inspection;
 mod task;
@@ -16,6 +18,12 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 enum ProtocolError {
     ArtifactKindMismatch,
     ArtifactOutsideTask,
+    GoalInvalid {
+        path: std::path::PathBuf,
+        diagnostics: Vec<crate::parser::Diagnostic>,
+    },
+    GoalMissing,
+    GoalPreconditions(Vec<String>),
     InvalidCurrentTask,
     InvalidTaskSlug,
     InvalidTaskName,
@@ -33,6 +41,35 @@ impl fmt::Display for ProtocolError {
             }
             Self::ArtifactOutsideTask => {
                 write!(formatter, "artifact is outside the task directory")
+            }
+            Self::GoalInvalid { path, diagnostics } => {
+                for (index, diagnostic) in diagnostics.iter().enumerate() {
+                    if index > 0 {
+                        formatter.write_str("\n")?;
+                    }
+                    write!(
+                        formatter,
+                        "{}:{}: {}: {}",
+                        path.display(),
+                        diagnostic.line(),
+                        match diagnostic.severity() {
+                            Severity::Error => "ERROR",
+                            Severity::Warning => "WARNING",
+                        },
+                        diagnostic.message()
+                    )?;
+                }
+                Ok(())
+            }
+            Self::GoalMissing => write!(formatter, "current task has no goal.md"),
+            Self::GoalPreconditions(blockers) => {
+                for (index, blocker) in blockers.iter().enumerate() {
+                    if index > 0 {
+                        formatter.write_str("\n")?;
+                    }
+                    formatter.write_str(blocker)?;
+                }
+                Ok(())
             }
             Self::InvalidCurrentTask => write!(formatter, "current task is invalid"),
             Self::InvalidTaskSlug => write!(

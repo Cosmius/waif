@@ -20,9 +20,9 @@ fn inspect_reports_ready_drafting_goal_in_the_existing_layout() {
     assert!(output.status.success());
     assert!(stdout.contains("Workflow dir:       .waif"));
     assert!(stdout.contains("Current task:       20260728-1-example"));
-    assert!(stdout.contains("Current task dir:   .waif/tasks/./20260728-1-example"));
+    assert!(stdout.contains("Current task dir:   .waif/tasks/20260728-1-example"));
     assert!(stdout.contains(
-        "Goal:\n  Path:             .waif/tasks/./20260728-1-example/goal.md"
+        "Goal:\n  Path:             .waif/tasks/20260728-1-example/goal.md"
     ));
     assert!(stdout.contains("  Status:           drafting"));
     assert!(stdout.contains("  Ready to accept:  yes"));

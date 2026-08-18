@@ -1,7 +1,7 @@
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
+use std::path::{absolute, Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use chrono::Local;
@@ -121,7 +121,7 @@ fn resolve_current_task(tasks_dir: &Path, current_link: &Path) -> Result<PathBuf
     let task_dir = if target.is_absolute() {
         target
     } else {
-        tasks_dir.join(target)
+        absolute(tasks_dir.join(target))?
     };
     Ok(task_dir)
 }
