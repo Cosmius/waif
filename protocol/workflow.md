@@ -111,9 +111,7 @@ has no required format or lifecycle metadata.
 After resolving the workflow dir, every workflow skill must read the complete
 charter when it exists and apply it throughout that skill. If a charter rule
 conflicts with a workflow skill, the charter rule prevails. The charter does
-not override this canonical workflow protocol. If a charter rule conflicts
-with this protocol or the two cannot be reconciled, stop and ask the user to
-resolve the conflict.
+not override this canonical workflow protocol.
 
 Workflow skills must not create, modify, or delete the charter unless the user
 explicitly asks for that change.
