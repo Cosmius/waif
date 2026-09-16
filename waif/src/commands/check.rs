@@ -11,8 +11,10 @@ use crate::protocol::{discover_artifact_paths, ArtifactClassification, ArtifactF
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Args)]
+#[command(after_help = "Examples:\n  waif check\n  waif check \
+                        .waif/tasks/current/goal.md")]
 pub struct CheckCommand {
-    /// An artifact file or a directory containing task artifacts.
+    /// Artifact file or task directory; omit to check the current task.
     path: Option<PathBuf>,
 }
 

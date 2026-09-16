@@ -16,7 +16,17 @@ impl MacroContext {
 
 type MacroResolver = fn(&MacroContext) -> Result<String, String>;
 
-const CATALOGUE: &[(&str, MacroResolver)] = &[("__NOW__", resolve_now)];
+struct MacroDefinition {
+    literal: &'static str,
+    help: &'static str,
+    resolver: MacroResolver,
+}
+
+const CATALOGUE: &[MacroDefinition] = &[MacroDefinition {
+    literal: "__NOW__",
+    help: "one local RFC 3339 timestamp per invocation",
+    resolver: resolve_now,
+}];
 
 fn resolve_now(context: &MacroContext) -> Result<String, String> {
     Ok(context.now.to_rfc3339_opts(SecondsFormat::Secs, false))
@@ -33,15 +43,15 @@ pub(crate) fn scan(source: &str) -> Vec<MacroOccurrence> {
     let bytes = source.as_bytes();
     let mut occurrences = Vec::new();
 
-    for &(literal, resolver) in CATALOGUE {
-        for (start, _) in source.match_indices(literal) {
-            let end = start + literal.len();
+    for definition in CATALOGUE {
+        for (start, _) in source.match_indices(definition.literal) {
+            let end = start + definition.literal.len();
             let enclosed =
                 bytes.get(start.wrapping_sub(1)) == Some(&b'`') && bytes.get(end) == Some(&b'`');
             if !enclosed {
                 occurrences.push(MacroOccurrence {
-                    literal,
-                    resolver,
+                    literal: definition.literal,
+                    resolver: definition.resolver,
                     range: start..end,
                 });
             }
@@ -50,6 +60,19 @@ pub(crate) fn scan(source: &str) -> Vec<MacroOccurrence> {
 
     occurrences.sort_by_key(|occurrence| occurrence.range.start);
     occurrences
+}
+
+pub(crate) fn fill_help() -> String {
+    let mut help =
+        String::from("Example:\n  waif fill .waif/tasks/current/goal.md\n\nKnown macros:\n");
+    for definition in CATALOGUE {
+        help.push_str(&format!("  {:<9}{}\n", definition.literal, definition.help));
+    }
+    help.push_str(
+        "\nAn occurrence immediately enclosed by backticks is not replaced. \
+         A BAD candidate leaves the target unchanged and is saved to a recovery path.",
+    );
+    help
 }
 
 pub(crate) fn expand(source: &str) -> Result<Option<String>, String> {

@@ -8,8 +8,9 @@ use crate::protocol::WorkflowDir;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Args)]
+#[command(after_help = "Example:\n  waif new deterministic-goal-drafting")]
 pub struct NewCommand {
-    /// Lowercase-hyphenated task slug.
+    /// Slug containing lowercase letters, decimal digits, and hyphens.
     task_slug: String,
 }
 

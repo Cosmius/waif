@@ -2,52 +2,41 @@
 
 This document is for AI agents using Waif skills.
 
-## Rule
+## Rules
 
 Use `waif` for deterministic workflow queries when available.
 Read the command output directly; it is intended to be self-describing.
 
-Run commands from the workspace directory:
+Run from the workspace directory:
 
 ```sh
-waif <subcommand-and-flags>
+waif <COMMAND> [ARGUMENTS]
 ```
 
-## Subcommand
+Discover commands with `waif --help` or `waif <COMMAND> --help`.
 
-### Check task artifacts:
+## Commands
 
-```sh
-waif check [PATH]
-```
+- `waif inspect` reports current goal-stage context and the next mechanical
+  action without mutation. It succeeds only for usable context.
+- `waif new <TASK_SLUG>` creates and selects the next date-sequenced task.
+  The slug uses lowercase letters, digits, and hyphens. It initializes a
+  missing workflow but never changes existing repository metadata. Invalid
+  input and collisions select nothing.
+- `waif switch <TASK_NAME>` selects an existing direct task child by complete
+  directory name. Rejected targets leave `current` unchanged.
+- `waif check [PATH]` checks one artifact, a task directory, or the current
+  task. It reports all findings, then `GOOD`, `INCOMPLETE`, or `BAD`. The first
+  two exit 0; `BAD` exits 1. Warnings do not affect classification. A macro in
+  metadata skips only that value's format check.
+- `waif fill <PATH>` expands known plain-text macros. `__NOW__` uses one local
+  RFC 3339 timestamp; immediately enclosing backticks exclude an occurrence.
+  Recognized artifacts are checked before overwrite. A `BAD` candidate is
+  saved separately and leaves the target unchanged. Unrecognized files skip
+  checking and recovery copies. No occurrence leaves the file unchanged.
+- `waif goal accept` requires explicit human approval, a `GOOD` drafting or
+  amending goal, and no open questions. It changes only `Status` and `Updated`;
+  failed preconditions leave the goal unchanged.
 
-With a file path, check that artifact. With a directory path, check task
-artifacts in that task directory and its immediate step directories. Without
-a path, check those files in the current task. Recognized task files are
-`goal.md`, `plan.md`, and `review.md`; recognized step files are `step.md` and
-`reviewN.md` where `N` contains only decimal digits.
-
-Each selected artifact receives its applicable structural checks. Files named
-exactly `goal.md`, `plan.md`, and `step.md`, plus numbered implementation
-reviews, receive their artifact-specific validation.
-
-The command reports all discovered errors and warnings for every selected
-artifact before printing the aggregate summary. Errors invalidate an artifact
-and make the command exit with status 1. Warnings, including warnings for
-empty sections, are reported but do not invalidate an otherwise conforming
-artifact. Raw HTML blocks are unsupported; heading-like lines inside them are
-interpreted as artifact headings.
-
-### Create a new workflow task:
-
-```sh
-waif new <task-slug>
-```
-
-The task slug must be lowercase letters, numbers, and hyphens.
-
-### Inspect the current workflow task:
-
-```sh
-waif inspect
-```
+Mutations validate preconditions first. A low-level overwrite failure is
+reported, may leave a partial target, and is not rolled back.

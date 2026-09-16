@@ -14,8 +14,9 @@ use crate::protocol::{ArtifactCheck, ArtifactClassification, ArtifactFile, Artif
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Args)]
+#[command(after_help = macro_processor::fill_help())]
 pub struct FillCommand {
-    /// A text file containing known macros such as __NOW__.
+    /// Text file containing known macros.
     path: PathBuf,
 }
 

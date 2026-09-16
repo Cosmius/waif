@@ -10,6 +10,7 @@ use crate::protocol::{ArtifactClassification, Task, WorkflowDir};
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Args)]
+#[command(after_help = "Example:\n  waif inspect")]
 pub struct InspectCommand {}
 
 impl InspectCommand {

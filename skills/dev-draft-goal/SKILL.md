@@ -11,12 +11,15 @@ Create the task dir and keep `goal.md` as the product-level contract.
 
 ## Procedure
 
-1. Read the user's request, workspace instructions, and
-   [workflow.md](../../protocol/workflow.md).
-2. Resolve or create the workflow dir using
-   [Workflow Dir Setup](#workflow-dir-setup), then resolve the task:
-   - revise `tasks/current` only when the user is clearly continuing it;
-   - otherwise create the next task dir and update `tasks/current`.
+1. Read the request, workspace instructions,
+   [workflow.md](../../protocol/workflow.md), and
+   [waif-helper.md](../../protocol/waif-helper.md).
+2. Run `waif inspect` to discover the current goal-stage context. Resolve the
+   task using the deterministic commands:
+   - when the user is clearly continuing an existing task that is not current,
+     run `waif switch <TASK_NAME>`;
+   - when starting a distinct task, run `waif new <TASK_SLUG>`;
+   - do not reproduce these operations with ad hoc filesystem work.
 3. Draft or revise `goal.md` from the latest user input using the
    [`goal.md` Contract](#goalmd-contract).
 4. Keep the goal product-level: outcome, scope, and stable acceptance
@@ -24,19 +27,14 @@ Create the task dir and keep `goal.md` as the product-level contract.
 5. Keep `Status: drafting` before initial acceptance. When changing an
    accepted goal, set `Status: amending`, maintain one revision subsection for
    the current cycle, preserve history, and identify downstream impacts.
-6. Show the `goal.md` path and ask the user to review it.
-7. On explicit acceptance, require no blocking open questions and set
-   `Status: accepted`. Treat unqualified `accept`, `approve`, or equivalent as
+6. Use `__NOW__` for current timestamps, then run
+   `waif fill <GOAL_PATH>` and `waif check <GOAL_PATH>`. Resolve `BAD` and
+   fill `INCOMPLETE` before presentation. The AI owns semantic review.
+7. Show the `goal.md` path and ask the user to review it.
+8. After explicit human acceptance and with no open questions, run
+   `waif goal accept`. Treat unqualified `accept`, `approve`, or equivalent as
    acceptance of the current goal.
-8. Do not modify or commit workspace files.
-
-## Workflow Dir Setup
-
-If the workflow dir is missing, create it and run `git init` there. If it
-already exists, use it without inspecting or changing repository metadata.
-
-Creating a missing workflow dir and running `git init` there are setup
-operations, not approval gates. Do not edit `.gitignore`.
+9. Do not modify or commit workspace files.
 
 ## `goal.md` Contract
 
@@ -83,9 +81,9 @@ operations, not approval gates. Do not edit `.gitignore`.
 `Outcome` and `Acceptance Criteria` are required. Omit other empty sections.
 Preserve IDs and never reuse retired IDs.
 
-`waif check` handles structural validation. The AI agent owns semantic review:
-keep `In Scope` substantive and put exclusions and non-goals in
-`Out of Scope`.
+`waif check` handles structural validation and `waif fill` expands supported
+macros. The AI agent owns semantic review: keep `In Scope` substantive and put
+exclusions and non-goals in `Out of Scope`.
 
 Do not accept a goal with blocking `Open Questions`. Follow shared amendment
 and revision rules.

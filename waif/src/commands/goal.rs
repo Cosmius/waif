@@ -9,8 +9,21 @@ use crate::protocol::WorkflowDir;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Subcommand)]
+#[command(
+    disable_help_subcommand = true,
+    override_usage = "waif goal <accept>",
+    after_help = "Example:\n  waif goal accept\n\nAcceptance requires explicit human \
+                  approval, a GOOD drafting or amending goal, and no blocking open \
+                  questions."
+)]
 pub enum GoalCommand {
-    /// Accept the current goal after human approval.
+    /// Accept a complete current goal after explicit human approval.
+    #[command(
+        long_about = "Accept the current drafting or amending goal after explicit human \
+                      approval. The goal must be GOOD and have no blocking open questions. \
+                      Only Status and Updated are changed; failed preconditions leave it \
+                      unchanged."
+    )]
     Accept(AcceptCommand),
 }
 
@@ -23,6 +36,7 @@ impl GoalCommand {
 }
 
 #[derive(Args)]
+#[command(after_help = "Example:\n  waif goal accept")]
 pub struct AcceptCommand {}
 
 impl AcceptCommand {
