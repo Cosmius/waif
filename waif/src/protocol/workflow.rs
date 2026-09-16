@@ -144,6 +144,9 @@ fn is_valid_slug(slug: &str) -> bool {
 }
 
 fn parse_task_name(task_name: &str) -> Result<(&str, u32, &str)> {
+    if task_name.contains('/') {
+        return Err(Box::new(ProtocolError::MalformedTaskName));
+    }
     let Some((date, remainder)) = task_name.split_once('-') else {
         return Err(Box::new(ProtocolError::MalformedTaskName));
     };
