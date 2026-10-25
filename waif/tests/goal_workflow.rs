@@ -28,7 +28,7 @@ fn goal_stage_commands_complete_one_workflow_without_crossing_mutation_boundarie
 
     let created = run(&workspace, &["new", "first-goal"]);
     let initial = run(&workspace, &["inspect"]);
-    let first_current = fs::read_link(workspace.path.join(".waif/tasks/current"))
+    let first_current = fs::read_link(workspace.path.join(".waif/current_task"))
         .expect("current task should be a symlink");
     let first_name = first_current
         .file_name()
@@ -43,13 +43,13 @@ fn goal_stage_commands_complete_one_workflow_without_crossing_mutation_boundarie
 
     let goal_path = workspace
         .path
-        .join(".waif/tasks")
+        .join(".waif/library/tasks")
         .join(&first_name)
         .join("goal.md");
     let rejected_source = DRAFT_GOAL.replace("drafting", "prefix__NOW__suffix");
     fs::write(&goal_path, &rejected_source).expect("rejected goal should be written");
 
-    let rejected = run(&workspace, &["fill", ".waif/tasks/current/goal.md"]);
+    let rejected = run(&workspace, &["fill", ".waif/current_task/goal.md"]);
 
     assert_eq!(rejected.status.code(), Some(1));
     assert_eq!(
@@ -61,7 +61,7 @@ fn goal_stage_commands_complete_one_workflow_without_crossing_mutation_boundarie
 
     fs::write(&goal_path, DRAFT_GOAL).expect("draft goal should be written");
     let incomplete = run(&workspace, &["check"]);
-    let filled = run(&workspace, &["fill", ".waif/tasks/current/goal.md"]);
+    let filled = run(&workspace, &["fill", ".waif/current_task/goal.md"]);
     let complete = run(&workspace, &["check"]);
 
     assert!(incomplete.status.success());
@@ -73,7 +73,7 @@ fn goal_stage_commands_complete_one_workflow_without_crossing_mutation_boundarie
 
     let accepted = run(&workspace, &["goal", "accept"]);
     let accepted_inspection = run(&workspace, &["inspect"]);
-    let no_fill = run(&workspace, &["fill", ".waif/tasks/current/goal.md"]);
+    let no_fill = run(&workspace, &["fill", ".waif/current_task/goal.md"]);
 
     assert!(accepted.status.success(), "{}", String::from_utf8_lossy(&accepted.stderr));
     assert!(fs::read_to_string(&goal_path)
@@ -86,7 +86,7 @@ fn goal_stage_commands_complete_one_workflow_without_crossing_mutation_boundarie
     assert!(String::from_utf8_lossy(&no_fill.stdout).contains("No fill needed:"));
 
     let second = run(&workspace, &["new", "second-goal"]);
-    let second_current = fs::read_link(workspace.path.join(".waif/tasks/current"))
+    let second_current = fs::read_link(workspace.path.join(".waif/current_task"))
         .expect("current task should be a symlink");
     let second_name = second_current
         .file_name()
@@ -97,12 +97,12 @@ fn goal_stage_commands_complete_one_workflow_without_crossing_mutation_boundarie
 
     assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
     assert!(second_name.ends_with("-second-goal"));
-    assert!(workspace.path.join(".waif/tasks").join(&second_name).is_dir());
+    assert!(workspace.path.join(".waif/library/tasks").join(&second_name).is_dir());
     assert!(switched.status.success(), "{}", String::from_utf8_lossy(&switched.stderr));
     assert_eq!(
-        fs::read_link(workspace.path.join(".waif/tasks/current"))
+        fs::read_link(workspace.path.join(".waif/current_task"))
             .expect("current task should be a symlink"),
-        std::path::PathBuf::from(format!("./{first_name}"))
+        std::path::PathBuf::from(format!("library/tasks/{first_name}"))
     );
 }
 

@@ -75,7 +75,7 @@ fn accept_follows_a_symlinked_goal_file() {
     )
     .expect("external goal should be written");
     symlink(
-        "../../../external-goal.md",
+        "../../../../external-goal.md",
         current_task_path(&workspace).join("goal.md"),
     )
     .expect("goal link should be created");
@@ -197,16 +197,21 @@ fn accept_reports_all_practical_goal_blockers() {
 #[cfg(unix)]
 fn current_task_workspace(name: &str) -> TestDir {
     let workspace = TestDir::new(name);
-    let tasks = workspace.path.join(".waif/tasks");
+    let tasks = workspace.path.join(".waif/library/tasks");
     fs::create_dir_all(tasks.join("20260728-1-example")).expect("task should be created");
-    symlink("./20260728-1-example", tasks.join("current"))
-        .expect("current task link should be created");
+    symlink(
+        "library/tasks/20260728-1-example",
+        workspace.path.join(".waif/current_task"),
+    )
+    .expect("current task link should be created");
     workspace
 }
 
 #[cfg(unix)]
 fn current_task_path(workspace: &TestDir) -> std::path::PathBuf {
-    workspace.path.join(".waif/tasks/20260728-1-example")
+    workspace
+        .path
+        .join(".waif/library/tasks/20260728-1-example")
 }
 
 #[cfg(unix)]

@@ -12,7 +12,7 @@ use test_support::TestDir;
 #[test]
 fn switch_selects_an_exact_existing_task_and_reports_context() {
     let workspace = switch_workspace("successful-switch");
-    let tasks_dir = workspace.path.join(".waif/tasks");
+    let tasks_dir = workspace.path.join(".waif/library/tasks");
     fs::create_dir(tasks_dir.join("20260817-2-selected-task"))
         .expect("selected task should be created");
 
@@ -21,15 +21,15 @@ fn switch_selects_an_exact_existing_task_and_reports_context() {
 
     assert!(output.status.success());
     assert_eq!(
-        fs::read_link(tasks_dir.join("current")).expect("current link should exist"),
-        PathBuf::from("./20260817-2-selected-task")
+        fs::read_link(workspace.path.join(".waif/current_task")).expect("current link should exist"),
+        PathBuf::from("library/tasks/20260817-2-selected-task")
     );
     assert!(stdout.contains("Current task:       20260817-2-selected-task"));
     assert!(stdout.contains(
-        "Current task dir:   .waif/tasks/20260817-2-selected-task"
+        "Current task dir:   .waif/library/tasks/20260817-2-selected-task"
     ));
     assert!(stdout.contains(
-        "Current reference:  .waif/tasks/current -> ./20260817-2-selected-task"
+        "Current reference:  .waif/current_task -> library/tasks/20260817-2-selected-task"
     ));
 }
 
@@ -42,14 +42,14 @@ fn switch_rejects_targets_without_changing_current() {
         ("20260817-3-regular-file", TargetSetup::File),
     ] {
         let workspace = switch_workspace(name);
-        let tasks_dir = workspace.path.join(".waif/tasks");
+        let tasks_dir = workspace.path.join(".waif/library/tasks");
         setup.create(&tasks_dir, name);
 
-        let before =
-            fs::read_link(tasks_dir.join("current")).expect("current link should be readable");
+        let before = fs::read_link(workspace.path.join(".waif/current_task"))
+            .expect("current link should be readable");
         let output = run_switch(&workspace.path, &[name]);
-        let after =
-            fs::read_link(tasks_dir.join("current")).expect("current link should remain readable");
+        let after = fs::read_link(workspace.path.join(".waif/current_task"))
+            .expect("current link should remain readable");
 
         assert!(!output.status.success(), "target should fail: {name}");
         assert_eq!(after, before, "current should be preserved: {name}");
@@ -60,10 +60,10 @@ fn switch_rejects_targets_without_changing_current() {
 #[test]
 fn switch_follows_a_task_symlink_to_a_nominal_directory() {
     let workspace = switch_workspace("linked-task");
-    let tasks_dir = workspace.path.join(".waif/tasks");
+    let tasks_dir = workspace.path.join(".waif/library/tasks");
     fs::create_dir(workspace.path.join(".waif/outside"))
         .expect("outside directory should be created");
-    symlink("../outside", tasks_dir.join("20260817-2-linked-task"))
+    symlink("../../outside", tasks_dir.join("20260817-2-linked-task"))
         .expect("task symlink should be created");
 
     let output = run_switch(&workspace.path, &["20260817-2-linked-task"]);
@@ -73,28 +73,28 @@ fn switch_follows_a_task_symlink_to_a_nominal_directory() {
     assert!(output.status.success());
     assert!(inspect.status.success());
     assert_eq!(
-        fs::read_link(tasks_dir.join("current")).expect("current link should exist"),
-        PathBuf::from("./20260817-2-linked-task")
+        fs::read_link(workspace.path.join(".waif/current_task")).expect("current link should exist"),
+        PathBuf::from("library/tasks/20260817-2-linked-task")
     );
     assert!(inspect_stdout.contains("Current task:       20260817-2-linked-task"));
 }
 
 #[cfg(unix)]
 #[test]
-fn switch_preserves_an_invalid_existing_current_reference() {
+fn switch_replaces_an_invalid_existing_current_reference() {
     let workspace = TestDir::new("invalid-current");
-    let tasks_dir = workspace.path.join(".waif/tasks");
+    let tasks_dir = workspace.path.join(".waif/library/tasks");
     fs::create_dir_all(tasks_dir.join("20260817-1-selected-task"))
         .expect("selected task should be created");
-    fs::write(tasks_dir.join("current"), "not a symlink")
-        .expect("invalid current file should be created");
+    symlink("../missing-task", workspace.path.join(".waif/current_task"))
+        .expect("broken current link should be created");
 
     let output = run_switch(&workspace.path, &["20260817-1-selected-task"]);
 
-    assert!(!output.status.success());
+    assert!(output.status.success());
     assert_eq!(
-        fs::read_to_string(tasks_dir.join("current")).expect("current file should remain"),
-        "not a symlink"
+        fs::read_link(workspace.path.join(".waif/current_task")).expect("current link should be replaced"),
+        PathBuf::from("library/tasks/20260817-1-selected-task")
     );
 }
 
@@ -112,11 +112,14 @@ fn switch_requires_exactly_one_argument() {
 #[cfg(unix)]
 fn switch_workspace(name: &str) -> TestDir {
     let workspace = TestDir::new(name);
-    let tasks_dir = workspace.path.join(".waif/tasks");
+    let tasks_dir = workspace.path.join(".waif/library/tasks");
     fs::create_dir_all(tasks_dir.join("20260817-1-current-task"))
         .expect("current task should be created");
-    symlink("./20260817-1-current-task", tasks_dir.join("current"))
-        .expect("current link should be created");
+    symlink(
+        "library/tasks/20260817-1-current-task",
+        workspace.path.join(".waif/current_task"),
+    )
+    .expect("current link should be created");
     workspace
 }
 

@@ -479,12 +479,15 @@ fn check_uses_a_symlinked_steps_directory_nominally() {
 #[test]
 fn check_without_path_uses_the_current_task() {
     let workspace = TestDir::new("current-task");
-    let tasks = workspace.path.join(".waif/tasks");
+    let tasks = workspace.path.join(".waif/library/tasks");
     let task = tasks.join("20260710-1-example");
     let step = task.join("steps/01-example");
     fs::create_dir_all(&step).expect("task should be created");
-    symlink("./20260710-1-example", tasks.join("current"))
-        .expect("current task link should be created");
+    symlink(
+        "library/tasks/20260710-1-example",
+        workspace.path.join(".waif/current_task"),
+    )
+    .expect("current task link should be created");
     let warning_goal = concat!(
         "# Goal\n",
         "- Status: accepted\n",

@@ -21,11 +21,11 @@ fn workflow_dir_uses_workspace_waif_directory() {
     );
     assert_eq!(
         workflow_dir.tasks_dir(),
-        PathBuf::from("/tmp/example-workspace/.waif/tasks")
+        PathBuf::from("/tmp/example-workspace/.waif/library/tasks")
     );
     assert_eq!(
         workflow_dir.current_link(),
-        PathBuf::from("/tmp/example-workspace/.waif/tasks/current")
+        PathBuf::from("/tmp/example-workspace/.waif/current_task")
     );
 }
 
@@ -91,21 +91,21 @@ fn create_task_requires_workflow_dir() {
         Err(error) => error,
     };
 
-    assert_eq!(error.to_string(), "workflow dir is missing");
+    assert_eq!(error.downcast_ref::<std::io::Error>().unwrap().kind(), std::io::ErrorKind::NotFound);
 }
 
 #[test]
 fn create_task_requires_tasks_dir() {
     let workspace = TestDir::new("missing-tasks");
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
-    fs::create_dir_all(&workflow_dir.path).expect("workflow dir should be created");
+    fs::create_dir_all(workflow_dir.library_dir()).expect("library should be created");
 
     let error = match workflow_dir.create_task("new-task") {
         Ok(_) => panic!("missing tasks dir should fail"),
         Err(error) => error,
     };
 
-    assert_eq!(error.to_string(), "workflow tasks dir is missing");
+    assert_eq!(error.downcast_ref::<std::io::Error>().unwrap().kind(), std::io::ErrorKind::NotFound);
 }
 
 #[cfg(unix)]
@@ -127,17 +127,14 @@ fn switch_task_updates_current_link() {
 
     assert_eq!(
         fs::read_link(workflow_dir.current_link()).expect("current link should exist"),
-        PathBuf::from(format!("./{date}-1-add-session-timeout"))
+        PathBuf::from(format!("library/tasks/{date}-1-add-session-timeout"))
     );
 
     let current_task = workflow_dir
         .current_task()
         .expect("current task should resolve")
         .expect("current task should exist");
-    assert_eq!(
-        current_task.path.canonicalize().expect("current task dir should canonicalize"),
-        task        .path.canonicalize().expect("task dir should canonicalize"),
-    );
+    assert_eq!(current_task.path, task.path);
 }
 
 #[cfg(unix)]
@@ -245,7 +242,7 @@ fn task_lookup_rejects_missing_and_non_directory_paths() {
         Err(error) => error,
     };
 
-    assert_eq!(missing.to_string(), "task dir does not exist");
+    assert_eq!(missing.downcast_ref::<std::io::Error>().unwrap().kind(), std::io::ErrorKind::NotFound);
     assert_eq!(invalid.to_string(), "task dir does not exist");
 }
 
@@ -257,12 +254,15 @@ fn current_task_retains_a_nominal_symlinked_task_path() {
     fs::create_dir_all(workflow_dir.tasks_dir()).expect("tasks dir should be created");
     fs::create_dir(workflow_dir.path.join("outside")).expect("outside dir should be created");
     symlink(
-        "../outside",
+        "../../outside",
         workflow_dir.tasks_dir().join("20260817-1-linked-task"),
     )
     .expect("task symlink should be created");
-    symlink("./20260817-1-linked-task", workflow_dir.current_link())
-        .expect("current link should be created");
+    symlink(
+        "library/tasks/20260817-1-linked-task",
+        workflow_dir.current_link(),
+    )
+    .expect("current link should be created");
 
     let task = workflow_dir
         .current_task()
@@ -278,7 +278,7 @@ fn current_task_retains_a_nominal_symlinked_task_path() {
 
 #[cfg(unix)]
 #[test]
-fn switch_task_rejects_current_file() {
+fn switch_task_replaces_current_file() {
     let workspace = TestDir::new("current-file");
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
     workflow_dir
@@ -290,12 +290,14 @@ fn switch_task_rejects_current_file() {
     fs::write(workflow_dir.current_link(), "not a symlink")
         .expect("current file should be written");
 
-    let error = match workflow_dir.switch_task(&task) {
-        Ok(_) => panic!("current file should fail"),
-        Err(error) => error,
-    };
+    workflow_dir
+        .switch_task(&task)
+        .expect("current file should be replaced");
 
-    assert_eq!(error.to_string(), "current task is invalid");
+    assert_eq!(
+        fs::read_link(workflow_dir.current_link()).expect("current should be a link"),
+        PathBuf::from(format!("library/tasks/{}", task.name().unwrap()))
+    );
 }
 
 #[cfg(unix)]
@@ -305,17 +307,19 @@ fn current_task_resolves_relative_link_inside_tasks_dir() {
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
     let tasks_dir = workflow_dir.tasks_dir();
     let task_dir = tasks_dir.join("implement-feature");
-    fs::create_dir_all(&task_dir).expect("task dir should be created");
-    symlink("implement-feature", workflow_dir.current_link())
-        .expect("current link should be created");
+    fs::create_dir_all(&workflow_dir.path).expect("instance dir should be created");
+    symlink(
+        "library/tasks/implement-feature",
+        workflow_dir.current_link(),
+    )
+    .expect("current link should be created");
 
     let task = workflow_dir
         .current_task()
         .expect("current task should resolve")
         .expect("current task should exist");
 
-    assert_eq!(task.path.canonicalize().expect("task path should canonicalize"),
-               task_dir .canonicalize().expect("task dir should canonicalize"));
+    assert_eq!(task.path, task_dir);
     assert_eq!(
         task.name().expect("task name should be valid"),
         "implement-feature"
@@ -325,7 +329,7 @@ fn current_task_resolves_relative_link_inside_tasks_dir() {
 #[test]
 fn task_goal_is_none_when_goal_file_is_missing() {
     let workspace = TestDir::new("missing-goal");
-    let task = Task::new(workspace.path.join(".waif/tasks/example-task"));
+    let task = Task::new(workspace.path.join(".waif/library/tasks/example-task"));
 
     assert!(task
         .with_goal(|_| ())
@@ -336,7 +340,7 @@ fn task_goal_is_none_when_goal_file_is_missing() {
 #[test]
 fn task_singleton_accessors_use_configured_schema_parsers() {
     let workspace = TestDir::new("goal-metadata");
-    let task = Task::new(workspace.path.join(".waif/tasks/example-task"));
+    let task = Task::new(workspace.path.join(".waif/library/tasks/example-task"));
     fs::create_dir_all(&task.path).expect("task dir should be created");
     fs::write(
         task.path.join("goal.md"),
@@ -377,7 +381,7 @@ Create tests.
 #[test]
 fn task_singleton_accessor_reports_path_aware_parser_errors() {
     let workspace = TestDir::new("invalid-goal");
-    let task = Task::new(workspace.path.join(".waif/tasks/example-task"));
+    let task = Task::new(workspace.path.join(".waif/library/tasks/example-task"));
     fs::create_dir_all(&task.path).expect("task dir should be created");
     fs::write(
         task.path.join("goal.md"),
@@ -592,4 +596,112 @@ fn task_step_and_review_accessors_reject_wrong_or_outside_files() {
             .to_string(),
         "artifact is outside the task directory"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn shared_library_selections_are_local_and_independent_libraries_are_isolated() {
+    let root = TestDir::new("shared-root");
+    let linked = TestDir::new("shared-linked");
+    let independent = TestDir::new("independent");
+    let root_dir = WorkflowDir::for_workspace(root.path.clone());
+    let linked_dir = WorkflowDir::for_workspace(linked.path.clone());
+    let independent_dir = WorkflowDir::for_workspace(independent.path.clone());
+    fs::create_dir_all(root_dir.tasks_dir()).unwrap();
+    fs::create_dir_all(&linked_dir.path).unwrap();
+    symlink(root_dir.library_dir(), linked_dir.library_dir()).unwrap();
+    fs::create_dir_all(independent_dir.tasks_dir()).unwrap();
+    let first = root_dir.create_task("first").unwrap();
+    root_dir.switch_task(&first).unwrap();
+    let second = linked_dir.create_task("second").unwrap();
+    linked_dir.switch_task(&second).unwrap();
+    let private = independent_dir.create_task("private").unwrap();
+    independent_dir.switch_task(&private).unwrap();
+
+    assert_eq!(root_dir.current_task().unwrap().unwrap().path, first.path);
+    assert_eq!(linked_dir.current_task().unwrap().unwrap().path, second.path);
+    assert_eq!(fs::read_link(linked_dir.current_link()).unwrap(), PathBuf::from(format!("library/tasks/{}", second.name().unwrap())));
+    assert!(root_dir.task(second.name().unwrap()).is_ok());
+    assert!(root_dir.task(private.name().unwrap()).is_err());
+    assert!(independent_dir.task(first.name().unwrap()).is_err());
+    assert!(!root_dir.library_dir().join("current_task").exists());
+    assert!(!linked_dir.path.join(".git").exists());
+}
+
+#[test]
+fn current_task_does_not_require_a_library_when_the_pointer_is_absent() {
+    let workspace = TestDir::new("unselected-instance");
+    let workflow = WorkflowDir::for_workspace(workspace.path.clone());
+    fs::create_dir(&workflow.path).unwrap();
+
+    assert!(workflow.current_task().unwrap().is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn broken_library_is_preserved_without_creating_tasks() {
+    let workspace = TestDir::new("broken-library");
+    let workflow = WorkflowDir::for_workspace(workspace.path.clone());
+    fs::create_dir(&workflow.path).unwrap();
+    symlink("missing-library", workflow.library_dir()).unwrap();
+
+    assert!(workflow.create_task("new-task").is_err());
+    assert_eq!(fs::read_link(workflow.library_dir()).unwrap(), PathBuf::from("missing-library"));
+    assert!(!workflow.current_link().exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn foreign_task_object_cannot_replace_selection_with_a_same_named_local_task() {
+    let workspace = TestDir::new("foreign-task-object");
+    let workflow = WorkflowDir::for_workspace(workspace.path.clone());
+    fs::create_dir_all(workflow.tasks_dir()).unwrap();
+    let local = workflow.create_task("existing").unwrap();
+    workflow.switch_task(&local).unwrap();
+    let foreign_path = workspace.path.join(local.name().unwrap());
+    fs::create_dir(&foreign_path).unwrap();
+    let foreign = Task::new(foreign_path);
+    let before = fs::read_link(workflow.current_link()).unwrap();
+
+    assert!(workflow.switch_task(&foreign).is_err());
+    assert_eq!(fs::read_link(workflow.current_link()).unwrap(), before);
+}
+
+#[test]
+fn create_task_does_not_read_or_modify_current_selection() {
+    let workspace = TestDir::new("create-with-unreadable-selection");
+    let workflow = WorkflowDir::for_workspace(workspace.path.clone());
+    fs::create_dir_all(workflow.tasks_dir()).unwrap();
+    fs::write(workflow.current_link(), "not a symlink").unwrap();
+
+    let task = workflow.create_task("new-task").unwrap();
+
+    assert!(task.path.is_dir());
+    assert_eq!(fs::read_to_string(workflow.current_link()).unwrap(), "not a symlink");
+}
+
+#[cfg(unix)]
+#[test]
+fn current_task_rejects_an_absolute_target_without_changing_the_link() {
+    let workspace = TestDir::new("absolute-current-target");
+    let workflow = WorkflowDir::for_workspace(workspace.path.clone());
+    fs::create_dir(&workflow.path).unwrap();
+    let target = workspace.path.join("outside");
+    symlink(&target, workflow.current_link()).unwrap();
+
+    assert!(workflow.current_task().is_err());
+    assert_eq!(fs::read_link(workflow.current_link()).unwrap(), target);
+}
+
+#[cfg(unix)]
+#[test]
+fn current_task_rejects_parent_components_even_when_the_path_stays_inside() {
+    let workspace = TestDir::new("parent-current-target");
+    let workflow = WorkflowDir::for_workspace(workspace.path.clone());
+    fs::create_dir(&workflow.path).unwrap();
+    let target = "safe/../selected";
+    symlink(target, workflow.current_link()).unwrap();
+
+    assert!(workflow.current_task().is_err());
+    assert_eq!(fs::read_link(workflow.current_link()).unwrap(), PathBuf::from(target));
 }

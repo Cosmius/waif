@@ -29,8 +29,7 @@ enum ProtocolError {
     InvalidTaskName,
     MalformedTaskName,
     TaskDoesNotExist,
-    TasksDirMissing,
-    WorkflowDirMissing,
+    TaskOutsideLibrary,
 }
 
 impl fmt::Display for ProtocolError {
@@ -82,8 +81,9 @@ impl fmt::Display for ProtocolError {
                 "task name must use YYYYMMDD-N-lowercase-hyphenated-slug"
             ),
             Self::TaskDoesNotExist => write!(formatter, "task dir does not exist"),
-            Self::TasksDirMissing => write!(formatter, "workflow tasks dir is missing"),
-            Self::WorkflowDirMissing => write!(formatter, "workflow dir is missing"),
+            Self::TaskOutsideLibrary => {
+                write!(formatter, "task directory is outside the workflow library")
+            }
         }
     }
 }

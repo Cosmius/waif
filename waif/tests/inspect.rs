@@ -20,9 +20,9 @@ fn inspect_reports_ready_drafting_goal_in_the_existing_layout() {
     assert!(output.status.success());
     assert!(stdout.contains("Workflow dir:       .waif"));
     assert!(stdout.contains("Current task:       20260728-1-example"));
-    assert!(stdout.contains("Current task dir:   .waif/tasks/20260728-1-example"));
+    assert!(stdout.contains("Current task dir:   .waif/library/tasks/20260728-1-example"));
     assert!(stdout.contains(
-        "Goal:\n  Path:             .waif/tasks/20260728-1-example/goal.md"
+        "Goal:\n  Path:             .waif/library/tasks/20260728-1-example/goal.md"
     ));
     assert!(stdout.contains("  Status:           drafting"));
     assert!(stdout.contains("  Ready to accept:  yes"));
@@ -138,7 +138,8 @@ fn inspect_reports_unavailable_context_with_one_next_instruction() {
     ));
 
     let no_current = TestDir::new("missing-current");
-    fs::create_dir_all(no_current.path.join(".waif/tasks")).expect("tasks should be created");
+    fs::create_dir_all(no_current.path.join(".waif/library/tasks"))
+        .expect("tasks should be created");
     let no_current_output = run_inspect(&no_current.path);
     let no_current_stdout = String::from_utf8_lossy(&no_current_output.stdout);
 
@@ -148,8 +149,12 @@ fn inspect_reports_unavailable_context_with_one_next_instruction() {
     ));
 
     let selectable = TestDir::new("selectable-task");
-    fs::create_dir_all(selectable.path.join(".waif/tasks/20260818-1-existing-task"))
-        .expect("task should be created");
+    fs::create_dir_all(
+        selectable
+            .path
+            .join(".waif/library/tasks/20260818-1-existing-task"),
+    )
+    .expect("task should be created");
     let selectable_output = run_inspect(&selectable.path);
     let selectable_stdout = String::from_utf8_lossy(&selectable_output.stdout);
 
@@ -166,7 +171,7 @@ fn inspect_is_read_only_and_rejects_arguments() {
     write_goal(&workspace, "drafting", "2026-08-17T12:00:00+09:00", "");
     let goal_path = current_task_path(&workspace).join("goal.md");
     let before_goal = fs::read(&goal_path).expect("goal should be readable");
-    let before_current = fs::read_link(workspace.path.join(".waif/tasks/current"))
+    let before_current = fs::read_link(workspace.path.join(".waif/current_task"))
         .expect("current link should be readable");
 
     let first = run_inspect(&workspace.path);
@@ -181,7 +186,7 @@ fn inspect_is_read_only_and_rejects_arguments() {
     assert_eq!(first.stdout, second.stdout);
     assert_eq!(fs::read(&goal_path).expect("goal should remain readable"), before_goal);
     assert_eq!(
-        fs::read_link(workspace.path.join(".waif/tasks/current"))
+        fs::read_link(workspace.path.join(".waif/current_task"))
             .expect("current link should remain readable"),
         before_current
     );
@@ -191,15 +196,20 @@ fn inspect_is_read_only_and_rejects_arguments() {
 #[cfg(unix)]
 fn current_task_workspace(name: &str) -> TestDir {
     let workspace = TestDir::new(name);
-    let tasks = workspace.path.join(".waif/tasks");
+    let tasks = workspace.path.join(".waif/library/tasks");
     fs::create_dir_all(tasks.join("20260728-1-example")).expect("task should be created");
-    symlink("./20260728-1-example", tasks.join("current"))
-        .expect("current task link should be created");
+    symlink(
+        "library/tasks/20260728-1-example",
+        workspace.path.join(".waif/current_task"),
+    )
+    .expect("current task link should be created");
     workspace
 }
 
 fn current_task_path(workspace: &TestDir) -> PathBuf {
-    workspace.path.join(".waif/tasks/20260728-1-example")
+    workspace
+        .path
+        .join(".waif/library/tasks/20260728-1-example")
 }
 
 fn write_goal(workspace: &TestDir, status: &str, updated: &str, questions: &str) {

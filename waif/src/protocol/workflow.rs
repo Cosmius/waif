@@ -1,7 +1,8 @@
 use std::fs;
+use std::io::ErrorKind;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
-use std::path::{absolute, Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use chrono::Local;
@@ -21,12 +22,16 @@ impl WorkflowDir {
         }
     }
 
+    pub fn library_dir(&self) -> PathBuf {
+        self.path.join("library")
+    }
+
     pub fn tasks_dir(&self) -> PathBuf {
-        self.path.join("tasks")
+        self.library_dir().join("tasks")
     }
 
     pub fn current_link(&self) -> PathBuf {
-        self.tasks_dir().join("current")
+        self.path.join("current_task")
     }
 
     pub fn exists(&self) -> bool {
@@ -50,24 +55,23 @@ impl WorkflowDir {
     }
 
     pub fn current_task(&self) -> Result<Option<Task>> {
-        let tasks_dir = self.tasks_dir();
         let current_link = self.current_link();
-        if !current_link.exists() {
-            return Ok(None);
+        let target = match fs::read_link(current_link) {
+            Ok(target) => target,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        if target
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            return Err(Box::new(ProtocolError::InvalidCurrentTask));
         }
-
-        let task_dir = resolve_current_task(&tasks_dir, &current_link)?;
-        Ok(Some(Task::new(task_dir)))
+        Ok(Some(Task::new(self.path.join(target))))
     }
 
     pub fn create_task(&self, slug: &str) -> Result<Task> {
         validate_slug(slug)?;
-        if !self.path.is_dir() {
-            return Err(Box::new(ProtocolError::WorkflowDirMissing));
-        }
-        if !self.tasks_dir().is_dir() {
-            return Err(Box::new(ProtocolError::TasksDirMissing));
-        }
 
         let date = Local::now().format("%Y%m%d").to_string();
         let task_name = format!(
@@ -81,12 +85,9 @@ impl WorkflowDir {
 
     pub fn task(&self, task_name: &str) -> Result<Task> {
         validate_task_name(task_name)?;
-        if !self.tasks_dir().is_dir() {
-            return Err(Box::new(ProtocolError::TasksDirMissing));
-        }
 
         let task_dir = self.tasks_dir().join(task_name);
-        if !task_dir.is_dir() {
+        if !fs::metadata(&task_dir)?.is_dir() {
             return Err(Box::new(ProtocolError::TaskDoesNotExist));
         }
         Ok(Task::new(task_dir))
@@ -94,36 +95,18 @@ impl WorkflowDir {
 
     pub fn switch_task(&self, task: &Task) -> Result<()> {
         let task_name = task.name()?;
-        if !task.path.is_dir() {
-            return Err(Box::new(ProtocolError::TaskDoesNotExist));
+        let selected = self.task(task_name)?;
+        if task.path != selected.path {
+            return Err(Box::new(ProtocolError::TaskOutsideLibrary));
         }
-
         let current_link = self.current_link();
-        if let Ok(metadata) = fs::symlink_metadata(&current_link) {
-            if !metadata.file_type().is_symlink() {
-                return Err(Box::new(ProtocolError::InvalidCurrentTask));
-            }
-            resolve_current_task(&self.tasks_dir(), &current_link)?;
-            fs::remove_file(&current_link)?;
+        match fs::remove_file(&current_link) {
+            Ok(()) => (),
+            Err(error) if error.kind() == ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
         }
-
         symlink_task(task_name, &current_link)
     }
-}
-
-fn resolve_current_task(tasks_dir: &Path, current_link: &Path) -> Result<PathBuf> {
-    let metadata = fs::symlink_metadata(current_link)?;
-    if !metadata.file_type().is_symlink() {
-        return Err(Box::new(ProtocolError::InvalidCurrentTask));
-    }
-
-    let target = fs::read_link(current_link)?;
-    let task_dir = if target.is_absolute() {
-        target
-    } else {
-        absolute(tasks_dir.join(target))?
-    };
-    Ok(task_dir)
 }
 
 fn validate_slug(slug: &str) -> Result<()> {
@@ -188,7 +171,7 @@ fn next_task_sequence(tasks_dir: &Path, date: &str) -> Result<u32> {
 
 #[cfg(unix)]
 fn symlink_task(task_name: &str, current_link: &Path) -> Result<()> {
-    symlink(format!("./{task_name}"), current_link)?;
+    symlink(format!("library/tasks/{task_name}"), current_link)?;
     Ok(())
 }
 

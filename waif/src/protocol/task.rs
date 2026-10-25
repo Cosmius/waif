@@ -243,7 +243,7 @@ mod acceptance_tests {
 
     fn accept_goal_for_test(status: &str) -> (String, String) {
         let workspace = TestDir::new(status);
-        let tasks_dir = workspace.path.join(".waif/tasks");
+        let tasks_dir = workspace.path.join(".waif/library/tasks");
         let task_path = tasks_dir.join("20260818-1-task");
         fs::create_dir_all(&task_path).expect("task should be created");
         let task = Task::new(task_path.clone());
@@ -261,7 +261,7 @@ mod acceptance_tests {
         source: String,
     ) -> (Result<()>, Vec<u8>, Vec<u8>, ArtifactClassification) {
         let workspace = TestDir::new(name);
-        let tasks_dir = workspace.path.join(".waif/tasks");
+        let tasks_dir = workspace.path.join(".waif/library/tasks");
         let task_path = tasks_dir.join("20260818-1-task");
         fs::create_dir_all(&task_path).expect("task should be created");
         let task = Task::new(task_path.clone());

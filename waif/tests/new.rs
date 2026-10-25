@@ -15,7 +15,7 @@ fn new_initializes_a_missing_workflow_and_selects_the_task() {
 
     let output = run_new(&workspace, &["first-task"]);
     let date_after = Local::now().format("%Y%m%d").to_string();
-    let current = fs::read_link(workspace.path.join(".waif/tasks/current"))
+    let current = fs::read_link(workspace.path.join(".waif/current_task"))
         .expect("current task should be a symlink");
     let task_name = current
         .file_name()
@@ -28,10 +28,10 @@ fn new_initializes_a_missing_workflow_and_selects_the_task() {
         || task_name == format!("{date_after}-1-first-task"));
     assert!(workspace
         .path
-        .join(".waif/tasks")
+        .join(".waif/library/tasks")
         .join(task_name.as_ref())
         .is_dir());
-    assert_eq!(current, std::path::PathBuf::from(format!("./{task_name}")));
+    assert_eq!(current, std::path::PathBuf::from(format!("library/tasks/{task_name}")));
     assert!(String::from_utf8_lossy(&output.stdout).contains(task_name.as_ref()));
 }
 
@@ -40,7 +40,7 @@ fn new_initializes_a_missing_workflow_and_selects_the_task() {
 fn new_sequences_tasks_without_touching_existing_repository_metadata() {
     let workspace = TestDir::new("new-existing-workflow");
     let workflow = workspace.path.join(".waif");
-    let tasks = workflow.join("tasks");
+    let tasks = workflow.join("library/tasks");
     let date_before = Local::now().format("%Y%m%d").to_string();
     fs::create_dir_all(workflow.join(".git")).expect("git metadata dir should be created");
     fs::create_dir_all(tasks.join(format!("{date_before}-1-existing-task")))
@@ -55,7 +55,8 @@ fn new_sequences_tasks_without_touching_existing_repository_metadata() {
 
     let output = run_new(&workspace, &["next-task"]);
     let date_after = Local::now().format("%Y%m%d").to_string();
-    let current = fs::read_link(tasks.join("current")).expect("current task should be a symlink");
+    let current = fs::read_link(workspace.path.join(".waif/current_task"))
+        .expect("current task should be a symlink");
     let task_name = current
         .file_name()
         .expect("current task should have a name")
@@ -76,7 +77,7 @@ fn new_sequences_tasks_without_touching_existing_repository_metadata() {
             .expect("metadata sentinel should remain"),
         "preserve"
     );
-    assert_eq!(current, std::path::PathBuf::from(format!("./{task_name}")));
+    assert_eq!(current, std::path::PathBuf::from(format!("library/tasks/{task_name}")));
 }
 
 fn run_new(workspace: &TestDir, arguments: &[&str]) -> Output {

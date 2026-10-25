@@ -30,7 +30,7 @@ impl SwitchCommand {
         print_tabular_row(
             "Current reference:",
             format!(
-                "{} -> ./{}",
+                "{} -> library/tasks/{}",
                 relative_path(&workspace_dir, &workflow_dir.current_link()),
                 task.name()?
             ),
