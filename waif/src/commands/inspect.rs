@@ -1,5 +1,7 @@
 use std::error::Error;
 use std::fmt;
+use std::fs;
+use std::io::ErrorKind;
 use std::path::Path;
 
 use clap::Args;
@@ -25,18 +27,40 @@ impl InspectCommand {
             relative_path(&workspace_dir, &workflow_dir.path),
         );
 
-        if !workflow_dir.exists() {
-            print_tabular_row("Current task:", "none");
-            print_tabular_row("Next:", "Create task");
-            return unusable();
+        print_tabular_row(
+            "Library:",
+            relative_path(&workspace_dir, &workflow_dir.library_dir()),
+        );
+
+        let tasks_dir = workflow_dir.tasks_dir();
+        if let Err(error) = fs::read_dir(&tasks_dir) {
+            print_tabular_row("Current task:", "unavailable");
+            print_tabular_row(
+                "Next:",
+                if error.kind() == ErrorKind::NotFound {
+                    "Run waif init or repair library"
+                } else {
+                    "Check library"
+                },
+            );
+            return Err(format!("{}: {error}", relative_path(&workspace_dir, &tasks_dir)).into());
         }
 
         let task = match workflow_dir.current_task() {
-            Ok(Some(task)) if task.path.is_dir() => task,
-            _ => {
+            Ok(Some(task)) => task,
+            Ok(None) => {
                 print_tabular_row("Current task:", "none");
                 print_tabular_row("Next:", "Create or select task");
                 return unusable();
+            }
+            Err(error) => {
+                print_tabular_row("Current task:", "unavailable");
+                print_tabular_row("Next:", "Repair or select task");
+                return Err(format!(
+                    "{}: {error}",
+                    relative_path(&workspace_dir, &workflow_dir.current_link()),
+                )
+                .into());
             }
         };
         print_current_task(&workspace_dir, task)
@@ -50,6 +74,10 @@ fn print_current_task(workspace_dir: &Path, task: Task) -> Result<()> {
         "Current task dir:",
         relative_path(workspace_dir, &task.path),
     );
+    if let Err(error) = fs::read_dir(&task.path) {
+        print_tabular_row("Next:", "Repair or select task");
+        return Err(format!("{}: {error}", relative_path(workspace_dir, &task.path)).into());
+    }
     println!("Goal:");
 
     let goal_path = task.path.join("goal.md");

@@ -14,7 +14,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 #[command(after_help = indoc::indoc! {"
     Examples:
       waif check
-      waif check .waif/tasks/current/goal.md"
+      waif check .waif/current_task/goal.md"
 })]
 pub struct CheckCommand {
     /// Artifact file or task directory; omit to check the current task.

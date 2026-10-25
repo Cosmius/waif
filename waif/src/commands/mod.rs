@@ -46,11 +46,10 @@ pub enum Command {
     )]
     Init(init::InitCommand),
     /// Report current goal-stage context and the next mechanical action.
-    #[command(
-        long_about = "Read the current workflow and goal state without arguments or \
-                      mutation. Report acceptance readiness and the next mechanical action \
-                      when determinable. Succeed only when the reported context is usable."
-    )]
+    #[command(long_about = "Report the local instance, library, and \
+                      current goal state without arguments or mutation. Report \
+                      acceptance readiness and the next mechanical action \
+                      when determinable. Succeed only when the reported context is usable.")]
     Inspect(inspect::InspectCommand),
     /// Create and select a new workflow task from a validated slug.
     #[command(

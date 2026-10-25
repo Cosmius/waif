@@ -19,6 +19,7 @@ fn inspect_reports_ready_drafting_goal_in_the_existing_layout() {
 
     assert!(output.status.success());
     assert!(stdout.contains("Workflow dir:       .waif"));
+    assert!(stdout.contains("Library:            .waif/library"));
     assert!(stdout.contains("Current task:       20260728-1-example"));
     assert!(stdout.contains("Current task dir:   .waif/library/tasks/20260728-1-example"));
     assert!(stdout.contains(
@@ -134,8 +135,10 @@ fn inspect_reports_unavailable_context_with_one_next_instruction() {
 
     assert_eq!(missing_output.status.code(), Some(1));
     assert!(missing_stdout.contains(
-        "Current task:       none\nNext:               Create task\n"
+        "Current task:       unavailable\nNext:               Run waif init or repair library\n"
     ));
+    assert!(String::from_utf8_lossy(&missing_output.stderr).contains(".waif/library/tasks: No such file or directory"));
+    assert!(!missing.path.join(".waif").exists());
 
     let no_current = TestDir::new("missing-current");
     fs::create_dir_all(no_current.path.join(".waif/library/tasks"))
@@ -162,6 +165,42 @@ fn inspect_reports_unavailable_context_with_one_next_instruction() {
     assert!(selectable_stdout.contains(
         "Current task:       none\nNext:               Create or select task\n"
     ));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_preserves_pointer_read_errors_without_changing_the_entry() {
+    let workspace = current_task_workspace("invalid-current");
+    let pointer = workspace.path.join(".waif/current_task");
+    fs::remove_file(&pointer).unwrap();
+    fs::write(&pointer, "not a link").unwrap();
+    let native_error = fs::read_link(&pointer).unwrap_err();
+
+    let output = run_inspect(&workspace.path);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(!output.status.success());
+    assert!(stderr.contains(&format!(".waif/current_task: {native_error}")));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Next:               Repair or select task"));
+    assert_eq!(fs::read_to_string(&pointer).unwrap(), "not a link");
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_preserves_a_dangling_selected_task_and_reports_its_path() {
+    let workspace = current_task_workspace("dangling-selection");
+    fs::remove_dir(current_task_path(&workspace)).unwrap();
+    let pointer = workspace.path.join(".waif/current_task");
+    let before = fs::read_link(&pointer).unwrap();
+    let native_error = fs::read_dir(current_task_path(&workspace)).unwrap_err();
+
+    let output = run_inspect(&workspace.path);
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(".waif/library/tasks/20260728-1-example: {native_error}")));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Current task:       20260728-1-example"));
+    assert_eq!(fs::read_link(&pointer).unwrap(), before);
+    assert!(!current_task_path(&workspace).exists());
 }
 
 #[cfg(unix)]
