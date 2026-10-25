@@ -91,6 +91,22 @@ memory.
 
 Start in the repository where the source change should happen.
 
+WAIF skills apply only when at least one of these conditions holds:
+
+1. You explicitly invoke a skill.
+2. You explicitly request WAIF.
+3. You are already working within a WAIF task.
+
+- Charter creation or amendment alone does not establish task context.
+- Installation and task size alone do not trigger WAIF.
+- Standalone small fixes use direct execution unless you request WAIF or invoke
+  a skill.
+- Within an existing WAIF task, requests such as planning the next step can
+  select the corresponding skill without naming it.
+- All acceptance gates remain, including human staging before source commits.
+
+The examples below name skills to make each stage clear.
+
 Optionally initialize the workflow and set project rules:
 
 ```text

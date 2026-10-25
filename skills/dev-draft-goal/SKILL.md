@@ -1,8 +1,9 @@
 ---
 name: dev-draft-goal
 description: >-
-  Use only when the user explicitly invokes `dev-draft-goal`. Create or revise
-  the durable, non-technical goal for a software-development task.
+  Draft or revise a WAIF task's non-technical goal. Use only when explicitly
+  invoked, the user requests WAIF, or work continues an existing WAIF task.
+  Charter work alone does not count as task context.
 ---
 
 # Draft Development Goal

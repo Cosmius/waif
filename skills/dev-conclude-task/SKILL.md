@@ -1,9 +1,9 @@
 ---
 name: dev-conclude-task
 description: >-
-  Use only when the user explicitly invokes `dev-conclude-task`. Create a
-  self-contained, repository-owned handoff from completed task artifacts, Git
-  history, and relevant source, leaving acceptance and Git actions to the user.
+  Write a self-contained handoff for a completed WAIF task. Use only when
+  explicitly invoked, the user requests WAIF, or work continues an existing
+  WAIF task. Charter work alone does not count as task context.
 ---
 
 # Conclude Development Task

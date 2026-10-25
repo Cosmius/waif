@@ -1,8 +1,9 @@
 ---
 name: dev-workflow-setup
 description: >-
-  Initialize a local WAIF instance or create or revise its optional shared
-  project charter. Also used by dev-draft-goal when workflow setup is needed.
+  Initialize WAIF or create or revise its optional project charter. Use only
+  when explicitly invoked, the user requests WAIF, or work continues an
+  existing WAIF task. Charter work alone does not count as task context.
 ---
 
 # Set Up Workflow

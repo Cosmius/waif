@@ -1,8 +1,9 @@
 ---
 name: dev-final-review
 description: >-
-  Use only when the user explicitly invokes `dev-final-review`. Produce the
-  final task-wide implementation review after all intended steps are done.
+  Perform the final task-wide review of a completed WAIF implementation. Use
+  only when explicitly invoked, the user requests WAIF, or work continues an
+  existing WAIF task. Charter work alone does not count as task context.
 ---
 
 # Final Task Review

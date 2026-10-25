@@ -1,9 +1,9 @@
 ---
 name: dev-implement-step
 description: >-
-  Use only when the user explicitly invokes `dev-implement-step`. Implement the
-  current accepted step, validate it, review changes, and commit human-staged
-  changes.
+  Implement and review an accepted WAIF step; commit human-staged changes. Use
+  only when explicitly invoked, the user requests WAIF, or work continues an
+  existing WAIF task. Charter work alone does not count as task context.
 ---
 
 # Implement Development Step

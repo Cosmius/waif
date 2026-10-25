@@ -1,8 +1,9 @@
 ---
 name: dev-draft-plan
 description: >-
-  Use only when the user explicitly invokes `dev-draft-plan`. Create or revise
-  the general plan for the current accepted development goal.
+  Draft or revise the technical plan for an accepted WAIF goal. Use only when
+  explicitly invoked, the user requests WAIF, or work continues an existing
+  WAIF task. Charter work alone does not count as task context.
 ---
 
 # Draft Development Plan

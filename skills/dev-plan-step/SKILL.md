@@ -1,8 +1,9 @@
 ---
 name: dev-plan-step
 description: >-
-  Use only when the user explicitly invokes `dev-plan-step`. Create or revise
-  one drafting step plan for the current accepted general plan.
+  Plan one implementation step for an accepted WAIF plan. Use only when
+  explicitly invoked, the user requests WAIF, or work continues an existing
+  WAIF task. Charter work alone does not count as task context.
 ---
 
 # Plan Development Step

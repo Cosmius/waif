@@ -18,7 +18,7 @@ dev-plan-step
   -> accepted detailed step
 dev-implement-step
   -> reviewed and accepted source commit
-  -> human decides: more steps or invokes final review
+  -> human decides: more steps or requests final review
      -> more steps: return to dev-plan-step
      -> final review: continue to dev-final-review
 dev-final-review
@@ -33,7 +33,7 @@ dev-final-review
 | General plan        | `dev-draft-plan`     | Accepted goal             | Accepted `plan.md` and checked-out workspace task branch  |
 | Step plan           | `dev-plan-step`      | Accepted goal and plan    | One accepted `steps/NN-name/step.md` mapped to plan items |
 | Step implementation | `dev-implement-step` | One accepted step         | Validated, reviewed, human-accepted source commit         |
-| Final review        | `dev-final-review`   | User invokes final review | `review.md` covering the whole task                       |
+| Final review        | `dev-final-review`   | User requests final review | `review.md` covering the whole task                       |
 
 ### Human Gates and Loops
 
@@ -42,8 +42,8 @@ dev-final-review
 - Human-requested changes repeat the current stage.
 - After each completed implementation step, the human decides whether the task
   needs another step.
-- Invoking `dev-final-review` means the human considers implementation
-  complete.
+- Requesting final task review, by name or in natural language, means the human
+  considers implementation complete.
 
 ### Stage Boundaries
 
