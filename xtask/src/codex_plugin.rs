@@ -6,8 +6,9 @@ use crate::{copy_whitelist, write_json, Metadata, PackageTargetImpl, Result, Sta
 
 const PACKAGE_FILES: &[&str] = &[
     "protocol/workflow.md",
-    "skills/dev-draft-charter/SKILL.md",
-    "skills/dev-draft-charter/agents/openai.yaml",
+    "protocol/waif-helper.md",
+    "skills/dev-workflow-setup/SKILL.md",
+    "skills/dev-workflow-setup/agents/openai.yaml",
     "skills/dev-draft-goal/SKILL.md",
     "skills/dev-draft-goal/agents/openai.yaml",
     "skills/dev-draft-plan/SKILL.md",

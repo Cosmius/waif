@@ -47,10 +47,9 @@ dev-final-review
 
 ### Stage Boundaries
 
-- `dev-draft-charter` may establish the workflow dir and changes only
-  `charter.md`. It is an optional project setup and maintenance utility, not a
-  task lifecycle stage or acceptance gate.
-- `dev-draft-goal` may establish the workflow dir and create the task dir.
+- `dev-workflow-setup` sets up the workflow dir and maintains the optional
+  `library/charter.md`. It is not a task lifecycle stage or acceptance gate.
+- `dev-draft-goal` creates the task dir, using `dev-workflow-setup` when needed.
 - `dev-draft-plan` creates the general plan and workspace task branch after
   goal acceptance.
 - `dev-plan-step` plans one coherent implementation step without changing
@@ -96,16 +95,24 @@ plans, reviews, or results stored in the task dir. Task artifacts include
 
 The `workspace dir` is the root directory of the software project being
 changed. It contains the source repository and its workspace instructions.
+Resolve it with `git rev-parse --show-toplevel` from the invoking source
+location, before entering `.waif`. In non-Git projects, use the established
+project root. Run task-context helpers and source Git commands from this root.
 
 ### Workflow Dir
 
-The `workflow dir` is the directory that stores durable workflow artifacts.
-It is located at `<workspace-dir>/.waif`.
+The `workflow dir` is the local instance at `<workspace-dir>/.waif`.
+Each source worktree has its own instance and current-task pointer.
+
+### Workflow Library
+
+The `workflow library` is `<workflow-dir>/library`, containing `charter.md`
+and `tasks/`. It may be a real directory or a symlink to a shared library.
 
 ### Charter
 
-`<workflow-dir>/charter.md` is an optional, human-authored set of project rules
-that applies to every task in the workflow dir. It is not a task artifact and
+`<workflow-dir>/library/charter.md` is an optional, human-authored set of project
+rules that applies to every task in the library. It is not a task artifact and
 has no required format or lifecycle metadata.
 
 After resolving the workflow dir, every workflow skill must read the complete
@@ -119,8 +126,7 @@ explicitly asks for that change.
 ### Task Dir
 
 The `task dir` is the directory for one development task. It is a direct child
-of `<workflow-dir>/tasks/`, is created during goal drafting, and is managed
-under the workflow dir.
+of `<workflow-dir>/library/tasks/` and is created during goal drafting.
 
 Name a task dir `YYYYMMDD-N-short-name`, for example
 `20260613-2-add-session-timeout`.
@@ -131,40 +137,41 @@ Name a task dir `YYYYMMDD-N-short-name`, for example
 
 ### Current Task
 
-`<workflow-dir>/tasks/current` is a relative symlink to the active task dir,
+`<workflow-dir>/current_task` is a relative symlink to the active task dir,
 for example:
 
 ```text
-current -> ./20260613-2-add-session-timeout
+current_task -> library/tasks/20260613-2-add-session-timeout
 ```
 
-All stages after initial goal drafting resolve the task dir through this
-symlink. Stop if it is missing, broken, ambiguous, or points outside
-`<workflow-dir>/tasks/`.
+Resolve one layer of this symlink relative to the local workflow dir,
+retaining nominal paths. Stages requiring a current task stop if it is missing
+or unusable.
 
 ## Directory Structure
 
 ```text
 <workspace-dir>/
-├── <workflow-dir>/
-│   ├── charter.md
-│   └── tasks/
-│       ├── 20260501-1-task-name/
-│       │   └── ...
-│       ├── 20260601-1-task-name/
-│       │   └── ...
-│       ├── 20260601-2-task-name/
-│       │   ├── goal.md
-│       │   ├── plan.md
-│       │   ├── steps/
-│       │   │   ├── 01-step-name/
-│       │   │   │   └── ...
-│       │   │   └── 02-step-name/
-│       │   │       ├── step.md
-│       │   │       ├── review1.md
-│       │   │       └── review2.md
-│       │   └── review.md
-│       └── current -> ./20260601-2-task-name
+├── .waif/
+│   ├── current_task -> library/tasks/20260601-2-task-name
+│   └── library/                 # real directory or linked library symlink
+│       ├── charter.md           # optional
+│       └── tasks/
+│           ├── 20260501-1-task-name/
+│           │   └── ...
+│           ├── 20260601-1-task-name/
+│           │   └── ...
+│           └── 20260601-2-task-name/
+│               ├── goal.md
+│               ├── plan.md
+│               ├── steps/
+│               │   ├── 01-step-name/
+│               │   │   └── ...
+│               │   └── 02-step-name/
+│               │       ├── step.md
+│               │       ├── review1.md
+│               │       └── review2.md
+│               └── review.md
 └── <workspace files>
 ```
 

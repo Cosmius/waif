@@ -13,9 +13,9 @@ Implement one accepted step through a review-and-acceptance loop.
 ## Procedure
 
 1. Read canonical [workflow.md](../../protocol/workflow.md), resolve the
-   established workflow dir and current task dir, and identify the one step
-   whose status is `accepted`. Stop when a required directory is missing or
-   when there are zero or multiple candidate steps.
+   invoking workspace, local library, and current task, and identify the one
+   step whose status is `accepted`. Stop on missing or unusable required
+   context or zero or multiple candidate steps.
 2. Read `goal.md`, `plan.md`, and the complete `step.md`. Require all three to
    have `Status: accepted`, verify exact goal-criterion and plan-item mappings,
    and verify the workspace branch.

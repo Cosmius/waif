@@ -14,8 +14,12 @@ Create the task dir and keep `goal.md` as the product-level contract.
 1. Read the request, workspace instructions,
    [workflow.md](../../protocol/workflow.md), and
    [waif-helper.md](../../protocol/waif-helper.md).
-2. Run `waif inspect` to discover the current goal-stage context. Resolve the
-   task using the deterministic commands:
+2. If the local library is missing, use
+   [dev-workflow-setup](../dev-workflow-setup/SKILL.md) before creating a task.
+   Read the library charter when present; resolve access failures before
+   proceeding.
+   Run `waif inspect` for goal-stage context, then use the deterministic
+   commands:
    - when the user is clearly continuing an existing task that is not current,
      run `waif switch <TASK_NAME>`;
    - when starting a distinct task, run `waif new <TASK_SLUG>`;
@@ -97,7 +101,7 @@ and revision rules.
 
 ## Done When
 
-- The workflow dir, task dir, and `current` symlink are valid.
+- The local instance, library, task dir, and `current_task` context are usable.
 - `goal.md` matches the contract and latest user direction.
 - Every goal content item has a stable ID.
 - Accepted goals have no unresolved blocking questions.

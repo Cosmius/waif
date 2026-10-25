@@ -11,8 +11,9 @@ Audit the complete task and write the durable final review.
 
 ## Procedure
 
-1. Read [workflow.md](../../protocol/workflow.md), resolve the established
-   workflow dir and current task dir, and stop if either is missing.
+1. Read [workflow.md](../../protocol/workflow.md), resolve the invoking
+   workspace, local library, and current task, and stop if required context is
+   missing or unusable.
 2. Read the complete accepted `goal.md`, accepted `plan.md`, every
    `steps/*/step.md`, and every `steps/*/review*.md`. Read step artifacts in
    step sequence order and review files in review-number order within each
@@ -117,12 +118,12 @@ finding, but still exclude that ignored finding from the final verdict.
   review with the user's required reason and any reviewer counter-opinion.
 - Keep final-review findings separate from historical
   `steps/*/review*.md` records.
-- Do not delete or retarget `tasks/current`.
+- Do not delete or retarget the local `current_task` pointer.
 
 ## Done When
 
 - `review.md` accounts for the goal, plan, steps, reviews, commits, and
   validation.
 - Every review content item has a stable ID or preserves its source item ID.
-- The workflow dir contains the review.
+- The library's task dir contains the review.
 - The workspace remains unchanged by this skill.

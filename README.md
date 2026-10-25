@@ -91,10 +91,10 @@ memory.
 
 Start in the repository where the source change should happen.
 
-Optionally create or revise the project charter:
+Optionally initialize the workflow and set project rules:
 
 ```text
-Use dev-draft-charter to require tests for every behavior change.
+Use dev-workflow-setup to require tests for every behavior change.
 ```
 
 Draft the goal:
@@ -158,30 +158,28 @@ Use dev-conclude-task to document the completed task for other contributors.
 
 ## Workflow Directory
 
-Task artifacts live in the workflow directory located at
-`<workspace-dir>/.waif`.
+Each source workspace has a local `.waif/`:
 
-The workflow directory may also contain a human-authored `charter.md` with
-project rules that apply to every task. Every waif skill reads the charter
-when it exists. A charter rule prevails when it conflicts with a skill, while
-the canonical workflow protocol still governs workflow state and artifact
-structure. Skills do not modify the charter unless the user explicitly asks
-for that change.
+- `library/charter.md`: optional project rules read by every skill.
+- `library/tasks/`: task records, shared when `library` is a symlink.
+- `current_task`: local selection pointing to `library/tasks/<task-name>`.
 
-`dev-draft-charter` and `dev-draft-goal` may establish the workflow directory.
-Task-lifecycle skills after `dev-draft-goal` expect the workflow directory and
-`tasks/current` symlink to already exist.
+`dev-workflow-setup` initializes the library and maintains the charter;
+`dev-draft-goal` uses it when needed. In linked worktrees, setup asks whether
+to share the main worktree's library or create an independent one. Later stages
+require an established current task. Selection never switches source branches.
 
-When the workflow directory is initialized as its own Git repository, that Git
-repository is only a convenience for humans to audit artifact changes. Waif
-does not depend on that repository structure, and its history is not used as
-workflow protocol state.
+Removing a linked worktree preserves shared records; removing an independent
+instance removes its local library. Retain the library and repair dependent
+links when moving or removing the main project. Exclude `.waif/` from source Git.
+
+See [helper usage](protocol/waif-helper.md) for CLI commands.
 
 ## Repository Contents
 
 - `protocol/workflow.md` is the canonical workflow specification.
 - `protocol/waif-helper.md`: deterministic CLI commands for agents.
-- `skills/dev-draft-charter/` creates or revises project-wide rules.
+- `skills/dev-workflow-setup/` initializes workflows and maintains project rules.
 - `skills/dev-draft-goal/` drafts or revises the task goal.
 - `skills/dev-draft-plan/` drafts or revises the technical plan.
 - `skills/dev-plan-step/` drafts one implementation step.

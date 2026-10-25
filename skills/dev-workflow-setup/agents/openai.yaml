@@ -1,0 +1,4 @@
+interface:
+  display_name: "Set Up Workflow"
+  short_description: "Set up WAIF and maintain project rules"
+  default_prompt: "Use $dev-workflow-setup to set up this workflow and its project charter."

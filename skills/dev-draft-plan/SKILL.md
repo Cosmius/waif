@@ -11,8 +11,9 @@ Turn the accepted goal into a reviewable general plan.
 
 ## Procedure
 
-1. Read [workflow.md](../../protocol/workflow.md), resolve the established
-   workflow dir and current task dir, and stop if either is missing.
+1. Read [workflow.md](../../protocol/workflow.md), resolve the invoking
+   workspace, local library, and current task, and stop if required context is
+   missing or unusable.
 2. Require `goal.md` to exist with `Status: accepted`.
 3. Inspect workspace instructions, relevant code, and test commands. Plan from
    current code, not assumptions.

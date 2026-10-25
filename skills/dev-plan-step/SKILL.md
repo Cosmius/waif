@@ -12,8 +12,9 @@ Consume one coherent part of the general plan and produce an executable
 
 ## Procedure
 
-1. Read [workflow.md](../../protocol/workflow.md), resolve the established
-   workflow dir and current task dir, and stop if either is missing.
+1. Read [workflow.md](../../protocol/workflow.md), resolve the invoking
+   workspace, local library, and current task, and stop if required context is
+   missing or unusable.
 2. Require `goal.md` and `plan.md` to exist with `Status: accepted`.
    Otherwise, ask the user to revise and accept the upstream artifact first.
    Do not draft, revise, or accept upstream artifacts. Verify the workspace is

@@ -13,8 +13,8 @@ Explain the completed task for who knows the project but not the goal.
 ## Procedure
 
 1. Read [workflow.md](../../protocol/workflow.md) and try to resolve the
-   workflow and current task dirs. Treat structure and statuses as sanity
-   checks, not prerequisites.
+   invoking workspace, local library, and current task. Treat structure and
+   statuses as sanity checks, not prerequisites.
 2. If task state is missing, broken, or inconsistent, explain the problem and
    ask whether to continue. If the user continues, use the identified dir and
    available evidence without requiring accepted or done statuses.
