@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use crate::{copy_whitelist, write_json, Metadata, PackageTargetImpl, Result, StagingDir};
 
 const PACKAGE_FILES: &[&str] = &[
+    "protocol/workflow_migration.md",
     "protocol/workflow.md",
     "protocol/waif-helper.md",
     "skills/dev-workflow-setup/SKILL.md",

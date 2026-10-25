@@ -104,6 +104,9 @@ project root. Run task-context helpers and source Git commands from this root.
 The `workflow dir` is the local instance at `<workspace-dir>/.waif`.
 Each source worktree has its own instance and current-task pointer.
 
+If an existing workflow dir uses a previous schema, see the
+[migration guide](workflow_migration.md).
+
 ### Workflow Library
 
 The `workflow library` is `<workflow-dir>/library`, containing `charter.md`

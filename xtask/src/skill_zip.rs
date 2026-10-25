@@ -8,6 +8,7 @@ use zip::{CompressionMethod, ZipWriter};
 use crate::{Metadata, PackageTargetImpl, Result, StagingDir};
 
 const PACKAGE_FILES: &[&str] = &[
+    "protocol/workflow_migration.md",
     "protocol/workflow.md",
     "protocol/waif-helper.md",
     "skills/dev-workflow-setup/SKILL.md",
