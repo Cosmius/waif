@@ -14,6 +14,12 @@ pub struct WorkflowDir {
     _private: (),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum Initialisation {
+    Created(Option<String>),
+    Skipped,
+}
+
 impl WorkflowDir {
     pub fn for_workspace(workspace_dir: PathBuf) -> Self {
         Self {
@@ -30,6 +36,10 @@ impl WorkflowDir {
         self.library_dir().join("tasks")
     }
 
+    pub fn charter_path(&self) -> PathBuf {
+        self.library_dir().join("charter.md")
+    }
+
     pub fn current_link(&self) -> PathBuf {
         self.path.join("current_task")
     }
@@ -38,8 +48,57 @@ impl WorkflowDir {
         self.path.exists()
     }
 
-    pub fn initialise(&self) -> Result<Option<String>> {
-        fs::create_dir_all(self.tasks_dir())?;
+    pub fn initialise(&self, link: Option<&Path>) -> Result<Initialisation> {
+        match fs::symlink_metadata(self.library_dir()) {
+            Ok(_) => return Ok(Initialisation::Skipped),
+            Err(error) if error.kind() == ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+        }
+        fs::create_dir_all(&self.path)?;
+        match link {
+            Some(path) => {
+                let target = fs::canonicalize(path).and_then(|target| {
+                    fs::read_dir(target.join("tasks")).map(|_| target)
+                }).map_err(|error| {
+                    std::io::Error::new(
+                        error.kind(),
+                        format!("linked library is unavailable; initialize or repair the root library: {error}"),
+                    )
+                })?;
+                #[cfg(unix)]
+                {
+                    symlink(target, self.library_dir())?
+                }
+                #[cfg(not(unix))]
+                {
+                    return Err(std::io::Error::new(
+                        ErrorKind::Unsupported,
+                        "library symlinks are unsupported",
+                    )
+                    .into());
+                }
+                return Ok(Initialisation::Created(None));
+            }
+            None => fs::create_dir(self.library_dir())?,
+        };
+        fs::create_dir(self.tasks_dir())?;
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(self.path.join(".gitignore"))
+        {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(b"/current_task\n")?;
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(error.into()),
+        }
+        match fs::symlink_metadata(self.path.join(".git")) {
+            Ok(_) => return Ok(Initialisation::Created(None)),
+            Err(error) if error.kind() == ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+        }
         let exit_status = Command::new("git")
             .arg("init")
             .current_dir(&self.path)
@@ -51,7 +110,7 @@ impl WorkflowDir {
             Ok(status) => Some(format!("git init exited with {status}")),
             Err(error) => Some(error.to_string()),
         };
-        Ok(git_error)
+        Ok(Initialisation::Created(git_error))
     }
 
     pub fn current_task(&self) -> Result<Option<Task>> {

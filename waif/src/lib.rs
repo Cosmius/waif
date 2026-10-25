@@ -27,15 +27,23 @@ pub fn run() -> Result<()> {
 #[command(
     name = "waif",
     disable_help_subcommand = true,
-    override_usage = "waif <check|fill|goal|inspect|new|switch> [ARGUMENTS]",
+    override_usage = "waif <check|fill|goal|init|inspect|new|switch> [ARGUMENTS]",
     about = "Deterministic helpers for the Waif workflow",
     long_about = "Inspect and update mechanical Waif workflow state. Goal content, \
                   semantic review, and human acceptance remain outside the CLI.",
-    after_help = "Examples:\n  waif inspect\n  waif new add-session-timeout\n  \
-                  waif switch 20260916-1-add-session-timeout\n  waif check \
-                  .waif/tasks/current/goal.md\n  waif fill \
-                  .waif/tasks/current/goal.md\n  waif goal accept\n\nUse `waif \
-                  <COMMAND> --help` for command details."
+    after_help = indoc::indoc! {"
+        Examples:
+          waif init
+          waif init --link /project/.waif/library
+          waif inspect
+          waif new add-session-timeout
+          waif switch 20260916-1-add-session-timeout
+          waif check .waif/current_task/goal.md
+          waif fill .waif/current_task/goal.md
+          waif goal accept
+
+        Use `waif <COMMAND> --help` for command details."
+    }
 )]
 struct Cli {
     #[command(subcommand)]

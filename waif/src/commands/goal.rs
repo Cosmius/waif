@@ -12,9 +12,12 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 #[command(
     disable_help_subcommand = true,
     override_usage = "waif goal <accept>",
-    after_help = "Example:\n  waif goal accept\n\nAcceptance requires explicit human \
-                  approval, a GOOD drafting or amending goal, and no blocking open \
-                  questions."
+    after_help = indoc::indoc! {"
+        Example:
+          waif goal accept
+
+        Acceptance requires explicit human approval, a GOOD drafting or amending goal, and no blocking open questions."
+    }
 )]
 pub enum GoalCommand {
     /// Accept a complete current goal after explicit human approval.
@@ -36,7 +39,10 @@ impl GoalCommand {
 }
 
 #[derive(Args)]
-#[command(after_help = "Example:\n  waif goal accept")]
+#[command(after_help = indoc::indoc! {"
+    Example:
+      waif goal accept"
+})]
 pub struct AcceptCommand {}
 
 impl AcceptCommand {

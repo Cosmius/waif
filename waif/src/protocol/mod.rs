@@ -10,7 +10,7 @@ mod workflow;
 
 pub(crate) use artifact::{ArtifactCheck, ArtifactClassification, ArtifactFile, ArtifactKind};
 pub(crate) use task::{discover_artifact_paths, Task};
-pub(crate) use workflow::WorkflowDir;
+pub(crate) use workflow::{Initialisation, WorkflowDir};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

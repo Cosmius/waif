@@ -26,6 +26,9 @@ const DRAFT_GOAL: &str = concat!(
 fn goal_stage_commands_complete_one_workflow_without_crossing_mutation_boundaries() {
     let workspace = TestDir::new("goal-workflow");
 
+    let initialized = run(&workspace, &["init"]);
+    assert!(initialized.status.success(), "{}", String::from_utf8_lossy(&initialized.stderr));
+
     let created = run(&workspace, &["new", "first-goal"]);
     let initial = run(&workspace, &["inspect"]);
     let first_current = fs::read_link(workspace.path.join(".waif/current_task"))

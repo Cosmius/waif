@@ -7,32 +7,14 @@ mod test_support;
 
 use test_support::TestDir;
 
-#[cfg(unix)]
 #[test]
-fn new_initializes_a_missing_workflow_and_selects_the_task() {
-    let workspace = TestDir::new("new-initialize");
-    let date_before = Local::now().format("%Y%m%d").to_string();
+fn new_requires_explicit_setup_without_creating_workflow_state() {
+    let workspace = TestDir::new("new-unconfigured");
 
     let output = run_new(&workspace, &["first-task"]);
-    let date_after = Local::now().format("%Y%m%d").to_string();
-    let current = fs::read_link(workspace.path.join(".waif/current_task"))
-        .expect("current task should be a symlink");
-    let task_name = current
-        .file_name()
-        .expect("current task should have a name")
-        .to_string_lossy();
 
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert!(workspace.path.join(".waif/.git").is_dir());
-    assert!(task_name == format!("{date_before}-1-first-task")
-        || task_name == format!("{date_after}-1-first-task"));
-    assert!(workspace
-        .path
-        .join(".waif/library/tasks")
-        .join(task_name.as_ref())
-        .is_dir());
-    assert_eq!(current, std::path::PathBuf::from(format!("library/tasks/{task_name}")));
-    assert!(String::from_utf8_lossy(&output.stdout).contains(task_name.as_ref()));
+    assert!(!output.status.success());
+    assert!(!workspace.path.join(".waif").exists());
 }
 
 #[cfg(unix)]

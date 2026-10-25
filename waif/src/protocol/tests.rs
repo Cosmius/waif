@@ -23,6 +23,7 @@ fn workflow_dir_uses_workspace_waif_directory() {
         workflow_dir.tasks_dir(),
         PathBuf::from("/tmp/example-workspace/.waif/library/tasks")
     );
+    assert_eq!(workflow_dir.charter_path(), PathBuf::from("/tmp/example-workspace/.waif/library/charter.md"));
     assert_eq!(
         workflow_dir.current_link(),
         PathBuf::from("/tmp/example-workspace/.waif/current_task")
@@ -46,10 +47,10 @@ fn initialise_creates_workflow_dir_and_tasks_dir() {
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
 
     let git_error = workflow_dir
-        .initialise()
+        .initialise(None)
         .expect("workflow should initialise");
 
-    assert_eq!(git_error, None);
+    assert_eq!(git_error, Initialisation::Created(None));
     assert!(workflow_dir.path.join(".git").is_dir());
     assert!(workflow_dir.tasks_dir().is_dir());
     assert!(workflow_dir
@@ -65,7 +66,7 @@ fn create_task_creates_task_without_switching_current() {
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
     let date = Local::now().format("%Y%m%d").to_string();
     workflow_dir
-        .initialise()
+        .initialise(None)
         .expect("workflow should initialise");
 
     let task = workflow_dir
@@ -115,7 +116,7 @@ fn switch_task_updates_current_link() {
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
     let date = Local::now().format("%Y%m%d").to_string();
     workflow_dir
-        .initialise()
+        .initialise(None)
         .expect("workflow should initialise");
     let task = workflow_dir
         .create_task("add-session-timeout")
@@ -144,7 +145,7 @@ fn create_task_increments_sequence_for_same_date() {
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
     let date = Local::now().format("%Y%m%d").to_string();
     workflow_dir
-        .initialise()
+        .initialise(None)
         .expect("workflow should initialise");
     fs::create_dir_all(
         workflow_dir
@@ -282,7 +283,7 @@ fn switch_task_replaces_current_file() {
     let workspace = TestDir::new("current-file");
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
     workflow_dir
-        .initialise()
+        .initialise(None)
         .expect("workflow should initialise");
     let task = workflow_dir
         .create_task("new-task")

@@ -7,6 +7,7 @@ use clap::Subcommand;
 mod check;
 mod fill;
 mod goal;
+mod init;
 mod inspect;
 mod new;
 mod switch;
@@ -36,6 +37,14 @@ pub enum Command {
     /// Perform lifecycle operations on the current goal.
     #[command(subcommand)]
     Goal(goal::GoalCommand),
+    /// Set up an independent workflow or link to a supplied library.
+    #[command(
+        long_about = "Create an independent library and workflow repository, or use \
+                      --link TARGET to link to a supplied library's canonical path. \
+                      An existing library entry is left unchanged; report skipped \
+                      setup and succeed without validating it."
+    )]
+    Init(init::InitCommand),
     /// Report current goal-stage context and the next mechanical action.
     #[command(
         long_about = "Read the current workflow and goal state without arguments or \
@@ -46,8 +55,8 @@ pub enum Command {
     /// Create and select a new workflow task from a validated slug.
     #[command(
         long_about = "Create and select the next date-sequenced task from one validated \
-                      TASK_SLUG. Initialize a missing workflow without changing existing \
-                      workflow repository metadata. Invalid input or a collision creates \
+                      TASK_SLUG. Requires an initialized workflow; run waif init first. \
+                      Invalid input or a collision creates \
                       and selects nothing."
     )]
     New(new::NewCommand),
@@ -66,6 +75,7 @@ impl Command {
             Self::Check(command) => command.run(),
             Self::Fill(command) => command.run(),
             Self::Goal(command) => command.run(),
+            Self::Init(command) => command.run(),
             Self::Inspect(command) => command.run(),
             Self::New(command) => command.run(),
             Self::Switch(command) => command.run(),

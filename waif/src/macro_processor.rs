@@ -63,15 +63,19 @@ pub(crate) fn scan(source: &str) -> Vec<MacroOccurrence> {
 }
 
 pub(crate) fn fill_help() -> String {
-    let mut help =
-        String::from("Example:\n  waif fill .waif/tasks/current/goal.md\n\nKnown macros:\n");
+    let mut help = String::from(indoc::indoc! {"
+        Example:
+          waif fill .waif/current_task/goal.md
+
+        Known macros:
+    "});
     for definition in CATALOGUE {
         help.push_str(&format!("  {:<9}{}\n", definition.literal, definition.help));
     }
-    help.push_str(
-        "\nAn occurrence immediately enclosed by backticks is not replaced. \
-         A BAD candidate leaves the target unchanged and is saved to a recovery path.",
-    );
+    help.push_str(indoc::indoc! {"
+
+        An occurrence immediately enclosed by backticks is not replaced. A BAD candidate leaves the target unchanged and is saved to a recovery path."
+    });
     help
 }
 

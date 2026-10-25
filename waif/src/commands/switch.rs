@@ -8,8 +8,10 @@ use crate::protocol::WorkflowDir;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Args)]
-#[command(after_help = "Example:\n  waif switch \
-                        20260916-1-deterministic-goal-drafting")]
+#[command(after_help = indoc::indoc! {"
+    Example:
+      waif switch 20260916-1-deterministic-goal-drafting"
+})]
 pub struct SwitchCommand {
     /// Complete workflow task-directory name.
     task_name: String,
