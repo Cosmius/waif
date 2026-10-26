@@ -10,6 +10,7 @@ mod goal;
 mod init;
 mod inspect;
 mod new;
+mod plan;
 mod switch;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -60,6 +61,9 @@ pub enum Command {
                       and selects nothing."
     )]
     New(new::NewCommand),
+    /// Perform lifecycle operations on the current plan.
+    #[command(subcommand)]
+    Plan(plan::PlanCommand),
     /// Select an existing task by its complete directory name.
     #[command(
         long_about = "Select one existing direct task child by its complete validated \
@@ -78,6 +82,7 @@ impl Command {
             Self::Init(command) => command.run(),
             Self::Inspect(command) => command.run(),
             Self::New(command) => command.run(),
+            Self::Plan(command) => command.run(),
             Self::Switch(command) => command.run(),
         }
     }

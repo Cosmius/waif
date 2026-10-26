@@ -27,9 +27,9 @@ pub fn run() -> Result<()> {
 #[command(
     name = "waif",
     disable_help_subcommand = true,
-    override_usage = "waif <check|fill|goal|init|inspect|new|switch> [ARGUMENTS]",
+    override_usage = "waif <check|fill|goal|init|inspect|new|plan|switch> [ARGUMENTS]",
     about = "Deterministic helpers for the Waif workflow",
-    long_about = "Inspect and update mechanical Waif workflow state. Goal content, \
+    long_about = "Inspect and update mechanical Waif workflow state. Artifact content, \
                   semantic review, and human acceptance remain outside the CLI.",
     after_help = indoc::indoc! {"
         Examples:
@@ -41,6 +41,7 @@ pub fn run() -> Result<()> {
           waif check .waif/current_task/goal.md
           waif fill .waif/current_task/goal.md
           waif goal accept
+          waif plan accept
 
         Use `waif <COMMAND> --help` for command details."
     }
