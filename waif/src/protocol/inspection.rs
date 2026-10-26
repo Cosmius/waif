@@ -62,6 +62,7 @@ pub(crate) struct PlanInspection {
     head: Option<String>,
     clean: bool,
     branch_exists: bool,
+    branch_commit: Option<String>,
     branch_in_other_worktree: bool,
 }
 
@@ -80,6 +81,7 @@ impl PlanInspection {
             head: None,
             clean: false,
             branch_exists: false,
+            branch_commit: None,
             branch_in_other_worktree: false,
         }
     }
@@ -130,7 +132,7 @@ impl PlanInspection {
         self.goal.as_ref()
     }
 
-    fn artifacts_ready(&self) -> bool {
+    pub(super) fn artifacts_ready(&self) -> bool {
         self.classification == ArtifactClassification::Good
             && !self.has_open_questions
             && self.goal().is_some_and(|goal| {
@@ -171,6 +173,10 @@ impl PlanInspection {
         self.branch_exists
     }
 
+    pub(crate) fn branch_commit(&self) -> Option<&str> {
+        self.branch_commit.as_deref()
+    }
+
     pub(crate) fn branch_in_other_worktree(&self) -> bool {
         self.branch_in_other_worktree
     }
@@ -190,9 +196,12 @@ impl PlanInspection {
                 };
                 let head_matches = head.eq_ignore_ascii_case(base_commit); // HEAD matches.
                 let base_matches = base_tip.eq_ignore_ascii_case(base_commit); // Base tip matches.
-                let branch_is_new = !self.branch_exists; // Task branch is new.
+                let branch_absent = self.branch_commit().is_none();
+                let branch_at_base = self
+                    .branch_commit()
+                    .is_some_and(|tip| tip.eq_ignore_ascii_case(base_commit));
                 let workspace_clean = self.clean; // No staged or tracked-file changes.
-                head_matches && base_matches && branch_is_new && workspace_clean
+                head_matches && base_matches && (branch_absent || branch_at_base) && workspace_clean
             }
             Some("amending" | "accepted") => {
                 let branch_exists = self.branch_exists; // Recorded task branch exists.
@@ -243,6 +252,7 @@ impl PlanInspection {
             ],
         )?;
         let mut occupancy = None;
+        let mut branch_commit = None;
         let mut base_branch_commit = None;
         for line in refs.split(|byte| *byte == b'\n') {
             let mut fields = line.splitn(3, |byte| *byte == 0);
@@ -255,6 +265,7 @@ impl PlanInspection {
             };
             if name == branch_ref.as_bytes() {
                 occupancy = Some(worktree);
+                branch_commit = Some(String::from_utf8(commit.to_vec())?);
             }
             if name == base_ref.as_bytes() {
                 base_branch_commit = Some(String::from_utf8(commit.to_vec())?);
@@ -263,6 +274,7 @@ impl PlanInspection {
         let branch_in_other_worktree = current_branch.as_deref() != Some(branch)
             && occupancy.is_some_and(|path| !path.is_empty());
         self.branch_exists = occupancy.is_some();
+        self.branch_commit = branch_commit;
         self.branch_in_other_worktree = branch_in_other_worktree;
         self.base_branch_commit = base_branch_commit;
         self.current_branch = current_branch;
@@ -439,16 +451,6 @@ mod tests {
         let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
         assert!(!inspection.clean());
-        assert!(!inspection.ready_to_accept());
-    }
-
-    #[test]
-    fn drafting_plan_blocks_existing_task_branch() {
-        let (workspace, task) = git_plan_task("existing-branch", "drafting");
-        git::query(&workspace.path, &["branch", "waif/task"]).unwrap();
-        let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
-
-        assert!(inspection.branch_exists());
         assert!(!inspection.ready_to_accept());
     }
 
