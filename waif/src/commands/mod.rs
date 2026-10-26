@@ -45,11 +45,12 @@ pub enum Command {
                       setup and succeed without validating it."
     )]
     Init(init::InitCommand),
-    /// Report current goal-stage context and the next mechanical action.
+    /// Report current goal and plan context and the next mechanical action.
     #[command(long_about = "Report the local instance, library, and \
-                      current goal state without arguments or mutation. Report \
-                      acceptance readiness and the next mechanical action \
-                      when determinable. Succeed only when the reported context is usable.")]
+                      current goal and plan state without arguments or mutation. Report \
+                      mechanical acceptance readiness and the next action when determinable. \
+                      Readiness does not establish human approval. \
+                      Succeed only when the reported context is usable.")]
     Inspect(inspect::InspectCommand),
     /// Create and select a new workflow task from a validated slug.
     #[command(

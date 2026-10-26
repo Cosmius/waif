@@ -118,7 +118,89 @@ fn print_current_task(workspace_dir: &Path, task: Task) -> Result<()> {
             print_tabular_row("Next:", "Revise or accept goal");
         }
     } else if status == "accepted" {
-        print_tabular_row("Next:", "Draft plan");
+        return print_plan(workspace_dir, &task);
+    }
+    Ok(())
+}
+
+fn print_plan(workspace_dir: &Path, task: &Task) -> Result<()> {
+    println!("Plan:");
+    let plan_path = relative_path(workspace_dir, &task.path.join("plan.md"));
+    let inspection = match task.inspect_plan(workspace_dir) {
+        Ok(Some(inspection)) => inspection,
+        Ok(None) => {
+            println!("  not created yet");
+            print_tabular_row("Next:", "Draft plan");
+            return Ok(());
+        }
+        Err(error) => {
+            print_tabular_row("  Path:", &plan_path);
+            print_tabular_row("Next:", "Check plan");
+            return Err(format!("{plan_path}: {error}").into());
+        }
+    };
+    print_tabular_row("  Path:", &plan_path);
+    print_tabular_row("  Classification:", inspection.classification());
+    if let Some(status) = inspection.status() {
+        print_tabular_row("  Status:", status);
+    }
+    let ready = inspection.ready_to_accept();
+    print_tabular_row("  Ready to accept:", if ready { "yes" } else { "no" });
+    if let Some(branch) = inspection.branch() {
+        print_tabular_row("  Branch:", branch);
+    }
+    if let Some(branch) = inspection.base_branch() {
+        print_tabular_row("  Base branch:", branch);
+    }
+    if let Some(commit) = inspection.base_commit() {
+        print_tabular_row("  Base commit:", commit);
+    }
+    if let Some(head) = inspection.head() {
+        print_tabular_row(
+            "  Current branch:",
+            inspection.current_branch().unwrap_or("detached HEAD"),
+        );
+        print_tabular_row("  HEAD:", head);
+        print_tabular_row(
+            "  Base ref tip:",
+            inspection.base_branch_commit().unwrap_or("missing"),
+        );
+        print_tabular_row(
+            "  Tracked clean:",
+            if inspection.clean() { "yes" } else { "no" },
+        );
+        print_tabular_row(
+            "  Branch exists:",
+            if inspection.branch_exists() {
+                "yes"
+            } else {
+                "no"
+            },
+        );
+        print_tabular_row(
+            "  Branch elsewhere:",
+            if inspection.branch_in_other_worktree() {
+                "yes"
+            } else {
+                "no"
+            },
+        );
+    } else {
+        print_tabular_row("  Git:", "not inspected");
+    }
+    let next = match inspection.classification() {
+        ArtifactClassification::Bad => "Check plan",
+        ArtifactClassification::Incomplete => "Fill plan",
+        ArtifactClassification::Good if inspection.has_open_questions() => "Revise plan",
+        ArtifactClassification::Good if !ready => "Check plan branch prerequisites",
+        ArtifactClassification::Good if inspection.status() == Some("accepted") => {
+            "Plan next step or review task"
+        }
+        ArtifactClassification::Good => "Revise or accept plan",
+    };
+    print_tabular_row("Next:", next);
+    if inspection.classification() == ArtifactClassification::Bad {
+        return unusable();
     }
     Ok(())
 }
