@@ -368,18 +368,29 @@ fn inspect_reports_ready_drafting_plan_on_detached_head() {
 
 #[cfg(unix)]
 #[test]
-fn inspect_reports_accepted_plan_with_tracked_changes() {
-    let workspace = git_plan_workspace("accepted-plan", "accepted");
+fn inspect_reports_accepted_plan_not_ready_on_task_branch() {
+    let workspace = git_plan_workspace("accepted-task", "accepted");
     git(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
-    fs::write(workspace.path.join(".gitignore"), ".waif\nextra\n").unwrap();
     let output = run_inspect(&workspace.path);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(output.status.success());
     assert!(stdout.contains("  Current branch:   waif/task"));
-    assert!(stdout.contains("  Tracked clean:    no"));
-    assert!(stdout.contains("  Branch exists:    yes"));
-    assert!(stdout.contains("  Ready to accept:  yes"));
+    assert!(stdout.contains("  Ready to accept:  no"));
+    assert!(stdout.contains("Next:               Plan next step or review task\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_accepted_plan_not_ready_on_other_branch() {
+    let workspace = git_plan_workspace("accepted-other", "accepted");
+    git(&workspace.path, &["branch", "waif/task"]).unwrap();
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("  Current branch:   main"));
+    assert!(stdout.contains("  Ready to accept:  no"));
     assert!(stdout.contains("Next:               Plan next step or review task\n"));
 }
 
@@ -423,7 +434,7 @@ fn inspect_reports_task_branch_occupied_elsewhere() {
     assert!(stdout.contains("  Current branch:   main"));
     assert!(stdout.contains("  Branch elsewhere: yes"));
     assert!(stdout.contains("  Ready to accept:  no"));
-    assert!(stdout.contains("Next:               Check plan branch prerequisites\n"));
+    assert!(stdout.contains("Next:               Plan next step or review task\n"));
 }
 
 #[cfg(unix)]

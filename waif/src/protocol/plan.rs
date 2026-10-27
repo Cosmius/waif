@@ -41,6 +41,9 @@ impl Task {
             return Err(format!("{}: {reason}", path.display()).into());
         }
         let status = inspection.status().expect("GOOD plan has Status");
+        if status == "accepted" {
+            return Err(format!("{}: plan is already accepted", path.display()).into());
+        }
         let branch = inspection.branch().expect("GOOD plan has Branch");
         let base = inspection.base_commit().expect("GOOD plan has Base commit");
         if status == "drafting" {
@@ -83,9 +86,6 @@ impl Task {
             return Err(
                 format!("branch setup did not establish recorded task branch {branch}").into(),
             );
-        }
-        if status == "accepted" {
-            return Ok(());
         }
 
         let update = || -> Result<()> {
@@ -310,31 +310,43 @@ mod tests {
     }
 
     #[test]
-    fn accepted_plan_restores_branch_without_changing_any_bytes() {
-        let (workspace, task) = fixture("restore", "accepted");
-        git::query(&workspace.path, &["branch", "waif/task"]).unwrap();
+    fn accepted_plan_rejection_preserves_other_branch() {
+        let (workspace, task) = fixture("accepted-other", "accepted");
+        git::query(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
+        commit(&workspace.path);
+        git::query(&workspace.path, &["switch", "main"]).unwrap();
         let before = read_plan(&task);
+        let head = git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
+        let refs = git::query(&workspace.path, &["show-ref"]).unwrap();
 
-        task.accept_plan(&workspace.path).unwrap();
+        let error = task.accept_plan(&workspace.path).unwrap_err().to_string();
 
+        assert!(error.contains("plan is already accepted"));
         assert_eq!(read_plan(&task), before);
-        assert_eq!(git::text(&workspace.path, &["symbolic-ref", "--short", "HEAD"]).unwrap(), "waif/task");
+        assert_eq!(git::text(&workspace.path, &["symbolic-ref", "--short", "HEAD"]).unwrap(), "main");
+        assert_eq!(git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap(), head);
+        assert_eq!(git::query(&workspace.path, &["show-ref"]).unwrap(), refs);
     }
 
     #[test]
-    fn repeated_accepted_plan_with_staged_edits_is_byte_identical() {
-        let (workspace, task) = fixture("idempotent", "accepted");
+    fn accepted_plan_rejection_preserves_task_branch_and_staging() {
+        let (workspace, task) = fixture("accepted-staged", "accepted");
         git::query(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
         fs::write(workspace.path.join("source.txt"), "staged edit\n").unwrap();
         git::query(&workspace.path, &["add", "source.txt"]).unwrap();
         let before = read_plan(&task);
         let index = fs::read(workspace.path.join(".git/index")).unwrap();
+        let head = git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
+        let refs = git::query(&workspace.path, &["show-ref"]).unwrap();
 
-        task.accept_plan(&workspace.path).unwrap();
-        task.accept_plan(&workspace.path).unwrap();
+        let error = task.accept_plan(&workspace.path).unwrap_err().to_string();
 
+        assert!(error.contains("plan is already accepted"));
         assert_eq!(read_plan(&task), before);
         assert_eq!(fs::read(workspace.path.join(".git/index")).unwrap(), index);
+        assert_eq!(git::text(&workspace.path, &["symbolic-ref", "--short", "HEAD"]).unwrap(), "waif/task");
+        assert_eq!(git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap(), head);
+        assert_eq!(git::query(&workspace.path, &["show-ref"]).unwrap(), refs);
     }
 
     #[test]

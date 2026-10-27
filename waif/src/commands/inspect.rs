@@ -191,11 +191,11 @@ fn print_plan(workspace_dir: &Path, task: &Task) -> Result<()> {
     let next = match inspection.classification() {
         ArtifactClassification::Bad => "Check plan",
         ArtifactClassification::Incomplete => "Fill plan",
-        ArtifactClassification::Good if inspection.has_open_questions() => "Revise plan",
-        ArtifactClassification::Good if !ready => "Check plan branch prerequisites",
         ArtifactClassification::Good if inspection.status() == Some("accepted") => {
             "Plan next step or review task"
         }
+        ArtifactClassification::Good if inspection.has_open_questions() => "Revise plan",
+        ArtifactClassification::Good if !ready => "Check plan branch prerequisites",
         ArtifactClassification::Good => "Revise or accept plan",
     };
     print_tabular_row("Next:", next);

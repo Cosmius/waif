@@ -203,7 +203,7 @@ impl PlanInspection {
                 let workspace_clean = self.clean; // No staged or tracked-file changes.
                 head_matches && base_matches && (branch_absent || branch_at_base) && workspace_clean
             }
-            Some("amending" | "accepted") => {
+            Some("amending") => {
                 let branch_exists = self.branch_exists; // Recorded task branch exists.
                 let on_task_branch = self.current_branch() == self.branch(); // On the task branch.
                 branch_exists && on_task_branch
@@ -465,20 +465,14 @@ mod tests {
     }
 
     #[test]
-    fn accepted_plan_allows_new_commits_and_untracked_files() {
-        let (workspace, task) = git_plan_task("accepted-clean", "accepted");
+    fn accepted_plan_is_not_ready_on_task_branch() {
+        let (workspace, task) = git_plan_task("accepted-not-ready", "accepted");
         git::query(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
-        commit_fixture(&workspace.path);
-        git::query(&workspace.path, &["branch", "-f", "main", "HEAD"]).unwrap();
-        git::query(&workspace.path, &["tag", "waif/task"]).unwrap();
-        fs::write(workspace.path.join("extra.txt"), "untracked\n").unwrap();
         let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
-        assert_ne!(inspection.head(), inspection.base_commit());
-        assert_eq!(inspection.base_branch_commit(), inspection.head());
-        assert!(inspection.clean());
-        assert!(!inspection.branch_in_other_worktree());
-        assert!(inspection.ready_to_accept());
+        assert_eq!(inspection.current_branch(), Some("waif/task"));
+        assert!(inspection.head().is_some());
+        assert!(!inspection.ready_to_accept());
     }
 
     #[test]
@@ -501,18 +495,6 @@ mod tests {
         let error = task.inspect_plan(&workspace.path).err().unwrap();
 
         assert!(error.to_string().contains("check-ref-format refs/heads/waif/bad..name"));
-    }
-
-    #[test]
-    fn accepted_plan_allows_staged_changes_on_task_branch() {
-        let (workspace, task) = git_plan_task("accepted-staged-allowed", "accepted");
-        git::query(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
-        fs::write(workspace.path.join("extra.txt"), "staged\n").unwrap();
-        git::query(&workspace.path, &["add", "extra.txt"]).unwrap();
-        let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
-
-        assert!(!inspection.clean());
-        assert!(inspection.ready_to_accept());
     }
 
     #[test]

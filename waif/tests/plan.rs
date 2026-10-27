@@ -73,27 +73,47 @@ fn amendment_acceptance_restores_branch_beyond_base() {
 }
 
 #[test]
-fn accepted_plan_restoration_and_repeated_acceptance_preserve_bytes_and_staging() {
-    let workspace = fixture("accepted", "accepted");
-    git(&workspace.path, &["branch", "waif/task"]);
+fn accepted_plan_rejection_preserves_other_branch() {
+    let workspace = fixture("accepted-other", "accepted");
+    git(&workspace.path, &["switch", "-c", "waif/task"]);
+    commit(&workspace.path);
+    git(&workspace.path, &["switch", "main"]);
     let before = fs::read(plan_path(&workspace)).unwrap();
+    let head = git(&workspace.path, &["rev-parse", "HEAD"]);
+    let refs = git(&workspace.path, &["show-ref"]);
 
-    let restored = run(&workspace.path, &["plan", "accept"]);
+    let output = run(&workspace.path, &["plan", "accept"]);
 
-    assert!(restored.status.success(), "{}", stderr(&restored));
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "waif/task");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("plan is already accepted"));
+    assert!(output.stdout.is_empty());
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
+    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "main");
+    assert_eq!(git(&workspace.path, &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(&workspace.path, &["show-ref"]), refs);
+}
 
+#[test]
+fn accepted_plan_rejection_preserves_task_branch_and_staging() {
+    let workspace = fixture("accepted-staged", "accepted");
+    git(&workspace.path, &["switch", "-c", "waif/task"]);
     fs::write(workspace.path.join("source.txt"), "staged edit\n").unwrap();
     git(&workspace.path, &["add", "source.txt"]);
+    let before = fs::read(plan_path(&workspace)).unwrap();
     let index = fs::read(workspace.path.join(".git/index")).unwrap();
-    let staged = git(&workspace.path, &["diff", "--cached"]);
-    let repeated = run(&workspace.path, &["plan", "accept"]);
+    let head = git(&workspace.path, &["rev-parse", "HEAD"]);
+    let refs = git(&workspace.path, &["show-ref"]);
 
-    assert!(repeated.status.success(), "{}", stderr(&repeated));
+    let output = run(&workspace.path, &["plan", "accept"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("plan is already accepted"));
+    assert!(output.stdout.is_empty());
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
     assert_eq!(fs::read(workspace.path.join(".git/index")).unwrap(), index);
-    assert_eq!(git(&workspace.path, &["diff", "--cached"]), staged);
+    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "waif/task");
+    assert_eq!(git(&workspace.path, &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(&workspace.path, &["show-ref"]), refs);
 }
 
 #[test]
@@ -136,8 +156,8 @@ fn task_branch_drift_rejection_preserves_plan_branch_and_refs() {
 }
 
 #[test]
-fn restoration_collision_preserves_git_error_and_original_state() {
-    let workspace = fixture("collision", "accepted");
+fn amendment_restoration_collision_preserves_git_error_and_original_state() {
+    let workspace = fixture("collision", "amending");
     git(&workspace.path, &["switch", "-c", "waif/task"]);
     fs::write(workspace.path.join("collision.txt"), "tracked\n").unwrap();
     git(&workspace.path, &["add", "collision.txt"]);
@@ -239,10 +259,10 @@ fn help_exposes_plan_acceptance_and_approval_contract() {
     assert!(String::from_utf8_lossy(&top.stdout).contains("waif plan accept"));
     assert!(plan_help.contains("explicit human approval"));
     assert!(plan_help.contains("branch is established before metadata updates"));
-    assert!(plan_help.contains("Repeated acceptance preserves accepted-plan bytes"));
+    assert!(plan_help.contains("Already accepted plans return an error without changing branch or artifact state"));
     assert!(accept_help.contains("explicit human approval"));
     assert!(accept_help.contains("before updating Status and Updated"));
-    assert!(accept_help.contains("preserve every byte"));
+    assert!(accept_help.contains("Already accepted plans return an error without branch or artifact mutation"));
     assert!(accept_help.contains("metadata failure reports completed branch setup"));
 }
 

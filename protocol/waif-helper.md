@@ -56,7 +56,7 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
   failed preconditions leave the goal unchanged.
 - `waif plan accept` requires explicit human approval, a GOOD plan without
   open questions, and a GOOD accepted goal. It establishes the recorded branch
-  before changing only Status and Updated; accepted plans retain every byte.
+  before changing only Status and Updated.
   Assess untracked files before acceptance. After failure or interruption,
   inspect branch, HEAD, and plan metadata, then repair under the existing
   approval while preserving unrelated edits and branch history. Review

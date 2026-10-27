@@ -16,16 +16,16 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
         Example:
           waif plan accept
 
-        Acceptance requires explicit human approval, a GOOD plan and accepted goal, and no blocking open questions. The recorded task branch is established before metadata updates. Repeated acceptance preserves accepted-plan bytes."
+        Acceptance requires explicit human approval, a GOOD plan and accepted goal, and no blocking open questions. The recorded task branch is established before metadata updates. Already accepted plans return an error without changing branch or artifact state."
     }
 )]
 pub enum PlanCommand {
-    /// Accept the current plan or restore its branch after explicit human approval.
+    /// Accept a drafting or amending plan after explicit human approval.
     #[command(
-        long_about = "Accept or reaccept the current plan after explicit human approval. \
+        long_about = "Accept a drafting or amending plan after explicit human approval. \
                       Requires a GOOD plan, a GOOD accepted goal, and no blocking open questions. \
                       Establish the recorded task branch before updating Status and Updated. \
-                      Already accepted plans preserve every byte, including on branch restoration. \
+                      Already accepted plans return an error without branch or artifact mutation. \
                       Git failures leave metadata unchanged; a later metadata failure reports \
                       completed branch setup for agent repair."
     )]
