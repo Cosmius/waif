@@ -5,8 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{Local, SecondsFormat};
 
-use super::{git, ArtifactClassification, ArtifactFile, Result, Task};
+use super::{ArtifactClassification, ArtifactFile, Result, Task};
 use crate::artifact::serialize;
+use crate::git_repo::{CurrentBranch, GitRepo};
 
 impl Task {
     pub(crate) fn accept_plan(&self, workspace_dir: &Path) -> Result<()> {
@@ -73,16 +74,18 @@ impl Task {
             .into());
         }
 
+        let repo = GitRepo::new(workspace);
+
         // Establish the branch before changing lifecycle metadata.
         if inspection.current_branch() != Some(branch) {
             if inspection.branch_exists() {
-                git::query(workspace, &["switch", "--", branch])?;
+                repo.switch_branch(branch)?;
             } else {
-                git::query(workspace, &["switch", "-c", branch, base])?;
+                repo.create_and_switch_branch(branch, base)?;
             }
         }
-        let current = git::text(workspace, &["symbolic-ref", "--quiet", "HEAD"])?;
-        if current != format!("refs/heads/{branch}") {
+        let current = repo.current_branch()?;
+        if current != CurrentBranch::Branch(branch.to_owned()) {
             return Err(
                 format!("branch setup did not establish recorded task branch {branch}").into(),
             );

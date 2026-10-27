@@ -6,9 +6,9 @@ use crate::test_support::TestDir;
 #[test]
 fn drafting_plan_is_ready_on_clean_base_and_inspection_is_read_only() {
     let (workspace, task) = git_plan_task("clean-base", "drafting");
-    let head = git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
     let head_ref = fs::read(workspace.path.join(".git/HEAD")).unwrap();
-    let refs = git::query(&workspace.path, &["show-ref"]).unwrap();
+    let refs = GitRepo::new(&workspace.path).references().unwrap();
     let index = fs::read(workspace.path.join(".git/index")).unwrap();
     let plan = fs::read(task.path.join("plan.md")).unwrap();
     let goal = fs::read(task.path.join("goal.md")).unwrap();
@@ -26,8 +26,8 @@ fn drafting_plan_is_ready_on_clean_base_and_inspection_is_read_only() {
     assert!(first.clean());
     assert!(!first.branch_exists());
     assert!(!first.branch_in_other_worktree());
-    assert_eq!(git::query(&workspace.path, &["show-ref"]).unwrap(), refs);
-    assert_eq!(git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap(), head);
+    assert_eq!(GitRepo::new(&workspace.path).references().unwrap(), refs);
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
     assert_eq!(fs::read(workspace.path.join(".git/HEAD")).unwrap(), head_ref);
     assert_eq!(fs::read(workspace.path.join(".git/index")).unwrap(), index);
     assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
@@ -37,7 +37,9 @@ fn drafting_plan_is_ready_on_clean_base_and_inspection_is_read_only() {
 #[test]
 fn drafting_plan_accepts_same_base_commit_on_another_branch() {
     let (workspace, task) = git_plan_task("same-base-other-branch", "drafting");
-    git::query(&workspace.path, &["switch", "-c", "other"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("other", "HEAD")
+        .unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert_eq!(inspection.head(), inspection.base_commit());
@@ -47,7 +49,7 @@ fn drafting_plan_accepts_same_base_commit_on_another_branch() {
 #[test]
 fn drafting_plan_accepts_detached_head_at_base_commit() {
     let (workspace, task) = git_plan_task("same-base-detached", "drafting");
-    git::query(&workspace.path, &["switch", "--detach"]).unwrap();
+    GitRepo::new(&workspace.path).detach_head("HEAD").unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert_eq!(inspection.head(), inspection.base_commit());
@@ -57,10 +59,10 @@ fn drafting_plan_accepts_detached_head_at_base_commit() {
 #[test]
 fn drafting_plan_blocks_moved_base_ref_even_when_head_matches_base_commit() {
     let (workspace, task) = git_plan_task("moved-base-ref", "drafting");
-    let base = git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
+    let base = GitRepo::new(&workspace.path).last_commit().unwrap();
     commit_fixture(&workspace.path);
-    let tip = git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
-    git::query(&workspace.path, &["switch", "--detach", &base]).unwrap();
+    let tip = GitRepo::new(&workspace.path).last_commit().unwrap();
+    GitRepo::new(&workspace.path).detach_head(&base).unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert_eq!(inspection.head(), inspection.base_commit());
@@ -71,8 +73,8 @@ fn drafting_plan_blocks_moved_base_ref_even_when_head_matches_base_commit() {
 #[test]
 fn drafting_plan_blocks_missing_named_base_ref() {
     let (workspace, task) = git_plan_task("missing-base-ref", "drafting");
-    git::query(&workspace.path, &["switch", "--detach"]).unwrap();
-    git::query(&workspace.path, &["branch", "-d", "main"]).unwrap();
+    GitRepo::new(&workspace.path).detach_head("HEAD").unwrap();
+    GitRepo::new(&workspace.path).delete_branch("main").unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert_eq!(inspection.head(), inspection.base_commit());
@@ -83,7 +85,7 @@ fn drafting_plan_blocks_missing_named_base_ref() {
 #[test]
 fn drafting_plan_accepts_uppercase_base_commit_without_rewriting_it() {
     let (workspace, task) = git_plan_task("uppercase-base", "drafting");
-    let head = git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
     let uppercase = head.to_ascii_uppercase();
     replace_plan(&task, &head, &uppercase);
     let plan = fs::read(task.path.join("plan.md")).unwrap();
@@ -108,7 +110,9 @@ fn drafting_plan_blocks_head_drift() {
 fn drafting_plan_blocks_staged_changes() {
     let (workspace, task) = git_plan_task("staged", "drafting");
     fs::write(workspace.path.join("source.txt"), "changed\n").unwrap();
-    git::query(&workspace.path, &["add", "source.txt"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .stage_file("source.txt")
+        .unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert!(!inspection.clean());
@@ -138,7 +142,9 @@ fn drafting_plan_allows_untracked_files() {
 #[test]
 fn accepted_plan_is_not_ready_on_task_branch() {
     let (workspace, task) = git_plan_task("accepted-not-ready", "accepted");
-    git::query(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert_eq!(inspection.current_branch(), Some("waif/task"));
@@ -149,7 +155,9 @@ fn accepted_plan_is_not_ready_on_task_branch() {
 #[test]
 fn amending_plan_allows_new_commits_with_clean_tracked_state() {
     let (workspace, task) = git_plan_task("amending-clean", "amending");
-    git::query(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     commit_fixture(&workspace.path);
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
@@ -171,7 +179,9 @@ fn plan_inspection_rejects_invalid_task_ref() {
 #[test]
 fn amending_plan_allows_modified_tracked_files_on_task_branch() {
     let (workspace, task) = git_plan_task("amending-modified-allowed", "amending");
-    git::query(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     fs::write(workspace.path.join("source.txt"), "changed\n").unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
@@ -210,8 +220,10 @@ fn plan_inspection_rejects_task_branch_starting_with_dash() {
 #[test]
 fn plan_inspection_rejects_non_commit_base_object() {
     let (workspace, task) = git_plan_task("blob-base", "drafting");
-    let head = git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
-    let blob = git::text(&workspace.path, &["rev-parse", "HEAD:source.txt"]).unwrap();
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+    let blob = GitRepo::new(&workspace.path)
+        .file_object_at_head("source.txt")
+        .unwrap();
     replace_plan(&task, &head, &blob);
     let error = task.inspect_plan(&workspace.path).err().unwrap();
 
@@ -230,7 +242,9 @@ fn accepted_plan_blocks_missing_recorded_branch() {
 #[test]
 fn accepted_plan_requires_task_branch_even_at_same_commit() {
     let (workspace, task) = git_plan_task("accepted-other-branch", "accepted");
-    git::query(&workspace.path, &["branch", "waif/task"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_branch("waif/task")
+        .unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert_eq!(inspection.head(), inspection.base_commit());
@@ -241,8 +255,10 @@ fn accepted_plan_requires_task_branch_even_at_same_commit() {
 #[test]
 fn accepted_plan_rejects_detached_head() {
     let (workspace, task) = git_plan_task("accepted-detached", "accepted");
-    git::query(&workspace.path, &["branch", "waif/task"]).unwrap();
-    git::query(&workspace.path, &["switch", "--detach"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_branch("waif/task")
+        .unwrap();
+    GitRepo::new(&workspace.path).detach_head("HEAD").unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert_eq!(inspection.current_branch(), None);
@@ -252,7 +268,9 @@ fn accepted_plan_rejects_detached_head() {
 #[test]
 fn amending_plan_requires_task_branch() {
     let (workspace, task) = git_plan_task("amending-other-branch", "amending");
-    git::query(&workspace.path, &["branch", "waif/task"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_branch("waif/task")
+        .unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert_eq!(inspection.current_branch(), Some("main"));
@@ -263,23 +281,15 @@ fn amending_plan_requires_task_branch() {
 fn accepted_plan_blocks_branch_occupied_by_other_worktree() {
     let (workspace, task) = git_plan_task("occupied-branch", "accepted");
     let linked = workspace.path.join(".waif/linked");
-    git::query(
-        &workspace.path,
-        &[
-            "worktree",
-            "add",
-            "-b",
-            "waif/task",
-            linked.to_str().unwrap(),
-        ],
-    )
-    .unwrap();
+    GitRepo::new(&workspace.path)
+        .add_worktree("waif/task", linked.to_str().unwrap())
+        .unwrap();
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
     assert!(inspection.clean());
     assert!(inspection.branch_in_other_worktree());
     assert!(!inspection.ready_to_accept());
-    assert_eq!(git::text(&workspace.path, &["symbolic-ref", "--short", "HEAD"]).unwrap(), "main");
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "main");
 }
 
 #[test]
@@ -296,11 +306,9 @@ fn ready_artifacts_outside_git_return_contextual_error() {
 #[test]
 fn unborn_head_returns_contextual_error() {
     let (workspace, task) = git_plan_task("unborn-head", "drafting");
-    git::query(
-        &workspace.path,
-        &["symbolic-ref", "HEAD", "refs/heads/unborn"],
-    )
-    .unwrap();
+    GitRepo::new(&workspace.path)
+        .set_head_branch("unborn")
+        .unwrap();
     let error = task.inspect_plan(&workspace.path).err().unwrap();
 
     assert!(error.to_string().contains("rev-parse --verify HEAD"));
@@ -322,31 +330,35 @@ fn empty_plan_questions_allow_combined_readiness() {
 
 fn git_plan_task(name: &str, status: &str) -> (TestDir, Task) {
     let (workspace, task) = plan_task(name, status);
-    git::query(&workspace.path, &["init", "-b", "main"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .initialise_on_branch("main")
+        .unwrap();
     fs::write(workspace.path.join(".git/info/exclude"), "/.waif/\n").unwrap();
     fs::write(workspace.path.join("source.txt"), "source\n").unwrap();
-    git::query(&workspace.path, &["add", "source.txt"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .stage_file("source.txt")
+        .unwrap();
     commit_fixture(&workspace.path);
-    let head = git::text(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
     replace_plan(&task, "0123456789abcdef0123456789abcdef01234567", &head);
     (workspace, task)
 }
 
 fn commit_fixture(workspace: &Path) {
-    git::query(
-        workspace,
-        &[
+    GitRepo::new(workspace)
+        .exec(&[
             "-c",
             "user.name=Test",
             "-c",
             "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
             "commit",
             "--allow-empty",
             "-m",
             "fixture",
-        ],
-    )
-    .unwrap();
+        ])
+        .unwrap();
 }
 
 fn replace_plan(task: &Task, from: &str, to: &str) {

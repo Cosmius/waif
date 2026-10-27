@@ -38,3 +38,6 @@ fn sanitize_name(name: &str) -> String {
         })
         .collect()
 }
+
+#[path = "../src/git_repo.rs"]
+pub(crate) mod git_repo;

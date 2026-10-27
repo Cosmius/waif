@@ -1,5 +1,6 @@
 use std::fs;
 use std::process::{Command, Output};
+use test_support::git_repo::GitRepo;
 
 mod test_support;
 
@@ -98,21 +99,24 @@ fn run_fill(directory: &TestDir, arguments: &[&str]) -> Output {
 #[test]
 fn fill_resolves_git_macros_from_invoking_workspace() {
     let directory = TestDir::new("fill-git");
-    git(&directory, &["init", "-b", "feature/macros"]);
-    git(
-        &directory,
-        &[
+    GitRepo::new(&directory.path)
+        .initialise_on_branch("feature/macros")
+        .unwrap();
+    GitRepo::new(&directory.path)
+        .exec(&[
             "-c",
             "user.name=Test",
             "-c",
-            "user.email=test@example.com",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
             "commit",
             "--allow-empty",
             "-m",
-            "Initial",
-        ],
-    );
-    let commit = git(&directory, &["rev-parse", "HEAD"]);
+            "fixture",
+        ])
+        .unwrap();
+    let commit = GitRepo::new(&directory.path).last_commit().unwrap();
     let other = TestDir::new("fill-git-target");
     let path = other.path.join("notes.txt");
     let source = "__CURRENT_BRANCH__ __LAST_COMMIT__ __LAST_COMMIT__ `__CURRENT_BRANCH__`";
@@ -123,7 +127,7 @@ fn fill_resolves_git_macros_from_invoking_workspace() {
     assert_eq!(fs::read_to_string(&path).unwrap(),
         format!("feature/macros {commit} {commit} `__CURRENT_BRANCH__`"));
 
-    git(&directory, &["checkout", "--detach"]);
+    GitRepo::new(&directory.path).detach_head("HEAD").unwrap();
     fs::write(&path, "__LAST_COMMIT__").unwrap();
     assert!(run_fill(&directory, &[path.to_str().unwrap()]).status.success());
     assert_eq!(fs::read_to_string(&path).unwrap(), commit);
@@ -144,21 +148,13 @@ fn fill_git_resolution_failures_preserve_source() {
         assert!(!output.status.success());
         assert_eq!(fs::read_to_string(&path).unwrap(), source);
     }
-    git(&directory, &["init", "-b", "unborn"]);
+    GitRepo::new(&directory.path)
+        .initialise_on_branch("unborn")
+        .unwrap();
     fs::write(&path, "__CURRENT_BRANCH__").unwrap();
     assert!(run_fill(&directory, &[path.to_str().unwrap()]).status.success());
     assert_eq!(fs::read_to_string(&path).unwrap(), "unborn");
     fs::write(&path, "__LAST_COMMIT__").unwrap();
     assert!(!run_fill(&directory, &[path.to_str().unwrap()]).status.success());
     assert_eq!(fs::read_to_string(&path).unwrap(), "__LAST_COMMIT__");
-}
-
-fn git(directory: &TestDir, arguments: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(arguments)
-        .current_dir(&directory.path)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }

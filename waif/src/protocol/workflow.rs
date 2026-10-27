@@ -3,9 +3,10 @@ use std::io::ErrorKind;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use chrono::Local;
+
+use crate::git_repo::GitRepo;
 
 use super::{ProtocolError, Result, Task};
 
@@ -99,17 +100,7 @@ impl WorkflowDir {
             Err(error) if error.kind() == ErrorKind::NotFound => (),
             Err(error) => return Err(error.into()),
         }
-        let exit_status = Command::new("git")
-            .arg("init")
-            .current_dir(&self.path)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        let git_error = match exit_status {
-            Ok(status) if status.success() => None,
-            Ok(status) => Some(format!("git init exited with {status}")),
-            Err(error) => Some(error.to_string()),
-        };
+        let git_error = GitRepo::new(&self.path).initialise().err();
         Ok(Initialisation::Created(git_error))
     }
 

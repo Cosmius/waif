@@ -4,7 +4,6 @@ use std::fmt;
 use crate::parser::Severity;
 
 mod artifact;
-mod git;
 mod inspection;
 mod plan;
 mod task;

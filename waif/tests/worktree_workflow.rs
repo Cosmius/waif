@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+use test_support::git_repo::GitRepo;
+
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -37,10 +39,10 @@ fn linked_commands_isolate_goal_acceptance_and_resume_shared_tasks() {
     let root_source = DRAFT_GOAL.replace("Worktree task", "Root task");
     fs::write(&root_goal, &root_source).unwrap();
     fs::write(&linked_goal, DRAFT_GOAL).unwrap();
-    let root_branch = git(&main, &["symbolic-ref", "HEAD"]).stdout;
-    let linked_branch = git(&linked, &["symbolic-ref", "HEAD"]).stdout;
-    let root_index = git(&main, &["ls-files", "--stage"]).stdout;
-    let linked_index = git(&linked, &["ls-files", "--stage"]).stdout;
+    let root_branch = GitRepo::new(&main).branch_name().unwrap();
+    let linked_branch = GitRepo::new(&linked).branch_name().unwrap();
+    let root_index = GitRepo::new(&main).index_entries().unwrap();
+    let linked_index = GitRepo::new(&linked).index_entries().unwrap();
 
     let root_inspect = waif(&main, &["inspect"]);
     let linked_inspect = waif(&linked, &["inspect"]);
@@ -91,14 +93,14 @@ fn linked_commands_isolate_goal_acceptance_and_resume_shared_tasks() {
     assert_eq!(fs::read_link(linked.join(".waif/current_task")).unwrap(), root_pointer);
     assert_eq!(fs::read_to_string(&root_goal).unwrap(), root_source);
     assert!(!linked.join(".waif/.git").exists());
-    assert!(git(&main.join(".waif"), &["check-ignore", "current_task"]).status.success());
-    assert!(String::from_utf8_lossy(&git(&main.join(".waif"), &["status", "--porcelain"]).stdout).contains("library/"));
-    assert_eq!(git(&main, &["symbolic-ref", "HEAD"]).stdout, root_branch);
-    assert_eq!(git(&linked, &["symbolic-ref", "HEAD"]).stdout, linked_branch);
-    assert_eq!(git(&main, &["ls-files", "--stage"]).stdout, root_index);
-    assert_eq!(git(&linked, &["ls-files", "--stage"]).stdout, linked_index);
-    assert!(git(&main, &["status", "--porcelain"]).stdout.is_empty());
-    assert!(git(&linked, &["status", "--porcelain"]).stdout.is_empty());
+    assert!(GitRepo::new(&main.join(".waif")).is_ignored("current_task").unwrap());
+    assert!(String::from_utf8_lossy(&GitRepo::new(&main.join(".waif")).working_tree_status().unwrap()).contains("library/"));
+    assert_eq!(GitRepo::new(&main).branch_name().unwrap(), root_branch);
+    assert_eq!(GitRepo::new(&linked).branch_name().unwrap(), linked_branch);
+    assert_eq!(GitRepo::new(&main).index_entries().unwrap(), root_index);
+    assert_eq!(GitRepo::new(&linked).index_entries().unwrap(), linked_index);
+    assert!(GitRepo::new(&main).working_tree_status().unwrap().is_empty());
+    assert!(GitRepo::new(&linked).working_tree_status().unwrap().is_empty());
 }
 
 #[test]
@@ -132,20 +134,12 @@ fn independent_worktree_isolates_records_and_loses_its_library_on_removal() {
     assert_eq!(fs::read_link(main.join(".waif/current_task")).unwrap(), root_pointer);
     assert!(!main.join(".waif").join(&private_pointer).exists());
     assert!(!independent.join(".waif").join(&root_pointer).exists());
-    assert!(git(&main, &["status", "--porcelain"]).stdout.is_empty());
-    assert!(git(&independent, &["status", "--porcelain"]).stdout.is_empty());
+    assert!(GitRepo::new(&main).working_tree_status().unwrap().is_empty());
+    assert!(GitRepo::new(&independent).working_tree_status().unwrap().is_empty());
 
-    let removed = git(
-        &main,
-        &[
-            "worktree",
-            "remove",
-            "--force",
-            independent.to_str().unwrap(),
-        ],
-    );
+    let removed = GitRepo::new(&main).remove_worktree(independent.to_str().unwrap());
 
-    assert!(removed.status.success(), "{}", String::from_utf8_lossy(&removed.stderr));
+    assert!(removed.is_ok(), "{removed:?}");
     assert!(!independent.exists());
     assert_eq!(fs::read_to_string(&root_goal).unwrap(), DRAFT_GOAL);
     assert_eq!(fs::read_link(main.join(".waif/current_task")).unwrap(), root_pointer);
@@ -168,10 +162,7 @@ fn linked_worktree_removal_preserves_shared_records_for_resumption() {
     let goal = main.join(".waif").join(&pointer).join("goal.md");
     fs::write(&goal, DRAFT_GOAL).unwrap();
 
-    let removed = git(
-        &main,
-        &["worktree", "remove", "--force", linked.to_str().unwrap()],
-    );
+    let removed = GitRepo::new(&main).remove_worktree(linked.to_str().unwrap());
     let switched = waif(
         &main,
         &["switch", pointer.file_name().unwrap().to_str().unwrap()],
@@ -182,7 +173,7 @@ fn linked_worktree_removal_preserves_shared_records_for_resumption() {
     assert!(root_setup.status.success());
     assert!(linked_setup.status.success());
     assert!(created.status.success());
-    assert!(removed.status.success(), "{}", String::from_utf8_lossy(&removed.stderr));
+    assert!(removed.is_ok(), "{removed:?}");
     assert!(!linked.exists());
     assert_eq!(fs::read_to_string(&goal).unwrap(), DRAFT_GOAL);
     assert!(switched.status.success());
@@ -260,37 +251,28 @@ fn worktrees(name: &str) -> io::Result<(TestDir, PathBuf, PathBuf)> {
     let main = sandbox.path.join("main");
     let linked = sandbox.path.join("linked");
     fs::create_dir(&main)?;
-    setup_git(&main, &["init", "-b", "main"])?;
-    setup_git(
-        &main,
-        &[
+    GitRepo::new(&main)
+        .initialise_on_branch("main")
+        .map_err(io::Error::other)?;
+    GitRepo::new(&main)
+        .exec(&[
             "-c",
             "user.name=Test",
             "-c",
             "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
             "commit",
             "--allow-empty",
             "-m",
             "fixture",
-        ],
-    )?;
+        ])
+        .map_err(io::Error::other)?;
     fs::write(main.join(".git/info/exclude"), "/.waif/\n")?;
-    setup_git(
-        &main,
-        &["worktree", "add", "-b", "linked", linked.to_str().unwrap()],
-    )?;
+    GitRepo::new(&main)
+        .add_worktree("linked", linked.to_str().unwrap())
+        .map_err(io::Error::other)?;
     Ok((sandbox, main, linked))
-}
-
-fn setup_git(workspace: &Path, arguments: &[&str]) -> io::Result<()> {
-    let output = git(workspace, arguments);
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(io::Error::other(
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        ))
-    }
 }
 
 fn waif(workspace: &Path, arguments: &[&str]) -> Output {
@@ -299,12 +281,4 @@ fn waif(workspace: &Path, arguments: &[&str]) -> Output {
         .current_dir(workspace)
         .output()
         .expect("waif should run")
-}
-
-fn git(workspace: &Path, arguments: &[&str]) -> Output {
-    Command::new("git")
-        .args(arguments)
-        .current_dir(workspace)
-        .output()
-        .expect("git should run")
 }

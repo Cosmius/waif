@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+use test_support::git_repo::GitRepo;
+
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
@@ -24,7 +26,7 @@ fn init_creates_an_independent_library_and_workflow_repository() {
     assert!(!workflow.join("current_task").exists());
     assert!(!workflow.join("library/charter.md").exists());
     assert_eq!(fs::read_dir(workflow.join("library/tasks")).unwrap().count(), 0);
-    assert!(git(&workflow, &["check-ignore", "current_task"]).status.success());
+    assert!(GitRepo::new(&workflow).is_ignored("current_task").unwrap());
 }
 
 #[test]
@@ -227,31 +229,27 @@ fn linked_worktree_setup_shares_records_and_keeps_source_contexts_unchanged() {
     let main = sandbox.path.join("main");
     let linked = sandbox.path.join("linked");
     fs::create_dir(&main).unwrap();
-    assert!(git(&main, &["init", "-b", "main"]).status.success());
-    let committed = git(
-        &main,
-        &[
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.invalid",
-            "commit",
-            "--allow-empty",
-            "-m",
-            "fixture",
-        ],
-    );
-    assert!(committed.status.success(), "{}", String::from_utf8_lossy(&committed.stderr));
+    assert!(GitRepo::new(&main).initialise_on_branch("main").is_ok());
+    let committed = GitRepo::new(&main).exec(&[
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "fixture",
+    ]);
+    assert!(committed.is_ok(), "{committed:?}");
     fs::write(main.join(".git/info/exclude"), "/.waif/\n").unwrap();
-    let worktree = git(
-        &main,
-        &["worktree", "add", "-b", "linked", linked.to_str().unwrap()],
-    );
-    assert!(worktree.status.success(), "{}", String::from_utf8_lossy(&worktree.stderr));
-    let main_branch = git(&main, &["symbolic-ref", "HEAD"]).stdout;
-    let linked_branch = git(&linked, &["symbolic-ref", "HEAD"]).stdout;
-    let main_index = git(&main, &["ls-files", "--stage"]).stdout;
-    let linked_index = git(&linked, &["ls-files", "--stage"]).stdout;
+    let worktree = GitRepo::new(&main).add_worktree("linked", linked.to_str().unwrap());
+    assert!(worktree.is_ok(), "{worktree:?}");
+    let main_branch = GitRepo::new(&main).branch_name().unwrap();
+    let linked_branch = GitRepo::new(&linked).branch_name().unwrap();
+    let main_index = GitRepo::new(&main).index_entries().unwrap();
+    let linked_index = GitRepo::new(&linked).index_entries().unwrap();
 
     let root_setup = waif(&main, &["init"]);
     let linked_setup = waif(
@@ -283,14 +281,14 @@ fn linked_worktree_setup_shares_records_and_keeps_source_contexts_unchanged() {
     assert_eq!(fs::read_to_string(main.join(".waif").join(&linked_pointer).join("goal.md")).unwrap(), "shared-goal");
     assert!(!linked.join(".waif/.git").exists());
     assert!(!main.join(".waif/library/current_task").exists());
-    assert!(git(&main.join(".waif"), &["check-ignore", "current_task"]).status.success());
-    assert!(String::from_utf8_lossy(&git(&main.join(".waif"), &["status", "--porcelain"]).stdout).contains("library/"));
-    assert_eq!(git(&main, &["symbolic-ref", "HEAD"]).stdout, main_branch);
-    assert_eq!(git(&linked, &["symbolic-ref", "HEAD"]).stdout, linked_branch);
-    assert_eq!(git(&main, &["ls-files", "--stage"]).stdout, main_index);
-    assert_eq!(git(&linked, &["ls-files", "--stage"]).stdout, linked_index);
-    assert!(git(&main, &["status", "--porcelain"]).stdout.is_empty());
-    assert!(git(&linked, &["status", "--porcelain"]).stdout.is_empty());
+    assert!(GitRepo::new(&main.join(".waif")).is_ignored("current_task").unwrap());
+    assert!(String::from_utf8_lossy(&GitRepo::new(&main.join(".waif")).working_tree_status().unwrap()).contains("library/"));
+    assert_eq!(GitRepo::new(&main).branch_name().unwrap(), main_branch);
+    assert_eq!(GitRepo::new(&linked).branch_name().unwrap(), linked_branch);
+    assert_eq!(GitRepo::new(&main).index_entries().unwrap(), main_index);
+    assert_eq!(GitRepo::new(&linked).index_entries().unwrap(), linked_index);
+    assert!(GitRepo::new(&main).working_tree_status().unwrap().is_empty());
+    assert!(GitRepo::new(&linked).working_tree_status().unwrap().is_empty());
 }
 
 fn existing_instance(name: &str) -> TestDir {
@@ -309,12 +307,4 @@ fn waif(workspace: &Path, arguments: &[&str]) -> Output {
         .current_dir(workspace)
         .output()
         .expect("waif should run")
-}
-
-fn git(workspace: &Path, arguments: &[&str]) -> Output {
-    Command::new("git")
-        .args(arguments)
-        .current_dir(workspace)
-        .output()
-        .expect("git should run")
 }

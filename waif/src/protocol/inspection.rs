@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use super::git;
 use super::task::read_optional;
 use super::{ArtifactClassification, Result, Task};
 use crate::artifact::Artifact;
@@ -216,61 +215,26 @@ impl PlanInspection {
     fn inspect_git(&mut self, workspace: &Path) -> Result<()> {
         let branch = self.branch().expect("GOOD plan has Branch");
         let base_commit = self.base_commit().expect("GOOD plan has Base commit");
-        let branch_ref = format!("refs/heads/{branch}");
-        git::query(workspace, &["check-ref-format", &branch_ref])?;
-        git::query(workspace, &["check-ref-format", "--branch", branch])?;
-        git::query(
-            workspace,
-            &["cat-file", "-e", &format!("{base_commit}^{{commit}}")],
-        )?;
         let repo = GitRepo::new(workspace);
+        repo.validate_branch_name(branch)?;
+        repo.require_commit(base_commit)?;
         let head = repo.last_commit()?;
         let current_branch = match repo.current_branch()? {
             CurrentBranch::Branch(name) => Some(name),
             CurrentBranch::DetachedHead => None,
         };
-        let clean = git::query(
-            workspace,
-            &["status", "--porcelain", "--untracked-files=no"],
-        )?
-        .is_empty();
-        let base_ref = format!(
-            "refs/heads/{}",
-            self.base_branch().expect("GOOD plan has Base branch")
-        );
-        let refs = git::query(
-            workspace,
-            &[
-                "for-each-ref",
-                "--format=%(refname)%00%(objectname)%00%(worktreepath)",
-                &branch_ref,
-                &base_ref,
-            ],
-        )?;
-        let mut occupancy = None;
-        let mut branch_commit = None;
-        let mut base_branch_commit = None;
-        for line in refs.split(|byte| *byte == b'\n') {
-            let mut fields = line.splitn(3, |byte| *byte == 0);
-            let name = fields.next().unwrap_or_default();
-            let Some(commit) = fields.next() else {
-                continue;
-            };
-            let Some(worktree) = fields.next() else {
-                continue;
-            };
-            if name == branch_ref.as_bytes() {
-                occupancy = Some(worktree);
-                branch_commit = Some(String::from_utf8(commit.to_vec())?);
-            }
-            if name == base_ref.as_bytes() {
-                base_branch_commit = Some(String::from_utf8(commit.to_vec())?);
-            }
-        }
+        let clean = repo.tracked_files_clean()?;
+        let base_branch = self.base_branch().expect("GOOD plan has Base branch");
+        let states = repo.branch_states(&[branch, base_branch])?;
+        let task_branch = states.iter().find(|state| state.name == branch);
+        let base_branch_commit = states
+            .iter()
+            .find(|state| state.name == base_branch)
+            .map(|state| state.commit.clone());
         let branch_in_other_worktree = current_branch.as_deref() != Some(branch)
-            && occupancy.is_some_and(|path| !path.is_empty());
-        self.branch_exists = occupancy.is_some();
-        self.branch_commit = branch_commit;
+            && task_branch.is_some_and(|state| state.checked_out);
+        self.branch_exists = task_branch.is_some();
+        self.branch_commit = task_branch.map(|state| state.commit.clone());
         self.branch_in_other_worktree = branch_in_other_worktree;
         self.base_branch_commit = base_branch_commit;
         self.current_branch = current_branch;

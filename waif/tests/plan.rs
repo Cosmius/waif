@@ -1,5 +1,7 @@
 #![cfg(unix)]
 
+use test_support::git_repo::GitRepo;
+
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
@@ -16,7 +18,7 @@ fn initial_acceptance_creates_branch_and_changes_only_lifecycle_metadata() {
     let path = plan_path(&workspace);
     let before = fs::read_to_string(&path).unwrap();
     let goal = fs::read(path.with_file_name("goal.md")).unwrap();
-    let base = git(&workspace.path, &["rev-parse", "HEAD"]);
+    let base = GitRepo::new(&workspace.path).last_commit().unwrap();
 
     let output = run(&workspace.path, &["plan", "accept"]);
     let after = fs::read_to_string(&path).unwrap();
@@ -30,36 +32,42 @@ fn initial_acceptance_creates_branch_and_changes_only_lifecycle_metadata() {
     assert_eq!(after, expected_accepted(&before, &after));
     assert_ne!(after, before);
     assert!(chrono::DateTime::parse_from_rfc3339(metadata(&after, "Updated")).is_ok());
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "waif/task");
-    assert_eq!(git(&workspace.path, &["rev-parse", "HEAD"]), base);
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "waif/task");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), base);
     assert_eq!(fs::read(path.with_file_name("goal.md")).unwrap(), goal);
 }
 
 #[test]
 fn initial_acceptance_reuses_a_matching_existing_branch() {
     let workspace = fixture("reuse", "drafting");
-    git(&workspace.path, &["branch", "waif/task"]);
-    let base = git(&workspace.path, &["rev-parse", "HEAD"]);
+    GitRepo::new(&workspace.path)
+        .create_branch("waif/task")
+        .unwrap();
+    let base = GitRepo::new(&workspace.path).last_commit().unwrap();
     let before = fs::read_to_string(plan_path(&workspace)).unwrap();
 
     let output = run(&workspace.path, &["plan", "accept"]);
     let after = fs::read_to_string(plan_path(&workspace)).unwrap();
 
     assert!(output.status.success(), "{}", stderr(&output));
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "waif/task");
-    assert_eq!(git(&workspace.path, &["rev-parse", "HEAD"]), base);
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "waif/task");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), base);
     assert_eq!(after, expected_accepted(&before, &after));
 }
 
 #[test]
 fn amendment_acceptance_restores_branch_beyond_base() {
     let workspace = fixture("amending", "amending");
-    git(&workspace.path, &["switch", "-c", "waif/task"]);
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     fs::write(workspace.path.join("source.txt"), "new revision\n").unwrap();
-    git(&workspace.path, &["add", "source.txt"]);
+    GitRepo::new(&workspace.path)
+        .stage_file("source.txt")
+        .unwrap();
     commit(&workspace.path);
-    let tip = git(&workspace.path, &["rev-parse", "HEAD"]);
-    git(&workspace.path, &["switch", "main"]);
+    let tip = GitRepo::new(&workspace.path).last_commit().unwrap();
+    GitRepo::new(&workspace.path).switch_branch("main").unwrap();
     let before = fs::read_to_string(plan_path(&workspace)).unwrap();
 
     let output = run(&workspace.path, &["plan", "accept"]);
@@ -67,20 +75,22 @@ fn amendment_acceptance_restores_branch_beyond_base() {
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert_ne!(tip, metadata(&before, "Base commit"));
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "waif/task");
-    assert_eq!(git(&workspace.path, &["rev-parse", "HEAD"]), tip);
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "waif/task");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), tip);
     assert_eq!(after, expected_accepted(&before, &after));
 }
 
 #[test]
 fn accepted_plan_rejection_preserves_other_branch() {
     let workspace = fixture("accepted-other", "accepted");
-    git(&workspace.path, &["switch", "-c", "waif/task"]);
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     commit(&workspace.path);
-    git(&workspace.path, &["switch", "main"]);
+    GitRepo::new(&workspace.path).switch_branch("main").unwrap();
     let before = fs::read(plan_path(&workspace)).unwrap();
-    let head = git(&workspace.path, &["rev-parse", "HEAD"]);
-    let refs = git(&workspace.path, &["show-ref"]);
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+    let refs = GitRepo::new(&workspace.path).references().unwrap();
 
     let output = run(&workspace.path, &["plan", "accept"]);
 
@@ -88,21 +98,25 @@ fn accepted_plan_rejection_preserves_other_branch() {
     assert!(stderr(&output).contains("plan is already accepted"));
     assert!(output.stdout.is_empty());
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "main");
-    assert_eq!(git(&workspace.path, &["rev-parse", "HEAD"]), head);
-    assert_eq!(git(&workspace.path, &["show-ref"]), refs);
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "main");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert_eq!(GitRepo::new(&workspace.path).references().unwrap(), refs);
 }
 
 #[test]
 fn accepted_plan_rejection_preserves_task_branch_and_staging() {
     let workspace = fixture("accepted-staged", "accepted");
-    git(&workspace.path, &["switch", "-c", "waif/task"]);
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     fs::write(workspace.path.join("source.txt"), "staged edit\n").unwrap();
-    git(&workspace.path, &["add", "source.txt"]);
+    GitRepo::new(&workspace.path)
+        .stage_file("source.txt")
+        .unwrap();
     let before = fs::read(plan_path(&workspace)).unwrap();
     let index = fs::read(workspace.path.join(".git/index")).unwrap();
-    let head = git(&workspace.path, &["rev-parse", "HEAD"]);
-    let refs = git(&workspace.path, &["show-ref"]);
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+    let refs = GitRepo::new(&workspace.path).references().unwrap();
 
     let output = run(&workspace.path, &["plan", "accept"]);
 
@@ -111,9 +125,9 @@ fn accepted_plan_rejection_preserves_task_branch_and_staging() {
     assert!(output.stdout.is_empty());
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
     assert_eq!(fs::read(workspace.path.join(".git/index")).unwrap(), index);
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "waif/task");
-    assert_eq!(git(&workspace.path, &["rev-parse", "HEAD"]), head);
-    assert_eq!(git(&workspace.path, &["show-ref"]), refs);
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "waif/task");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert_eq!(GitRepo::new(&workspace.path).references().unwrap(), refs);
 }
 
 #[test]
@@ -121,7 +135,7 @@ fn dirty_drafting_rejection_preserves_plan_branch_and_refs() {
     let workspace = fixture("dirty", "drafting");
     fs::write(workspace.path.join("source.txt"), "dirty\n").unwrap();
     let before = fs::read(plan_path(&workspace)).unwrap();
-    let refs = git(&workspace.path, &["show-ref"]);
+    let refs = GitRepo::new(&workspace.path).references().unwrap();
 
     let output = run(&workspace.path, &["plan", "accept"]);
     let error = stderr(&output);
@@ -131,18 +145,20 @@ fn dirty_drafting_rejection_preserves_plan_branch_and_refs() {
     assert!(error.contains("staged or modified tracked files"));
     assert!(output.stdout.is_empty());
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
-    assert_eq!(git(&workspace.path, &["show-ref"]), refs);
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "main");
+    assert_eq!(GitRepo::new(&workspace.path).references().unwrap(), refs);
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "main");
 }
 
 #[test]
 fn task_branch_drift_rejection_preserves_plan_branch_and_refs() {
     let workspace = fixture("drift", "drafting");
-    git(&workspace.path, &["switch", "-c", "waif/task"]);
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     commit(&workspace.path);
-    git(&workspace.path, &["switch", "main"]);
+    GitRepo::new(&workspace.path).switch_branch("main").unwrap();
     let before = fs::read(plan_path(&workspace)).unwrap();
-    let refs = git(&workspace.path, &["show-ref"]);
+    let refs = GitRepo::new(&workspace.path).references().unwrap();
 
     let output = run(&workspace.path, &["plan", "accept"]);
     let error = stderr(&output);
@@ -151,18 +167,22 @@ fn task_branch_drift_rejection_preserves_plan_branch_and_refs() {
     assert!(error.contains("Workflow dir: .waif\nCurrent task: 20261026-1-test\nPlan: .waif/library/tasks/20261026-1-test/plan.md\n"));
     assert!(error.contains("existing task branch differs from Base commit"));
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
-    assert_eq!(git(&workspace.path, &["show-ref"]), refs);
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "main");
+    assert_eq!(GitRepo::new(&workspace.path).references().unwrap(), refs);
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "main");
 }
 
 #[test]
 fn amendment_restoration_collision_preserves_git_error_and_original_state() {
     let workspace = fixture("collision", "amending");
-    git(&workspace.path, &["switch", "-c", "waif/task"]);
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     fs::write(workspace.path.join("collision.txt"), "tracked\n").unwrap();
-    git(&workspace.path, &["add", "collision.txt"]);
+    GitRepo::new(&workspace.path)
+        .stage_file("collision.txt")
+        .unwrap();
     commit(&workspace.path);
-    git(&workspace.path, &["switch", "main"]);
+    GitRepo::new(&workspace.path).switch_branch("main").unwrap();
     fs::write(workspace.path.join("collision.txt"), "untracked\n").unwrap();
     let before = fs::read(plan_path(&workspace)).unwrap();
 
@@ -175,7 +195,7 @@ fn amendment_restoration_collision_preserves_git_error_and_original_state() {
     assert!(error.contains("collision.txt"));
     assert!(output.stdout.is_empty());
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "main");
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "main");
     assert_eq!(fs::read_to_string(workspace.path.join("collision.txt")).unwrap(), "untracked\n");
 }
 
@@ -241,7 +261,7 @@ fn nonaccepted_goal_rejection_preserves_artifacts() {
     assert!(stderr(&output).contains("referenced goal is not accepted"));
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
     assert_eq!(fs::read_to_string(goal_path).unwrap(), goal);
-    assert_eq!(git(&workspace.path, &["symbolic-ref", "--short", "HEAD"]), "main");
+    assert_eq!(GitRepo::new(&workspace.path).branch_name().unwrap(), "main");
 }
 
 #[test]
@@ -286,12 +306,16 @@ fn unknown_plan_subcommand_is_a_usage_error() {
 
 fn fixture(name: &str, status: &str) -> TestDir {
     let workspace = TestDir::new(name);
-    git(&workspace.path, &["init", "-b", "main"]);
+    GitRepo::new(&workspace.path)
+        .initialise_on_branch("main")
+        .unwrap();
     fs::write(workspace.path.join(".git/info/exclude"), "/.waif/\n").unwrap();
     fs::write(workspace.path.join("source.txt"), "source\n").unwrap();
-    git(&workspace.path, &["add", "source.txt"]);
+    GitRepo::new(&workspace.path)
+        .stage_file("source.txt")
+        .unwrap();
     commit(&workspace.path);
-    let base = git(&workspace.path, &["rev-parse", "HEAD"]);
+    let base = GitRepo::new(&workspace.path).last_commit().unwrap();
     let path = plan_path(&workspace);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     symlink(
@@ -344,35 +368,21 @@ fn run(workspace: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 
-fn git(workspace: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(workspace)
-        .output()
-        .unwrap();
-    if !output.status.success() {
-        panic!("git {args:?}: {}", stderr(&output));
-    }
-    String::from_utf8(output.stdout)
-        .unwrap()
-        .trim_end()
-        .to_owned()
-}
-
 fn commit(workspace: &Path) {
-    git(
-        workspace,
-        &[
+    GitRepo::new(workspace)
+        .exec(&[
             "-c",
             "user.name=Test",
             "-c",
             "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
             "commit",
             "--allow-empty",
             "-m",
             "fixture",
-        ],
-    );
+        ])
+        .unwrap();
 }
 
 fn metadata<'a>(source: &'a str, key: &str) -> &'a str {

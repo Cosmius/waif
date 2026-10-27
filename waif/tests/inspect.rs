@@ -3,6 +3,7 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use test_support::git_repo::GitRepo;
 
 mod test_support;
 
@@ -242,8 +243,8 @@ fn inspect_reports_ready_plan_and_preserves_artifacts_and_git() {
     let pointer = fs::read_link(workspace.path.join(".waif/current_task")).unwrap();
     let head_file = fs::read(workspace.path.join(".git/HEAD")).unwrap();
     let index = fs::read(workspace.path.join(".git/index")).unwrap();
-    let refs = git(&workspace.path, &["show-ref"]).unwrap();
-    let head = git(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
+    let refs = GitRepo::new(&workspace.path).references().unwrap();
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
 
     let first = run_inspect(&workspace.path);
     let second = run_inspect(&workspace.path);
@@ -272,8 +273,8 @@ fn inspect_reports_ready_plan_and_preserves_artifacts_and_git() {
     assert_eq!(fs::read_link(workspace.path.join(".waif/current_task")).unwrap(), pointer);
     assert_eq!(fs::read(workspace.path.join(".git/HEAD")).unwrap(), head_file);
     assert_eq!(fs::read(workspace.path.join(".git/index")).unwrap(), index);
-    assert_eq!(git(&workspace.path, &["show-ref"]).unwrap(), refs);
-    assert_eq!(git(&workspace.path, &["rev-parse", "HEAD"]).unwrap(), head);
+    assert_eq!(GitRepo::new(&workspace.path).references().unwrap(), refs);
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
 }
 
 #[cfg(unix)]
@@ -357,7 +358,7 @@ fn inspect_reports_dirty_drafting_plan_as_blocked() {
 #[test]
 fn inspect_reports_ready_drafting_plan_on_detached_head() {
     let workspace = git_plan_workspace("detached-plan", "drafting");
-    git(&workspace.path, &["switch", "--detach"]).unwrap();
+    GitRepo::new(&workspace.path).detach_head("HEAD").unwrap();
     let output = run_inspect(&workspace.path);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -370,7 +371,9 @@ fn inspect_reports_ready_drafting_plan_on_detached_head() {
 #[test]
 fn inspect_reports_accepted_plan_not_ready_on_task_branch() {
     let workspace = git_plan_workspace("accepted-task", "accepted");
-    git(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     let output = run_inspect(&workspace.path);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -384,7 +387,9 @@ fn inspect_reports_accepted_plan_not_ready_on_task_branch() {
 #[test]
 fn inspect_reports_accepted_plan_not_ready_on_other_branch() {
     let workspace = git_plan_workspace("accepted-other", "accepted");
-    git(&workspace.path, &["branch", "waif/task"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_branch("waif/task")
+        .unwrap();
     let output = run_inspect(&workspace.path);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -398,9 +403,13 @@ fn inspect_reports_accepted_plan_not_ready_on_other_branch() {
 #[test]
 fn inspect_reports_ready_amending_plan_with_staged_changes() {
     let workspace = git_plan_workspace("amending-plan", "amending");
-    git(&workspace.path, &["switch", "-c", "waif/task"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
     fs::write(workspace.path.join("new-file"), "staged\n").unwrap();
-    git(&workspace.path, &["add", "new-file"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .stage_file("new-file")
+        .unwrap();
     let output = run_inspect(&workspace.path);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -416,17 +425,9 @@ fn inspect_reports_ready_amending_plan_with_staged_changes() {
 fn inspect_reports_task_branch_occupied_elsewhere() {
     let workspace = git_plan_workspace("occupied-plan", "accepted");
     let linked = workspace.path.join("linked");
-    git(
-        &workspace.path,
-        &[
-            "worktree",
-            "add",
-            "-b",
-            "waif/task",
-            linked.to_str().unwrap(),
-        ],
-    )
-    .unwrap();
+    GitRepo::new(&workspace.path)
+        .add_worktree("waif/task", linked.to_str().unwrap())
+        .unwrap();
     let output = run_inspect(&workspace.path);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -488,41 +489,31 @@ fn inspect_help_describes_plan_readiness_and_human_approval() {
 #[cfg(unix)]
 fn git_plan_workspace(name: &str, status: &str) -> TestDir {
     let workspace = current_task_workspace(name);
-    git(&workspace.path, &["init", "-b", "main"]).unwrap();
+    GitRepo::new(&workspace.path)
+        .initialise_on_branch("main")
+        .unwrap();
     fs::write(workspace.path.join(".gitignore"), ".waif\n").unwrap();
-    git(&workspace.path, &["add", ".gitignore"]).unwrap();
-    git(
-        &workspace.path,
-        &[
+    GitRepo::new(&workspace.path)
+        .stage_file(".gitignore")
+        .unwrap();
+    GitRepo::new(&workspace.path)
+        .exec(&[
             "-c",
-            "user.name=WAIF Tests",
+            "user.name=Test",
             "-c",
-            "user.email=waif@example.invalid",
+            "user.email=test@example.invalid",
             "-c",
             "commit.gpgsign=false",
             "commit",
+            "--allow-empty",
             "-m",
-            "Base",
-        ],
-    )
-    .unwrap();
-    let head = git(&workspace.path, &["rev-parse", "HEAD"]).unwrap();
+            "fixture",
+        ])
+        .unwrap();
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
     write_goal(&workspace, "accepted", TIMESTAMP, "");
     write_plan(&workspace, status, head.trim_end(), TIMESTAMP, "");
     workspace
-}
-
-fn git(workspace: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(workspace)
-        .output()
-        .map_err(|error| error.to_string())?;
-    if output.status.success() {
-        String::from_utf8(output.stdout).map_err(|error| error.to_string())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).into_owned())
-    }
 }
 
 fn write_plan(workspace: &TestDir, status: &str, base: &str, updated: &str, questions: &str) {
