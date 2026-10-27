@@ -4,6 +4,7 @@ use clap::Parser;
 
 mod artifact;
 mod commands;
+mod git_repo;
 mod macro_processor;
 mod parser;
 mod protocol;

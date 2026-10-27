@@ -1,16 +1,22 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
+use crate::git_repo::{CurrentBranch, GitRepo};
+
 use chrono::{DateTime, Local, SecondsFormat};
 
 #[derive(Clone)]
 pub(crate) struct MacroContext {
     now: DateTime<Local>,
+    repo: GitRepo,
 }
 
 impl MacroContext {
     pub(crate) fn new() -> Self {
-        Self { now: Local::now() }
+        Self {
+            now: Local::now(),
+            repo: GitRepo::new("."),
+        }
     }
 }
 
@@ -22,14 +28,44 @@ struct MacroDefinition {
     resolver: MacroResolver,
 }
 
-const CATALOGUE: &[MacroDefinition] = &[MacroDefinition {
-    literal: "__NOW__",
-    help: "one local RFC 3339 timestamp per invocation",
-    resolver: resolve_now,
-}];
+const CATALOGUE: &[MacroDefinition] = &[
+    MacroDefinition {
+        literal: "__NOW__",
+        help: "one local RFC 3339 timestamp per invocation",
+        resolver: resolve_now,
+    },
+    MacroDefinition {
+        literal: "__CURRENT_BRANCH__",
+        help: "current Git branch name or detached HEAD",
+        resolver: resolve_current_branch,
+    },
+    MacroDefinition {
+        literal: "__LAST_COMMIT__",
+        help: "full Git HEAD commit hash",
+        resolver: resolve_last_commit,
+    },
+];
 
 fn resolve_now(context: &MacroContext) -> Result<String, String> {
     Ok(context.now.to_rfc3339_opts(SecondsFormat::Secs, false))
+}
+
+fn resolve_current_branch(context: &MacroContext) -> Result<String, String> {
+    context
+        .repo
+        .current_branch()
+        .map(|branch| match branch {
+            CurrentBranch::Branch(name) => name,
+            CurrentBranch::DetachedHead => "detached HEAD".to_owned(),
+        })
+        .map_err(|error| format!("__CURRENT_BRANCH__: {error}"))
+}
+
+fn resolve_last_commit(context: &MacroContext) -> Result<String, String> {
+    context
+        .repo
+        .last_commit()
+        .map_err(|error| format!("__LAST_COMMIT__: {error}"))
 }
 
 #[derive(Clone, Debug)]
@@ -70,7 +106,10 @@ pub(crate) fn fill_help() -> String {
         Known macros:
     "});
     for definition in CATALOGUE {
-        help.push_str(&format!("  {:<9}{}\n", definition.literal, definition.help));
+        help.push_str(&format!(
+            "  {:<20}{}\n",
+            definition.literal, definition.help
+        ));
     }
     help.push_str(indoc::indoc! {"
 

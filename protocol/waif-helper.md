@@ -45,12 +45,20 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
   metadata skips only that value's format check. With no PATH it uses the
   local instance's current task; explicit PATH is caller-relative and needs
   no configured instance or selection.
-- `waif fill <PATH>` expands known plain-text macros. `__NOW__` uses one local
-  RFC 3339 timestamp; immediately enclosing backticks exclude an occurrence.
-  Recognized artifacts are checked before overwrite. A `BAD` candidate is
-  saved separately and leaves the target unchanged. Unrecognized files skip
-  checking and recovery copies. No occurrence leaves the file unchanged.
-  PATH is caller-relative and needs no configured instance or selection.
+- `waif fill <PATH>` expands known plain-text macros.
+  - `__NOW__`: one local RFC 3339 timestamp per invocation.
+  - `__CURRENT_BRANCH__`: the invoking workspace's Git branch name, or
+    `detached HEAD` when no branch is checked out.
+  - `__LAST_COMMIT__`: the invoking workspace's full HEAD commit hash;
+    requires an existing commit.
+  - Each macro is resolved once per invocation. Git resolution failures
+    leave the file unchanged.
+  - Immediately enclosing backticks exclude an occurrence. No occurrence
+    leaves the file unchanged.
+  - Recognized artifacts are checked before overwrite. A `BAD` candidate is
+    saved separately and leaves the target unchanged. Unrecognized files
+    skip checking and recovery copies.
+  - PATH is caller-relative and needs no configured instance or selection.
 - `waif goal accept` requires explicit human approval, a `GOOD` drafting or
   amending goal, and no open questions. It changes only `Status` and `Updated`;
   failed preconditions leave the goal unchanged.

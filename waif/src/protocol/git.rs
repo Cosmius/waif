@@ -4,14 +4,6 @@ use std::process::Command;
 use super::Result;
 
 pub(super) fn query(workspace: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    output(workspace, args, false).map(|value| value.expect("successful query has output"))
-}
-
-pub(super) fn optional_query(workspace: &Path, args: &[&str]) -> Result<Option<Vec<u8>>> {
-    output(workspace, args, true)
-}
-
-fn output(workspace: &Path, args: &[&str], absent_on_one: bool) -> Result<Option<Vec<u8>>> {
     let output = Command::new("git")
         .arg("--no-optional-locks")
         .args(args)
@@ -19,9 +11,7 @@ fn output(workspace: &Path, args: &[&str], absent_on_one: bool) -> Result<Option
         .output()
         .map_err(|error| format!("{}: git {}: {error}", workspace.display(), args.join(" ")))?;
     if output.status.success() {
-        Ok(Some(output.stdout))
-    } else if absent_on_one && output.status.code() == Some(1) {
-        Ok(None)
+        Ok(output.stdout)
     } else {
         Err(format!(
             "{}: git {} failed ({}): {}",

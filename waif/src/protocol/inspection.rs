@@ -4,6 +4,7 @@ use super::git;
 use super::task::read_optional;
 use super::{ArtifactClassification, Result, Task};
 use crate::artifact::Artifact;
+use crate::git_repo::{CurrentBranch, GitRepo};
 
 pub(crate) struct GoalInspection {
     classification: ArtifactClassification,
@@ -222,17 +223,12 @@ impl PlanInspection {
             workspace,
             &["cat-file", "-e", &format!("{base_commit}^{{commit}}")],
         )?;
-        let head = git::text(workspace, &["rev-parse", "--verify", "HEAD"])?;
-        let current_branch = git::optional_query(workspace, &["symbolic-ref", "--quiet", "HEAD"])?
-            .map(|bytes| -> Result<String> {
-                let reference = String::from_utf8(bytes)?;
-                Ok(reference
-                    .trim_end_matches('\n')
-                    .strip_prefix("refs/heads/")
-                    .ok_or("HEAD does not reference a local branch")?
-                    .to_owned())
-            })
-            .transpose()?;
+        let repo = GitRepo::new(workspace);
+        let head = repo.last_commit()?;
+        let current_branch = match repo.current_branch()? {
+            CurrentBranch::Branch(name) => Some(name),
+            CurrentBranch::DetachedHead => None,
+        };
         let clean = git::query(
             workspace,
             &["status", "--porcelain", "--untracked-files=no"],

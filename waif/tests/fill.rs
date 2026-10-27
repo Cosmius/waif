@@ -94,3 +94,71 @@ fn run_fill(directory: &TestDir, arguments: &[&str]) -> Output {
         .output()
         .expect("waif fill should run")
 }
+
+#[test]
+fn fill_resolves_git_macros_from_invoking_workspace() {
+    let directory = TestDir::new("fill-git");
+    git(&directory, &["init", "-b", "feature/macros"]);
+    git(
+        &directory,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Initial",
+        ],
+    );
+    let commit = git(&directory, &["rev-parse", "HEAD"]);
+    let other = TestDir::new("fill-git-target");
+    let path = other.path.join("notes.txt");
+    let source = "__CURRENT_BRANCH__ __LAST_COMMIT__ __LAST_COMMIT__ `__CURRENT_BRANCH__`";
+    fs::write(&path, source).unwrap();
+
+    let output = run_fill(&directory, &[path.to_str().unwrap()]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(fs::read_to_string(&path).unwrap(),
+        format!("feature/macros {commit} {commit} `__CURRENT_BRANCH__`"));
+
+    git(&directory, &["checkout", "--detach"]);
+    fs::write(&path, "__LAST_COMMIT__").unwrap();
+    assert!(run_fill(&directory, &[path.to_str().unwrap()]).status.success());
+    assert_eq!(fs::read_to_string(&path).unwrap(), commit);
+
+    fs::write(&path, source).unwrap();
+    assert!(run_fill(&directory, &[path.to_str().unwrap()]).status.success());
+    assert_eq!(fs::read_to_string(&path).unwrap(),
+        format!("detached HEAD {commit} {commit} `__CURRENT_BRANCH__`"));
+}
+
+#[test]
+fn fill_git_resolution_failures_preserve_source() {
+    let directory = TestDir::new("fill-git-errors");
+    let path = directory.path.join("notes.txt");
+    for source in ["__CURRENT_BRANCH__", "__LAST_COMMIT__"] {
+        fs::write(&path, source).unwrap();
+        let output = run_fill(&directory, &[path.to_str().unwrap()]);
+        assert!(!output.status.success());
+        assert_eq!(fs::read_to_string(&path).unwrap(), source);
+    }
+    git(&directory, &["init", "-b", "unborn"]);
+    fs::write(&path, "__CURRENT_BRANCH__").unwrap();
+    assert!(run_fill(&directory, &[path.to_str().unwrap()]).status.success());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "unborn");
+    fs::write(&path, "__LAST_COMMIT__").unwrap();
+    assert!(!run_fill(&directory, &[path.to_str().unwrap()]).status.success());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "__LAST_COMMIT__");
+}
+
+fn git(directory: &TestDir, arguments: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(arguments)
+        .current_dir(&directory.path)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
