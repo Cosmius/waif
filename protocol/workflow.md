@@ -303,6 +303,9 @@ in that cycle under `Changed`; the human accepts them together.
 
 A status-only lifecycle transition does not require a revision entry.
 
+Metadata edits that preserve meaning may retain accepted status without an
+amendment cycle.
+
 Each revision record must have a stable ID and state:
 
 - when the revision was made;

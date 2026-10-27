@@ -25,9 +25,11 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
   guidance. Either init form skips any existing local library entry, even a
   broken link, without checking mode or target. Setup does not select a task
   or change source branches; partial I/O failures are not rolled back.
-- `waif inspect` reports current goal-stage context and the next mechanical
-  action without mutation, including local workflow and library paths. It
-  succeeds only for usable context; missing setup or selection is a failure.
+- `waif inspect` reports current goal and plan context, mechanical readiness,
+  observed Git facts, and the next action without mutation, including local
+  workflow and library paths. Readiness does not establish human approval.
+  Mechanically blocked plans can be inspected successfully; BAD artifacts
+  and read/query failures fail. Missing setup or selection is a failure.
 - `waif new <TASK_SLUG>` creates and selects the next date-sequenced task.
   The slug uses lowercase letters, digits, and hyphens. It requires explicit
   setup first and never initializes a workflow.
@@ -52,6 +54,13 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
 - `waif goal accept` requires explicit human approval, a `GOOD` drafting or
   amending goal, and no open questions. It changes only `Status` and `Updated`;
   failed preconditions leave the goal unchanged.
+- `waif plan accept` requires explicit human approval, a GOOD plan without
+  open questions, and a GOOD accepted goal. It establishes the recorded branch
+  before changing only Status and Updated; accepted plans retain every byte.
+  Assess untracked files before acceptance. After failure or interruption,
+  inspect branch, HEAD, and plan metadata, then repair under the existing
+  approval while preserving unrelated edits and branch history. Review
+  changed semantic scope with the human.
 
 Ordinary task access preserves nominal library and task paths and reports
 native filesystem failures. A low-level mutation failure may leave partial

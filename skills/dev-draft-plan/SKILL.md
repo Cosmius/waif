@@ -27,21 +27,19 @@ Turn the accepted goal into a reviewable general plan.
 6. Keep plan items broad enough to require later `step.md` files. New items
    need stable `P<number>` IDs, goal-criteria coverage, and `pending` status;
    preserve existing IDs and statuses.
-7. Keep `Status: drafting` before initial acceptance. When changing an
-   accepted plan, set `Status: amending`, maintain one revision subsection for
-   the current cycle, explain impacts on mapped steps, and preserve completed
-   history.
-8. Show the plan and wait for review. Do not create the workspace branch before
-   explicit acceptance.
-9. On explicit acceptance, verify no blocking technical unknowns remain, then:
-   - if `Status: drafting`, require no unrelated dirty changes;
-   - if `Status: drafting`, create and switch to the recorded task branch;
-   - if `Status: drafting`, set `Status: accepted` only after branch creation;
-   - if `Status: amending`, preserve branch and base provenance, return to
-     `accepted`, and verify or switch to the recorded branch;
-   - if already `accepted`, preserve branch and base provenance, and verify or
-     switch to the recorded branch.
-10. If branch creation fails, leave the plan `drafting` and report the failure.
+7. Keep the plan `drafting` until accepted. Apply the shared
+   [amendment rules](../../protocol/workflow.md#revision-rules) to accepted
+   plans; judge metadata materiality and preserve completed history.
+8. Use `__NOW__` for current timestamps, then run
+   `waif fill <PLAN_PATH>` and `waif check <PLAN_PATH>`. Resolve `BAD` and
+   fill `INCOMPLETE` before presentation. Run `waif inspect` from the workspace
+   root. The AI owns semantic review, including coverage, dependencies,
+   feasibility, step impacts, and untracked-file assessment.
+9. Show the `plan.md` path and ask the user to review it.
+10. After explicit human acceptance and with no open questions, run
+    `waif plan accept`. Treat unqualified `accept`, `approve`, or equivalent as
+    acceptance of the current plan. Follow the
+    [helper guidance](../../protocol/waif-helper.md#commands) for repair.
 
 ## `plan.md` Contract
 
@@ -133,12 +131,9 @@ Statuses are:
 
 Follow the shared item-ID, ambiguity, amendment, and revision rules.
 
-Record `Branch`, `Base branch`, and `Base commit` on the first draft. Never
-change the base provenance. The intended branch need not exist while the plan
-is drafting and may be changed at the user's request before creation. Use a
-user-supplied task branch name when provided; otherwise derive it from the task
-dir. Create exactly the recorded branch on initial acceptance. After creation,
-retain it through reacceptance and switch to it without creating another.
+Keep base provenance immutable. Use the user's task branch name or derive
+one from the task dir; retain its identity after creation. Delegate branch
+setup and restoration to `waif plan accept`.
 
 ## Guardrails
 
@@ -154,7 +149,8 @@ retain it through reacceptance and switch to it without creating another.
 ## Done When
 
 - `plan.md` is grounded in current code and maps the whole accepted goal.
-- Every plan item has a unique ID, goal-criteria coverage, and `pending`.
+- Every plan item has a unique ID and goal-criteria coverage; new items are
+  `pending` and existing statuses are preserved.
 - Every plan content item has a stable ID.
 - Every plan records immutable `Base branch` and `Base commit` provenance.
 - Accepted plans record and use the workspace task branch.
