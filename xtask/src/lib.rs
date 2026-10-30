@@ -14,6 +14,7 @@ static METADATA: Metadata = Metadata {
     description: "Plan, implement, and review development tasks.",
 };
 
+mod claude_plugin;
 mod codex_plugin;
 mod pi_package;
 mod skill_zip;
@@ -40,6 +41,7 @@ fn package_build(root: &Path, target: PackageTarget) -> Result<()> {
     match target {
         PackageTarget::PiPackage => pi_package::PiPackage.build(root, &dist, &METADATA),
         PackageTarget::CodexPlugin => codex_plugin::CodexPlugin.build(root, &dist, &METADATA),
+        PackageTarget::ClaudePlugin => claude_plugin::ClaudePlugin.build(root, &dist, &METADATA),
         PackageTarget::SkillZip => skill_zip::SkillZip.build(root, &dist, &METADATA),
     }
 }
@@ -86,6 +88,7 @@ struct PackageCommand {
 enum PackageTarget {
     PiPackage,
     CodexPlugin,
+    ClaudePlugin,
     SkillZip,
 }
 
