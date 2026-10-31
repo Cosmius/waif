@@ -113,7 +113,9 @@ pub(crate) fn fill_help() -> String {
     }
     help.push_str(indoc::indoc! {"
 
-        An occurrence immediately enclosed by backticks is not replaced. A BAD candidate leaves the target unchanged and is saved to a recovery path."
+        An occurrence immediately enclosed by backticks is not replaced.
+        A BAD candidate leaves the target unchanged and is saved to a
+        recovery path."
     });
     help
 }

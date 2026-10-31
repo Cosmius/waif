@@ -1,3 +1,5 @@
+use std::fs;
+
 use super::*;
 use crate::test_support::TestDir;
 
@@ -331,7 +333,7 @@ fn rename_failure_preserves_target_and_cleans_up_temporary() {
     fs::create_dir(&target).unwrap();
     fs::write(target.join("original"), "original bytes").unwrap();
 
-    let result = replace_plan(&target, "replacement");
+    let result = replace_artifact(&target, "replacement");
 
     assert!(result.is_err());
     assert_eq!(fs::read_to_string(target.join("original")).unwrap(), "original bytes");

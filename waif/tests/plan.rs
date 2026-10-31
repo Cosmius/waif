@@ -270,8 +270,8 @@ fn help_exposes_plan_acceptance_and_approval_contract() {
     let top = run(&workspace.path, &["--help"]);
     let plan = run(&workspace.path, &["plan", "--help"]);
     let accept = run(&workspace.path, &["plan", "accept", "--help"]);
-    let plan_help = String::from_utf8_lossy(&plan.stdout);
-    let accept_help = String::from_utf8_lossy(&accept.stdout);
+    let plan_help = unwrap_lines(&plan.stdout);
+    let accept_help = unwrap_lines(&accept.stdout);
 
     assert!(top.status.success());
     assert!(plan.status.success());
@@ -404,4 +404,11 @@ fn expected_accepted(before: &str, after: &str) -> String {
 
 fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn unwrap_lines(output: &[u8]) -> String {
+    String::from_utf8_lossy(output)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }

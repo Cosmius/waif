@@ -1,17 +1,14 @@
-use std::fs::{self, OpenOptions};
-use std::io::Write;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{Local, SecondsFormat};
 
-use super::{ArtifactClassification, ArtifactFile, Result, Task};
+use super::{replace_artifact, ArtifactClassification, ArtifactFile, Result, Task};
 use crate::artifact::serialize;
 use crate::git_repo::{CurrentBranch, GitRepo};
 
 impl Task {
     pub(crate) fn accept_plan(&self, workspace_dir: &Path) -> Result<()> {
-        self.accept_plan_with(workspace_dir, replace_plan)
+        self.accept_plan_with(workspace_dir, replace_artifact)
     }
 
     fn accept_plan_with(
@@ -112,25 +109,6 @@ impl Task {
             .into()
         })
     }
-}
-
-fn replace_plan(path: &Path, contents: &str) -> Result<()> {
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    let temporary = path.with_file_name(format!(".plan.md.{}.{nonce}.tmp", std::process::id()));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)?;
-    let result = (|| -> Result<()> {
-        file.write_all(contents.as_bytes())?;
-        drop(file);
-        fs::rename(&temporary, path)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result
 }
 
 #[cfg(test)]

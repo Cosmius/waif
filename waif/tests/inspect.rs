@@ -479,6 +479,7 @@ fn inspect_help_describes_plan_readiness_and_human_approval() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = stdout.split_whitespace().collect::<Vec<_>>().join(" ");
 
     assert!(output.status.success());
     assert!(stdout.contains("goal and plan state"));
