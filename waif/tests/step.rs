@@ -3,9 +3,10 @@
 use test_support::git_repo::GitRepo;
 
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 mod test_support;
 use test_support::TestDir;
@@ -104,24 +105,134 @@ fn malformed_current_task_reports_context() {
     assert_eq!(fs::read_to_string(&pointer).unwrap(), "invalid pointer");
 }
 
+#[test]
+fn commit_with_message_reports_commit_and_marks_plan_item_done() {
+    let workspace = commit_fixture("commit-message");
+
+    let output = run(&workspace.path, &["step", "commit", "-m", "Add a"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let hash = GitRepo::new(&workspace.path).last_commit().unwrap();
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(stdout.contains("Step:               .waif/library/tasks/20261031-1-test/steps/01-test/step.md\n"));
+    assert!(stdout.contains(&format!("Commit:             {hash}\n")));
+    assert!(stdout.contains("Status:             done\n"));
+    assert!(stdout.contains("Plan items done:    P1\n"));
+    assert_eq!(git(&workspace, &["log", "-1", "--format=%s"]), "Add a");
+    assert!(fs::read_to_string(step_path(&workspace)).unwrap().contains(&format!("- Source commit: {hash}\n")));
+}
+
+#[test]
+fn commit_reads_message_from_file() {
+    let workspace = commit_fixture("commit-file");
+    fs::write(workspace.path.join("message.txt"), "Add a from file\n").unwrap();
+
+    let output = run(&workspace.path, &["step", "commit", "-F", "message.txt"]);
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(git(&workspace, &["log", "-1", "--format=%s"]), "Add a from file");
+}
+
+#[test]
+fn commit_reads_message_from_standard_input() {
+    let workspace = commit_fixture("commit-stdin");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_waif"))
+        .args(["step", "commit", "-F", "-"])
+        .current_dir(&workspace.path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"Add a from stdin\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(git(&workspace, &["log", "-1", "--format=%s"]), "Add a from stdin");
+}
+
+#[test]
+fn commit_with_both_message_sources_is_a_usage_error() {
+    let workspace = commit_fixture("commit-both");
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+
+    let output = run(
+        &workspace.path,
+        &["step", "commit", "-m", "Add a", "-F", "-"],
+    );
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+}
+
+#[test]
+fn commit_without_message_source_is_a_usage_error() {
+    let workspace = commit_fixture("commit-neither");
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+
+    let output = run(&workspace.path, &["step", "commit"]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+}
+
+#[test]
+fn commit_with_unreadable_message_file_is_rejected() {
+    let workspace = commit_fixture("commit-missing-file");
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+    let before = fs::read(step_path(&workspace)).unwrap();
+
+    let output = run(&workspace.path, &["step", "commit", "-F", "missing.txt"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr.contains("missing.txt"), "{stderr}");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert_eq!(fs::read(step_path(&workspace)).unwrap(), before);
+}
+
+/// An accepted step with complete coverage and one staged file.
+fn commit_fixture(name: &str) -> TestDir {
+    let workspace = fixture(name);
+    let path = step_path(&workspace);
+    let source = fs::read_to_string(&path)
+        .unwrap()
+        .replace("- Status: drafting", "- Status: accepted");
+    fs::write(&path, source).unwrap();
+    fs::write(workspace.path.join("a.txt"), "staged\n").unwrap();
+    GitRepo::new(&workspace.path).stage_file("a.txt").unwrap();
+    workspace
+}
+
+fn git(workspace: &TestDir, arguments: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(arguments)
+        .current_dir(&workspace.path)
+        .output()
+        .unwrap();
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .trim_end()
+        .to_owned()
+}
+
 fn fixture(name: &str) -> TestDir {
     let workspace = TestDir::new(name);
     let repo = GitRepo::new(&workspace.path);
     repo.initialise_on_branch("main").unwrap();
     fs::write(workspace.path.join(".git/info/exclude"), "/.waif/\n").unwrap();
-    repo.exec(&[
-        "-c",
-        "user.name=Test",
-        "-c",
-        "user.email=test@example.invalid",
-        "-c",
-        "commit.gpgsign=false",
-        "commit",
-        "--allow-empty",
-        "-m",
-        "fixture",
-    ])
-    .unwrap();
+    repo.exec(&["config", "user.name", "Test"]).unwrap();
+    repo.exec(&["config", "user.email", "test@example.invalid"])
+        .unwrap();
+    repo.exec(&["config", "commit.gpgsign", "false"]).unwrap();
+    repo.exec(&["commit", "--allow-empty", "-m", "fixture"])
+        .unwrap();
     let base = repo.last_commit().unwrap();
     repo.create_and_switch_branch("waif/task", "HEAD").unwrap();
 

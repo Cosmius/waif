@@ -102,6 +102,27 @@ impl GitRepo {
         self.exec(&["switch", "-c", branch, base])
     }
 
+    /// Report whether the index differs from `HEAD`.
+    pub(crate) fn has_staged_changes(&self) -> Result<bool, String> {
+        let arguments = &["diff", "--cached", "--quiet"];
+        let output = self.run(arguments)?;
+        if output.status.code() == Some(1) {
+            return Ok(true);
+        }
+        self.check_output(arguments, &output)?;
+        Ok(false)
+    }
+
+    pub(crate) fn has_unmerged_entries(&self) -> Result<bool, String> {
+        let entries = self.run_bytes_output(&["ls-files", "--unmerged"])?;
+        Ok(!entries.is_empty())
+    }
+
+    /// Commit exactly the current index; hooks run normally.
+    pub(crate) fn commit(&self, message: &str) -> Result<(), String> {
+        self.exec(&["commit", "-m", message])
+    }
+
     pub(crate) fn exec(&self, arguments: &[&str]) -> Result<(), String> {
         let output = self.run(arguments)?;
         self.check_output(arguments, &output)

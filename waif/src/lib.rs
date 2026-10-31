@@ -47,6 +47,8 @@ pub fn run() -> Result<()> {
           waif goal accept
           waif plan accept
           waif step accept
+          waif step commit -m \"Add session timeout\"
+          waif step commit -F -
 
         Use `waif <COMMAND> --help` for command details."
     }

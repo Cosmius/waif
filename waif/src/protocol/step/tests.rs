@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use super::*;
@@ -392,24 +393,266 @@ fn missing_steps_directory_is_rejected() {
     assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
 }
 
+#[test]
+fn committing_complete_step_records_commit_and_marks_plan_item_done() {
+    let (workspace, task) = fixture("commit-complete", "accepted");
+    let source = read_step(&task).replace("partial - Part.", "complete - All.");
+    write_step(&task, "01-test", &source);
+    let repo = GitRepo::new(&workspace.path);
+    let base = repo.last_commit().unwrap();
+    stage(&workspace, "a.txt", "staged\n");
+    fs::write(workspace.path.join("a.txt"), "unstaged\n").unwrap();
+    let plan = fs::read_to_string(task.path.join("plan.md")).unwrap();
+
+    let commit = task.commit_step(&workspace.path, "Add a").unwrap();
+    let step = read_step(&task);
+    let plan_after = fs::read_to_string(task.path.join("plan.md")).unwrap();
+    let expected_step = source
+        .replace("- Status: accepted", "- Status: done")
+        .replace("not-created", &commit.hash)
+        .replace(
+            &format!("- Updated: {TIMESTAMP}"),
+            &format!("- Updated: {}", updated(&step)),
+        );
+    let expected_plan = plan
+        .replace(
+            "### P1: First\n\n- Status: pending",
+            "### P1: First\n\n- Status: done",
+        )
+        .replace(
+            &format!("- Updated: {TIMESTAMP}"),
+            &format!("- Updated: {}", updated(&plan_after)),
+        );
+
+    assert_eq!(commit.hash, repo.last_commit().unwrap());
+    assert_eq!(commit.done_items, ["P1"]);
+    assert_eq!(git(&workspace, &["rev-parse", "HEAD~1"]), base);
+    assert_eq!(git(&workspace, &["log", "-1", "--format=%s"]), "Add a");
+    assert_eq!(git(&workspace, &["show", "HEAD:a.txt"]), "staged");
+    assert_eq!(fs::read_to_string(workspace.path.join("a.txt")).unwrap(), "unstaged\n");
+    assert_eq!(step, expected_step);
+    assert_eq!(plan_after, expected_plan);
+}
+
+#[test]
+fn committing_partial_step_leaves_plan_unchanged() {
+    let (workspace, task) = fixture("commit-partial", "accepted");
+    stage(&workspace, "a.txt", "staged\n");
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let commit = task.commit_step(&workspace.path, "Add a").unwrap();
+
+    assert!(commit.done_items.is_empty());
+    assert!(read_step(&task).contains(&format!("- Source commit: {}\n", commit.hash)));
+    assert!(read_step(&task).contains("- Status: done\n"));
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn committing_drafting_step_is_rejected() {
+    let (workspace, task) = fixture("commit-drafting", "drafting");
+    stage(&workspace, "a.txt", "staged\n");
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+    let before = read_step(&task);
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task
+        .commit_step(&workspace.path, "Add a")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("step is not accepted"), "{error}");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert_eq!(read_step(&task), before);
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn committing_done_step_is_rejected() {
+    let (workspace, task) = fixture("commit-done", "done");
+    let source = read_step(&task).replace(
+        "- Source commit: not-created",
+        "- Source commit: 0123456789abcdef0123456789abcdef01234567",
+    );
+    write_step(&task, "01-test", &source);
+    stage(&workspace, "a.txt", "staged\n");
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task
+        .commit_step(&workspace.path, "Add a")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("step is already done"), "{error}");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert_eq!(read_step(&task), source);
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn committing_on_wrong_branch_is_rejected() {
+    let (workspace, task) = fixture("commit-wrong-branch", "accepted");
+    let repo = GitRepo::new(&workspace.path);
+    repo.switch_branch("main").unwrap();
+    stage(&workspace, "a.txt", "staged\n");
+    let head = repo.last_commit().unwrap();
+    let before = read_step(&task);
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task
+        .commit_step(&workspace.path, "Add a")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("current branch main is not the recorded task branch waif/task"), "{error}");
+    assert_eq!(repo.last_commit().unwrap(), head);
+    assert_eq!(read_step(&task), before);
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn blank_commit_message_is_rejected() {
+    let (workspace, task) = fixture("commit-blank", "accepted");
+    stage(&workspace, "a.txt", "staged\n");
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+    let before = read_step(&task);
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task
+        .commit_step(&workspace.path, " \n\t")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("commit message is empty"), "{error}");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert_eq!(read_step(&task), before);
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn commit_without_staged_changes_is_rejected() {
+    let (workspace, task) = fixture("commit-nothing", "accepted");
+    fs::write(workspace.path.join("a.txt"), "unstaged\n").unwrap();
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+    let before = read_step(&task);
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task
+        .commit_step(&workspace.path, "Add a")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("no staged changes to commit"), "{error}");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert_eq!(read_step(&task), before);
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn commit_with_unmerged_entries_is_rejected() {
+    let (workspace, task) = fixture("commit-unmerged", "accepted");
+    let repo = GitRepo::new(&workspace.path);
+    repo.create_and_switch_branch("other", "HEAD").unwrap();
+    stage(&workspace, "a.txt", "theirs\n");
+    repo.exec(&["commit", "-m", "theirs"]).unwrap();
+    repo.switch_branch("waif/task").unwrap();
+    stage(&workspace, "a.txt", "ours\n");
+    repo.exec(&["commit", "-m", "ours"]).unwrap();
+    assert!(repo.exec(&["merge", "other"]).is_err());
+    let head = repo.last_commit().unwrap();
+    let before = read_step(&task);
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task
+        .commit_step(&workspace.path, "Merge")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("the index has unmerged entries"), "{error}");
+    assert_eq!(repo.last_commit().unwrap(), head);
+    assert_eq!(read_step(&task), before);
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn commit_refused_by_hook_is_rejected() {
+    let (workspace, task) = fixture("commit-hook", "accepted");
+    install_hook(&workspace, "exit 1");
+    stage(&workspace, "a.txt", "staged\n");
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+    let before = read_step(&task);
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task
+        .commit_step(&workspace.path, "Add a")
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("git commit -m Add a failed"), "{error}");
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert_eq!(read_step(&task), before);
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn step_write_failure_after_commit_reports_hash_and_step() {
+    let (workspace, task) = fixture("commit-step-unwritable", "accepted");
+    let step_dir = task.path.join("steps/01-test");
+    install_hook(&workspace, &format!("chmod a-w '{}'", step_dir.display()));
+    stage(&workspace, "a.txt", "staged\n");
+    let repo = GitRepo::new(&workspace.path);
+    let base = repo.last_commit().unwrap();
+    let before = read_step(&task);
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task
+        .commit_step(&workspace.path, "Add a")
+        .unwrap_err()
+        .to_string();
+    fs::set_permissions(&step_dir, fs::Permissions::from_mode(0o755)).unwrap();
+    let hash = repo.last_commit().unwrap();
+
+    assert_ne!(hash, base);
+    assert!(error.contains(&format!("commit {hash} created but {} was not updated", step_path(&task, "01-test").display())), "{error}");
+    assert_eq!(read_step(&task), before);
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn plan_write_failure_after_commit_reports_hash_and_plan() {
+    let (workspace, task) = fixture("commit-plan-unwritable", "accepted");
+    let source = read_step(&task).replace("partial - Part.", "complete - All.");
+    write_step(&task, "01-test", &source);
+    install_hook(&workspace, &format!("chmod a-w '{}'", task.path.display()));
+    stage(&workspace, "a.txt", "staged\n");
+    let repo = GitRepo::new(&workspace.path);
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task
+        .commit_step(&workspace.path, "Add a")
+        .unwrap_err()
+        .to_string();
+    fs::set_permissions(&task.path, fs::Permissions::from_mode(0o755)).unwrap();
+    let hash = repo.last_commit().unwrap();
+
+    assert!(error.contains(&format!("commit {hash} created but {} was not updated", task.path.join("plan.md").display())), "{error}");
+    assert!(read_step(&task).contains(&format!("- Source commit: {hash}\n")));
+    assert!(read_step(&task).contains("- Status: done\n"));
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
 fn fixture(name: &str, status: &str) -> (TestDir, Task) {
     let workspace = TestDir::new(name);
     let repo = GitRepo::new(&workspace.path);
     repo.initialise_on_branch("main").unwrap();
     fs::write(workspace.path.join(".git/info/exclude"), "/.waif/\n").unwrap();
-    repo.exec(&[
-        "-c",
-        "user.name=Test",
-        "-c",
-        "user.email=test@example.invalid",
-        "-c",
-        "commit.gpgsign=false",
-        "commit",
-        "--allow-empty",
-        "-m",
-        "fixture",
-    ])
-    .unwrap();
+    repo.exec(&["config", "user.name", "Test"]).unwrap();
+    repo.exec(&["config", "user.email", "test@example.invalid"])
+        .unwrap();
+    repo.exec(&["config", "commit.gpgsign", "false"]).unwrap();
+    repo.exec(&["commit", "--allow-empty", "-m", "fixture"])
+        .unwrap();
     let base = repo.last_commit().unwrap();
     repo.create_and_switch_branch("waif/task", "HEAD").unwrap();
 
@@ -488,4 +731,28 @@ fn expected_accepted(before: &str, after: &str) -> String {
             &format!("- Updated: {TIMESTAMP}"),
             &format!("- Updated: {}", updated(after)),
         )
+}
+
+fn stage(workspace: &TestDir, path: &str, contents: &str) {
+    fs::write(workspace.path.join(path), contents).unwrap();
+    GitRepo::new(&workspace.path).stage_file(path).unwrap();
+}
+
+fn git(workspace: &TestDir, arguments: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(arguments)
+        .current_dir(&workspace.path)
+        .output()
+        .unwrap();
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .trim_end()
+        .to_owned()
+}
+
+fn install_hook(workspace: &TestDir, script: &str) {
+    let hook = workspace.path.join(".git/hooks/pre-commit");
+    fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    fs::write(&hook, format!("#!/bin/sh\n{script}\n")).unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
 }
