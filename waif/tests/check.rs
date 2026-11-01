@@ -328,8 +328,8 @@ fn check_reports_all_goal_errors_with_explicit_severity() {
 
     assert_eq!(output.status.code(), Some(1));
     for expected in [
-        "goal.md:2: ERROR: metadata `Status` expected `drafting`, `accepted`, or \
-         `amending`, but got `invalid`",
+        "goal.md:2: ERROR: metadata `Status` expected `drafting`, `accepted`, `amending`, \
+         `done`, or `aborted`, but got `invalid`",
         "goal.md:1: ERROR: missing required metadata `Created`",
         "goal.md:1: ERROR: missing required metadata `Updated`",
         "goal.md:8: ERROR: item identifier `WRONG1`",
@@ -422,8 +422,8 @@ fn check_uses_the_selected_symlink_name_for_goal_dispatch() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr.contains(
-        "goal.md:2: ERROR: metadata `Status` expected `drafting`, `accepted`, or \
-         `amending`, but got `proposed`"
+        "goal.md:2: ERROR: metadata `Status` expected `drafting`, `accepted`, `amending`, \
+         `done`, or `aborted`, but got `proposed`"
     ));
     assert!(stdout.contains("checked 1 artifact(s); 1 invalid"));
 }

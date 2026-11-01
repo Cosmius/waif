@@ -131,6 +131,18 @@ fn accepted_plan_rejection_preserves_task_branch_and_staging() {
 }
 
 #[test]
+fn done_plan_rejection_preserves_plan() {
+    let workspace = fixture("done", "done");
+    let before = fs::read(plan_path(&workspace)).unwrap();
+
+    let output = run(&workspace.path, &["plan", "accept"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("plan is done"));
+    assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
+}
+
+#[test]
 fn dirty_drafting_rejection_preserves_plan_branch_and_refs() {
     let workspace = fixture("dirty", "drafting");
     fs::write(workspace.path.join("source.txt"), "dirty\n").unwrap();

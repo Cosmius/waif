@@ -117,7 +117,7 @@ Turn the accepted goal into a reviewable general plan.
 
 Statuses are:
 
-- plan: `drafting`, `accepted`, `amending`;
+- plan: `drafting`, `accepted`, `amending`, `done`, `aborted`;
 - plan item: `pending`, `done`.
 
 - Omit empty `Open Questions`, `Assumptions`, and pre-amendment `Revisions`.

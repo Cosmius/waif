@@ -552,11 +552,15 @@ pub(crate) mod metadata_validators {
     use chrono::DateTime;
 
     pub(crate) fn artifact_status(value: &str) -> Result<(), String> {
-        if matches!(value, "drafting" | "accepted" | "amending") {
+        if matches!(
+            value,
+            "drafting" | "accepted" | "amending" | "done" | "aborted"
+        ) {
             Ok(())
         } else {
             Err(format!(
-                "expected `drafting`, `accepted`, or `amending`, but got `{value}`"
+                "expected `drafting`, `accepted`, `amending`, `done`, or `aborted`, \
+                 but got `{value}`"
             ))
         }
     }

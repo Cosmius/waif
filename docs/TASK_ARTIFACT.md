@@ -136,7 +136,7 @@ A checked file named exactly `goal.md` receives this contract.
 Required metadata is:
 
 ```text
-Status    drafting | accepted | amending
+Status    drafting | accepted | amending | done | aborted
 Created   RFC 3339 timestamp with Z or a numeric UTC offset
 Updated   RFC 3339 timestamp with Z or a numeric UTC offset
 ```
@@ -164,7 +164,7 @@ A checked file named exactly `plan.md` receives this contract.
 Required metadata is:
 
 ```text
-Status       drafting | accepted | amending
+Status       drafting | accepted | amending | done | aborted
 Goal         ./goal.md
 Branch       non-empty intended task branch
 Base branch  non-empty branch from which the task branch is created
@@ -250,17 +250,17 @@ unpadded number in all stable-ID prefixes. Thus step directory
 Structurally required metadata is:
 
 ```text
-Status         drafting | accepted | amending | done
+Status         drafting | accepted | amending | done | aborted
 Source commit  not-created | full 40-character hexadecimal Git commit hash
 Created        RFC 3339 timestamp with Z or a numeric UTC offset
 Updated        RFC 3339 timestamp with Z or a numeric UTC offset
 ```
 
 `Source commit` is `not-created` for `drafting`, `accepted`, and `amending`
-steps. A `done` step requires a full commit hash. Authoring metadata such as
-`Plan items`, `Goal criteria`, and `Estimated non-test/doc changes` follows the
-validated metadata. It remains structured metadata, but its values are not
-checked.
+steps. A `done` step requires a full commit hash. An `aborted` step accepts
+either value. Authoring metadata such as `Plan items`, `Goal criteria`, and
+`Estimated non-test/doc changes` follows the validated metadata. It remains
+structured metadata, but its values are not checked.
 
 Known sections have this relative order:
 

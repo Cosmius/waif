@@ -26,6 +26,16 @@ fn messages(source: &str) -> Vec<(Severity, usize, String)> {
 }
 
 #[test]
+fn accepts_done_status() {
+    assert_eq!(messages(&VALID.replace("Status: accepted", "Status: done")), []);
+}
+
+#[test]
+fn accepts_aborted_status() {
+    assert_eq!(messages(&VALID.replace("Status: accepted", "Status: aborted")), []);
+}
+
+#[test]
 fn accepts_valid_metadata_variants_and_trailing_opaque_prose() {
     for (created, updated) in [
         ("2026-07-31T12:00:00Z", "2026-07-31T21:00:00+09:00"),
@@ -61,8 +71,8 @@ fn reports_invalid_and_duplicate_metadata_at_source_lines() {
     assert!(diagnostics.iter().any(|entry| {
             entry.1 == 2
                 && entry.2
-                    == "metadata `Status` expected `drafting`, `accepted`, or \
-                                   `amending`, but got `unknown`"
+                    == "metadata `Status` expected `drafting`, `accepted`, `amending`, \
+                                   `done`, or `aborted`, but got `unknown`"
         }));
     assert!(diagnostics
             .iter()

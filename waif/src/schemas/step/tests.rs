@@ -38,6 +38,12 @@ fn accepts_conforming_step_and_opaque_semantic_metadata() {
 }
 
 #[test]
+fn accepts_aborted_step_without_source_commit() {
+    let source = VALID.replace("Status: accepted", "Status: aborted");
+    assert_eq!(messages("steps/03-check/step.md", &source), []);
+}
+
+#[test]
 fn aggregates_lifecycle_coverage_order_and_identity_errors() {
     let source = VALID
         .replace("- Status: accepted", "- Updated: invalid\n- Status: done")

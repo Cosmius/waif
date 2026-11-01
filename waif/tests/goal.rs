@@ -133,6 +133,17 @@ fn accept_rejects_an_already_accepted_goal_without_mutating_the_file() {
 
 #[cfg(unix)]
 #[test]
+fn accept_rejects_an_aborted_goal_without_mutating_the_file() {
+    let workspace = current_task_workspace("aborted");
+    let source = valid_goal("aborted", "2026-08-17T12:00:00+09:00", "body");
+    let (output, contents) = run_rejected_goal(&workspace, &source);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("goal is aborted"));
+    assert_eq!(contents, source);
+}
+
+#[cfg(unix)]
+#[test]
 fn accept_rejects_a_bad_goal_without_mutating_the_file() {
     let workspace = current_task_workspace("bad");
     let source = "not a goal\n";

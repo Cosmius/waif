@@ -75,9 +75,9 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
 - `waif goal accept` requires explicit human approval, a `GOOD` drafting or
   amending goal, and no open questions. It changes only `Status` and `Updated`;
   failed preconditions leave the goal unchanged.
-- `waif plan accept` requires explicit human approval, a GOOD plan without
-  open questions, and a GOOD accepted goal. It establishes the recorded branch
-  before changing only Status and Updated.
+- `waif plan accept` requires explicit human approval, a GOOD drafting or
+  amending plan without open questions, and a GOOD accepted goal. It
+  establishes the recorded branch before changing only Status and Updated.
   Assess untracked files before acceptance. After failure or interruption,
   inspect branch, HEAD, and plan metadata, then repair under the existing
   approval while preserving unrelated edits and branch history. Review

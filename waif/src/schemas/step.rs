@@ -16,7 +16,7 @@ const SCHEMA: Schema = Schema {
 const METADATA: [MetadataRule; 4] = [
     MetadataRule {
         name: "Status",
-        validator: step_status,
+        validator: metadata_validators::artifact_status,
     },
     MetadataRule {
         name: "Source commit",
@@ -113,16 +113,6 @@ fn parser_config() -> ParserConfig<'static> {
         SectionConfig::itemised("Risks and Edge Cases"),
         SectionConfig::itemised("Revisions"),
     ])
-}
-
-fn step_status(value: &str) -> Result<(), String> {
-    if matches!(value, "drafting" | "accepted" | "amending" | "done") {
-        Ok(())
-    } else {
-        Err(format!(
-            "expected `drafting`, `accepted`, `amending`, or `done`, but got `{value}`"
-        ))
-    }
 }
 
 fn source_commit(value: &str) -> Result<(), String> {

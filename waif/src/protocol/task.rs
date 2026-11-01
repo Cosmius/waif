@@ -77,6 +77,9 @@ impl Task {
         if status == "accepted" {
             blockers.push("goal cannot be reaccepted".to_string());
         }
+        if matches!(status, "done" | "aborted") {
+            blockers.push(format!("goal is {status}"));
+        }
         if inspection.has_open_questions() {
             blockers.push("goal has blocking open questions".to_owned());
         }

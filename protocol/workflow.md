@@ -234,25 +234,24 @@ unchanged and refresh `Updated` whenever an artifact changes.
 `goal.md`, `plan.md`, and each step plan persist their lifecycle in a
 top-level `Status` field.
 
-The goal and general plan have three statuses:
-
-```text
-drafting -> accepted <-> amending
-```
-
-Each step plan has four statuses:
+The goal, general plan, and each step plan share five statuses. The normal
+lifecycle is:
 
 ```text
 drafting -> accepted <-> amending
             accepted -> done
 ```
 
+`done` and `aborted` close an artifact. Transitions into and out of them are
+unrestricted.
+
 Status meanings:
 
 - `drafting`: the artifact is being prepared for human review.
 - `accepted`: the human has accepted the artifact.
 - `amending`: an accepted goal, general plan, or step plan is being revised.
-- `done`: implementation of the step plan is complete.
+- `done`: the work the artifact describes is finished.
+- `aborted`: the work the artifact describes was abandoned.
 
 Only an `accepted` goal and general plan may be consumed by later skills.
 `amending` returns to `accepted` only after explicit human acceptance.
@@ -260,11 +259,25 @@ Only an `accepted` goal and general plan may be consumed by later skills.
 Goals and general plans may repeat the `accepted -> amending -> accepted`
 cycle any number of times. Each amendment requires a new explicit acceptance.
 
-Do not reset an accepted or amending goal or general plan to `drafting`.
-An accepted step plan changes only through an amendment cycle until it is
-`done`, and a `done` step plan is never revised. `waif step commit` writes
-the step's `Status`, `Updated`, and `Source commit` when the step's source
-commit succeeds, and marks plan items with `complete` coverage `done`.
+Set `done` or `aborted` only on the human's explicit request, except that
+`waif step commit` sets a step `done`: change `Status` and refresh `Updated`
+without adding a revision. Any workflow skill may record this by editing the
+artifact directly. Likewise, move an artifact out of `done` or `aborted` only
+on the human's explicit request.
+
+A step plan normally becomes `done` through `waif step commit`, as described
+below. A step set to `done` on request also needs its full commit hash in
+`Source commit`; when no commit exists, ask the human for the hash or whether
+to record `aborted` instead. An `aborted` step keeps its `Source commit`.
+When a step moves from `done` or `aborted` back to `drafting`, `accepted`, or
+`amending`, reset `Source commit` to `not-created`.
+
+In the normal lifecycle, do not reset an accepted or amending goal or general
+plan to `drafting`. An accepted step plan changes only through an amendment
+cycle until it is `done`, and a `done` step plan is not revised.
+`waif step commit` writes the step's `Status`, `Updated`, and
+`Source commit` when the step's source commit succeeds, and marks plan items
+with `complete` coverage `done`.
 Marking a plan item `done` this way is not a plan amendment: the plan's
 `Status` stays `accepted` and no revision is added.
 

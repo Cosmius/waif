@@ -42,6 +42,9 @@ impl Task {
         if status == "accepted" {
             return Err(format!("{}: plan is already accepted", path.display()).into());
         }
+        if matches!(status, "done" | "aborted") {
+            return Err(format!("{}: plan is {status}", path.display()).into());
+        }
         let branch = inspection.branch().expect("GOOD plan has Branch");
         let base = inspection.base_commit().expect("GOOD plan has Base commit");
         if status == "drafting" {
