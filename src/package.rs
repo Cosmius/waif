@@ -69,6 +69,23 @@ pub fn build(target: PackageTarget) -> Result<()> {
     }
 }
 
+/// The packaged helper guide, which records the SHA-1 of the packaging binary.
+const HELPER_GUIDE: &str = "protocol/waif-helper.md";
+
+fn package_file(name: &str) -> Result<Vec<u8>> {
+    let mut contents = embedded(name)?.to_vec();
+    if name == HELPER_GUIDE {
+        let hash = sha1_smol::Sha1::from(fs::read(std::env::current_exe()?)?).digest();
+        contents.extend(
+            format!(
+                "\n## Debug Information\n\nPackaged by the `waif` binary with SHA-1 `{hash}`.\n"
+            )
+            .bytes(),
+        );
+    }
+    Ok(contents)
+}
+
 fn embedded(name: &str) -> Result<&'static [u8]> {
     CONTENT
         .iter()
@@ -83,7 +100,7 @@ fn write_files(destination: &Path, files: &[&str]) -> Result<()> {
         if let Some(parent) = destination_file.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&destination_file, embedded(file)?)?;
+        fs::write(&destination_file, package_file(file)?)?;
     }
     Ok(())
 }

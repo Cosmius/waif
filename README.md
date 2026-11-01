@@ -87,6 +87,29 @@ Each skill owns one stage and writes the artifact for that stage. Later skills
 read the accepted artifacts from earlier stages instead of relying on chat
 memory.
 
+## Packaging
+
+The `waif` binary embeds the skills and protocol documents and builds every
+distributable package. Install it from the repository root:
+
+```sh
+cargo install --path .
+```
+
+Then build a package with one of:
+
+```sh
+waif package --target claude-plugin
+waif package --target codex-plugin
+waif package --target pi-package
+waif package --target skill-zip
+```
+
+Each command writes its package under `dist/` in the current directory,
+replacing any previous build of that target, and prints how to install it.
+The packaged `protocol/waif-helper.md` ends with the SHA-1 of the `waif`
+binary that built it, to help trace which build produced a package.
+
 ## Usage
 
 Start in the repository where the source change should happen.
@@ -193,6 +216,7 @@ See [helper usage](protocol/waif-helper.md) for CLI commands.
 
 ## Repository Contents
 
+- `src/` and `tests/`: the `waif` helper CLI, which also builds the packages.
 - `protocol/workflow.md` is the canonical workflow specification.
 - `protocol/waif-helper.md`: deterministic CLI commands for agents.
 - `skills/dev-workflow-setup/` initializes workflows and maintains project rules.

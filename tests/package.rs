@@ -105,6 +105,28 @@ fn package_builds_skill_zip() {
     assert_eq!(entries, SKILL_FILES);
 }
 
+#[test]
+fn package_appends_binary_hash_to_helper_guide() {
+    let workspace = TestDir::new("package-helper-hash");
+
+    let output = run_package(&workspace, "pi-package");
+
+    assert!(output.status.success());
+    let binary = fs::read(env!("CARGO_BIN_EXE_waif")).expect("waif binary should be readable");
+    let hash = sha1_smol::Sha1::from(binary).digest();
+    let expected = format!(
+        "{}\n## Debug Information\n\nPackaged by the `waif` binary with SHA-1 `{hash}`.\n",
+        include_str!("../protocol/waif-helper.md")
+    );
+    let packaged = fs::read_to_string(
+        workspace
+            .path
+            .join("dist/pi-package/protocol/waif-helper.md"),
+    )
+    .expect("packaged helper guide should be readable");
+    assert_eq!(packaged, expected);
+}
+
 fn run_package(workspace: &TestDir, target: &str) -> Output {
     Command::new(env!("CARGO_BIN_EXE_waif"))
         .args(["package", "--target", target])

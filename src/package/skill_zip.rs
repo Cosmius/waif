@@ -5,7 +5,7 @@ use std::path::Path;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
-use super::{embedded, Metadata, PackageTargetImpl, Result, StagingDir};
+use super::{package_file, Metadata, PackageTargetImpl, Result, StagingDir};
 
 const PACKAGE_FILES: &[&str] = &[
     "protocol/workflow_migration.md",
@@ -55,7 +55,7 @@ fn write_zip(output: &Path, files: &[&str]) -> Result<()> {
 
     for name in files {
         zip.start_file(*name, options)?;
-        zip.write_all(embedded(name)?)?;
+        zip.write_all(&package_file(name)?)?;
     }
 
     zip.finish()?;
