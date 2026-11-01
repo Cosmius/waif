@@ -194,6 +194,14 @@ skill-specific contract defines the required content of the artifacts it owns.
   defined by the owning skill's artifact contract.
 - Omit optional sections when they contain no content.
 - Use task-dir-relative paths when one task artifact refers to another.
+- Indent each continuation line of a wrapped `- ID: content` item so its
+  content begins in the same column as the content after `ID: `. This
+  alignment is presentation only.
+
+```markdown
+- G-AC1: First line of an acceptance criterion that wraps.
+         Continuation aligned with the first content character.
+```
 
 ### Item IDs
 
