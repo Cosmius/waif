@@ -69,7 +69,8 @@ pub fn build(target: PackageTarget) -> Result<()> {
     }
 }
 
-/// The packaged helper guide, which records the SHA-1 of the packaging binary.
+/// The packaged helper guide, which records the version, Git commit, and
+/// SHA-1 of the packaging binary.
 const HELPER_GUIDE: &str = "protocol/waif-helper.md";
 
 fn package_file(name: &str) -> Result<Vec<u8>> {
@@ -77,9 +78,19 @@ fn package_file(name: &str) -> Result<Vec<u8>> {
     if name == HELPER_GUIDE {
         let hash = sha1_smol::Sha1::from(fs::read(std::env::current_exe()?)?).digest();
         contents.extend(
-            format!(
-                "\n## Debug Information\n\nPackaged by the `waif` binary with SHA-1 `{hash}`.\n"
-            )
+            indoc::formatdoc! {"
+
+                    ## Debug Information
+
+                    Packaged by this `waif` binary:
+
+                    - Version: `{version}`
+                    - Git commit: `{commit}`
+                    - SHA-1: `{hash}`
+                ",
+                version = METADATA.version,
+                commit = env!("WAIF_GIT_COMMIT"),
+            }
             .bytes(),
         );
     }

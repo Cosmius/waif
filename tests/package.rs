@@ -117,10 +117,20 @@ fn package_appends_binary_hash_to_helper_guide() {
     assert!(output.status.success());
     let binary = fs::read(env!("CARGO_BIN_EXE_waif")).expect("waif binary should be readable");
     let hash = sha1_smol::Sha1::from(binary).digest();
-    let expected = format!(
-        "{}\n## Debug Information\n\nPackaged by the `waif` binary with SHA-1 `{hash}`.\n",
-        include_str!("../protocol/waif-helper.md")
-    );
+    let expected = indoc::formatdoc! {"
+            {guide}
+            ## Debug Information
+
+            Packaged by this `waif` binary:
+
+            - Version: `{version}`
+            - Git commit: `{commit}`
+            - SHA-1: `{hash}`
+        ",
+        guide = include_str!("../protocol/waif-helper.md"),
+        version = env!("CARGO_PKG_VERSION"),
+        commit = env!("WAIF_GIT_COMMIT"),
+    };
     let packaged = fs::read_to_string(
         workspace
             .path

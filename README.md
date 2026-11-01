@@ -107,8 +107,10 @@ waif package --target skill-zip
 
 Each command writes its package under `dist/` in the current directory,
 replacing any previous build of that target, and prints how to install it.
-The packaged `protocol/waif-helper.md` ends with the SHA-1 of the `waif`
-binary that built it, to help trace which build produced a package.
+The packaged `protocol/waif-helper.md` ends with the version, Git commit,
+and SHA-1 of the `waif` binary that built it, to help trace which build
+produced a package. The commit has a `-dirty` suffix when the binary was
+built from uncommitted changes, and is `unknown` outside a Git checkout.
 
 ## Usage
 
