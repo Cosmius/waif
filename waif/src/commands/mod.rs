@@ -10,6 +10,7 @@ mod goal;
 mod init;
 mod inspect;
 mod new;
+mod package;
 mod plan;
 mod step;
 mod switch;
@@ -66,6 +67,13 @@ pub enum Command {
         }
     )]
     New(new::NewCommand),
+    /// Build a distributable package from the embedded workflow content.
+    #[command(long_about = indoc::indoc! {"
+        Build one TARGET package from the skills and protocol documents
+        embedded in this binary. Write it under dist/ in the current
+        directory, replacing any previous output for that target."
+    })]
+    Package(package::PackageCommand),
     /// Perform lifecycle operations on the current plan.
     #[command(subcommand)]
     Plan(plan::PlanCommand),
@@ -90,6 +98,7 @@ impl Command {
             Self::Init(command) => command.run(),
             Self::Inspect(command) => command.run(),
             Self::New(command) => command.run(),
+            Self::Package(command) => command.run(),
             Self::Plan(command) => command.run(),
             Self::Step(command) => command.run(),
             Self::Switch(command) => command.run(),

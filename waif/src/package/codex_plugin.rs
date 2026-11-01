@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use crate::{copy_whitelist, write_json, Metadata, PackageTargetImpl, Result, StagingDir};
+use super::{write_files, write_json, Metadata, PackageTargetImpl, Result, StagingDir};
 
 const PACKAGE_FILES: &[&str] = &[
     "protocol/workflow_migration.md",
@@ -27,11 +27,11 @@ const PACKAGE_FILES: &[&str] = &[
 pub(crate) struct CodexPlugin;
 
 impl PackageTargetImpl for CodexPlugin {
-    fn build(&self, root: &Path, dist: &Path, metadata: &Metadata) -> Result<()> {
+    fn build(&self, dist: &Path, metadata: &Metadata) -> Result<()> {
         let output = dist.join("codex-plugin");
         let staging = StagingDir::new(dist, ".codex-plugin.")?;
         let plugin_dir = staging.path().join("plugins").join(metadata.name);
-        copy_whitelist(root, &plugin_dir, PACKAGE_FILES)?;
+        write_files(&plugin_dir, PACKAGE_FILES)?;
 
         let mut manifest = manifest(metadata);
         manifest["skills"] = json!("./skills/");

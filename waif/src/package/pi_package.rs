@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use crate::{copy_whitelist, write_json, Metadata, PackageTargetImpl, Result, StagingDir};
+use super::{write_files, write_json, Metadata, PackageTargetImpl, Result, StagingDir};
 
 const PACKAGE_FILES: &[&str] = &[
     "protocol/workflow_migration.md",
@@ -20,10 +20,10 @@ const PACKAGE_FILES: &[&str] = &[
 pub(crate) struct PiPackage;
 
 impl PackageTargetImpl for PiPackage {
-    fn build(&self, root: &Path, dist: &Path, metadata: &Metadata) -> Result<()> {
+    fn build(&self, dist: &Path, metadata: &Metadata) -> Result<()> {
         let output = dist.join("pi-package");
         let staging = StagingDir::new(dist, ".pi-package.")?;
-        copy_whitelist(root, staging.path(), PACKAGE_FILES)?;
+        write_files(staging.path(), PACKAGE_FILES)?;
         write_json(staging.path().join("package.json"), &package(metadata)?)?;
         staging.replace(output.as_path())?;
         println!("The pi package is built at {}", output.display());

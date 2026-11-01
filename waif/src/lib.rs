@@ -6,6 +6,7 @@ mod artifact;
 mod commands;
 mod git_repo;
 mod macro_processor;
+mod package;
 mod parser;
 mod protocol;
 mod schema;
@@ -28,8 +29,8 @@ pub fn run() -> Result<()> {
 #[command(
     name = "waif",
     disable_help_subcommand = true,
-    override_usage = "waif <check|fill|goal|init|inspect|new|plan|step|\
-                      switch> [ARGUMENTS]",
+    override_usage = "waif <check|fill|goal|init|inspect|new|package|plan|\
+                      step|switch> [ARGUMENTS]",
     about = "Deterministic helpers for the Waif workflow",
     long_about = indoc::indoc! {"
         Inspect and update mechanical Waif workflow state. Artifact content,
@@ -49,6 +50,7 @@ pub fn run() -> Result<()> {
           waif step accept
           waif step commit -m \"Add session timeout\"
           waif step commit -F -
+          waif package --target claude-plugin
 
         Use `waif <COMMAND> --help` for command details."
     }

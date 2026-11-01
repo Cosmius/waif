@@ -5,7 +5,7 @@ use std::path::Path;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
-use crate::{Metadata, PackageTargetImpl, Result, StagingDir};
+use super::{embedded, Metadata, PackageTargetImpl, Result, StagingDir};
 
 const PACKAGE_FILES: &[&str] = &[
     "protocol/workflow_migration.md",
@@ -23,11 +23,11 @@ const PACKAGE_FILES: &[&str] = &[
 pub(crate) struct SkillZip;
 
 impl PackageTargetImpl for SkillZip {
-    fn build(&self, root: &Path, dist: &Path, metadata: &Metadata) -> Result<()> {
+    fn build(&self, dist: &Path, metadata: &Metadata) -> Result<()> {
         let output = dist.join(format!("{}-skills.zip", metadata.name));
         let staging = StagingDir::new(dist, ".skill-zip.")?;
         let staged_output = staging.path().join("skills.zip");
-        write_zip(root, &staged_output, PACKAGE_FILES)?;
+        write_zip(&staged_output, PACKAGE_FILES)?;
         replace_file(staged_output.as_path(), output.as_path())?;
         println!("The skill zip package is built at {}", output.display());
         Ok(())
@@ -42,7 +42,7 @@ fn replace_file(source: &Path, output: &Path) -> Result<()> {
     Ok(())
 }
 
-fn write_zip(root: &Path, output: &Path, files: &[&str]) -> Result<()> {
+fn write_zip(output: &Path, files: &[&str]) -> Result<()> {
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -54,8 +54,8 @@ fn write_zip(root: &Path, output: &Path, files: &[&str]) -> Result<()> {
         .unix_permissions(0o644);
 
     for name in files {
-        zip.start_file(name, options)?;
-        zip.write_all(&fs::read(root.join(name))?)?;
+        zip.start_file(*name, options)?;
+        zip.write_all(embedded(name)?)?;
     }
 
     zip.finish()?;
