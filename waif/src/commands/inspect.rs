@@ -188,12 +188,21 @@ fn print_plan(workspace_dir: &Path, task: &Task) -> Result<()> {
     } else {
         print_tabular_row("  Git:", "not inspected");
     }
+    if inspection.classification() == ArtifactClassification::Good
+        && inspection.status() == Some("accepted")
+    {
+        let pending = inspection.pending_items();
+        let pending = if pending.is_empty() {
+            "none".to_owned()
+        } else {
+            pending.join(", ")
+        };
+        print_tabular_row("  Pending items:", pending);
+        return print_step(workspace_dir, task, inspection.pending_items().is_empty());
+    }
     let next = match inspection.classification() {
         ArtifactClassification::Bad => "Check plan",
         ArtifactClassification::Incomplete => "Fill plan",
-        ArtifactClassification::Good if inspection.status() == Some("accepted") => {
-            "Plan next step or review task"
-        }
         ArtifactClassification::Good if inspection.has_open_questions() => "Revise plan",
         ArtifactClassification::Good if !ready => "Check plan branch prerequisites",
         ArtifactClassification::Good => "Revise or accept plan",
@@ -202,6 +211,73 @@ fn print_plan(workspace_dir: &Path, task: &Task) -> Result<()> {
     if inspection.classification() == ArtifactClassification::Bad {
         return unusable();
     }
+    Ok(())
+}
+
+fn print_step(workspace_dir: &Path, task: &Task, items_done: bool) -> Result<()> {
+    println!("Step:");
+    let inspection = match task.inspect_step(workspace_dir) {
+        Ok(Some(inspection)) => inspection,
+        Ok(None) => {
+            println!("  not created yet");
+            let next = if items_done {
+                "Request final review"
+            } else {
+                "Plan next step"
+            };
+            print_tabular_row("Next:", next);
+            return Ok(());
+        }
+        Err(error) => {
+            print_tabular_row("Next:", "Check step");
+            return Err(error);
+        }
+    };
+    print_tabular_row("  Path:", relative_path(workspace_dir, inspection.path()));
+    print_tabular_row("  Classification:", inspection.classification());
+    if inspection.classification() == ArtifactClassification::Bad {
+        print_tabular_row("Next:", "Check step");
+        return unusable();
+    }
+    let status = inspection.status().unwrap_or("BAD");
+    print_tabular_row("  Status:", status);
+    if let Some(commit) = inspection.source_commit() {
+        print_tabular_row("  Source commit:", commit);
+    }
+    let next = match status {
+        "drafting" | "amending" => {
+            let blockers = inspection.blockers();
+            print_tabular_row(
+                "  Ready to accept:",
+                if blockers.is_empty() { "yes" } else { "no" },
+            );
+            for blocker in blockers {
+                print_tabular_row("  Blocker:", blocker);
+            }
+            if blockers.is_empty() {
+                "Revise or accept step"
+            } else {
+                "Revise step"
+            }
+        }
+        "accepted" => {
+            let staged = inspection.staged_changes();
+            print_tabular_row("  Staged changes:", if staged { "yes" } else { "no" });
+            if staged {
+                "Commit step"
+            } else {
+                "Implement and review step"
+            }
+        }
+        _ if items_done => "Request final review",
+        _ => "Plan next step",
+    };
+    let next = if inspection.classification() == ArtifactClassification::Incomplete {
+        "Fill step"
+    } else {
+        next
+    };
+    print_tabular_row("Next:", next);
     Ok(())
 }
 

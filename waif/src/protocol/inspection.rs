@@ -1,7 +1,8 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use super::step::step_status;
 use super::task::read_optional;
-use super::{ArtifactClassification, Result, Task};
+use super::{ArtifactClassification, ArtifactFile, Result, Task};
 use crate::artifact::Artifact;
 use crate::git_repo::{CurrentBranch, GitRepo};
 
@@ -64,6 +65,7 @@ pub(crate) struct PlanInspection {
     branch_exists: bool,
     branch_commit: Option<String>,
     branch_in_other_worktree: bool,
+    pending_items: Vec<String>,
 }
 
 impl PlanInspection {
@@ -83,6 +85,7 @@ impl PlanInspection {
             branch_exists: false,
             branch_commit: None,
             branch_in_other_worktree: false,
+            pending_items: Vec::new(),
         }
     }
 
@@ -112,6 +115,7 @@ impl PlanInspection {
             base_commit: plan
                 .get_metadata("Base commit")
                 .map(|value| value.value().to_owned()),
+            pending_items: pending_items(plan),
             ..Self::new(classification)
         }
     }
@@ -181,6 +185,11 @@ impl PlanInspection {
         self.branch_in_other_worktree
     }
 
+    /// IDs of plan items whose `Status` is not `done`, in plan order.
+    pub(crate) fn pending_items(&self) -> &[String] {
+        &self.pending_items
+    }
+
     pub(crate) fn ready_to_accept(&self) -> bool {
         // Plan and goal prerequisites must pass.
         if !self.artifacts_ready() {
@@ -244,7 +253,99 @@ impl PlanInspection {
     }
 }
 
+fn pending_items(plan: &Artifact<'_>) -> Vec<String> {
+    plan.sections()
+        .iter()
+        .filter_map(|section| section.as_plan_items())
+        .flat_map(|section| section.items())
+        .filter(|item| {
+            !item.value().metadata().iter().any(|metadata| {
+                metadata.value().key() == "Status" && metadata.value().value() == "done"
+            })
+        })
+        .filter_map(|item| item.value().identifier().map(|id| id.text().to_owned()))
+        .collect()
+}
+
+/// The current step's lifecycle facts for task inspection.
+pub(crate) struct StepInspection {
+    path: PathBuf,
+    classification: ArtifactClassification,
+    status: Option<String>,
+    source_commit: Option<String>,
+    blockers: Vec<String>,
+    staged_changes: bool,
+}
+
+impl StepInspection {
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(crate) fn classification(&self) -> ArtifactClassification {
+        self.classification
+    }
+
+    pub(crate) fn status(&self) -> Option<&str> {
+        self.status.as_deref()
+    }
+
+    pub(crate) fn source_commit(&self) -> Option<&str> {
+        self.source_commit.as_deref()
+    }
+
+    /// Blockers `waif step accept` would report, other than the status, for a
+    /// `drafting` or `amending` step; empty otherwise.
+    pub(crate) fn blockers(&self) -> &[String] {
+        &self.blockers
+    }
+
+    /// Whether the index has staged changes; queried only for an `accepted`
+    /// step.
+    pub(crate) fn staged_changes(&self) -> bool {
+        self.staged_changes
+    }
+}
+
 impl Task {
+    pub(crate) fn inspect_step(&self, workspace: &Path) -> Result<Option<StepInspection>> {
+        let Some(path) = self.find_current_step_path()? else {
+            return Ok(None);
+        };
+        let file = ArtifactFile::read(path.clone())?;
+        let classification = file.check().classification();
+        let mut inspection = StepInspection {
+            path,
+            classification,
+            status: None,
+            source_commit: None,
+            blockers: Vec::new(),
+            staged_changes: false,
+        };
+        if classification == ArtifactClassification::Bad {
+            return Ok(Some(inspection));
+        }
+        let step = file.parse_step()?;
+        let status = step_status(&step);
+        inspection.status = Some(status.to_owned());
+        inspection.source_commit = step
+            .get_metadata("Source commit")
+            .map(|metadata| metadata.value().to_owned());
+        match status {
+            "drafting" | "amending" => {
+                if classification == ArtifactClassification::Incomplete {
+                    inspection.blockers.push("step is INCOMPLETE".to_owned());
+                }
+                self.step_blockers(workspace, &step, &mut inspection.blockers)?;
+            }
+            "accepted" => {
+                inspection.staged_changes = GitRepo::new(workspace).has_staged_changes()?;
+            }
+            _ => {}
+        }
+        Ok(Some(inspection))
+    }
+
     pub(crate) fn inspect_plan(&self, workspace_dir: &Path) -> Result<Option<PlanInspection>> {
         let Some(file) = read_optional(self.path.join("plan.md"))? else {
             return Ok(None);

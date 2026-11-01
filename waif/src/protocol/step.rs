@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use chrono::{Local, SecondsFormat};
@@ -95,10 +96,20 @@ impl Task {
 
     /// Resolve the `step.md` of the step directory with the greatest number.
     pub(crate) fn current_step_path(&self) -> Result<PathBuf> {
+        self.find_current_step_path()?.ok_or_else(|| {
+            let steps = self.path.join("steps");
+            format!("{}: no step directory found", steps.display()).into()
+        })
+    }
+
+    /// Resolve the current step like `current_step_path`, returning `None`
+    /// when `steps/` is missing or has no numbered step directory.
+    pub(super) fn find_current_step_path(&self) -> Result<Option<PathBuf>> {
         let steps = self.path.join("steps");
         let display = steps.display();
         let entries = match fs::read_dir(&steps) {
             Ok(entries) => entries,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(format!("{display}: {error}").into()),
         };
         let mut greatest: Option<(i64, Vec<PathBuf>)> = None;
@@ -119,7 +130,7 @@ impl Task {
             }
         }
         let Some((_, mut paths)) = greatest else {
-            return Err(format!("{display}: no step directory found").into());
+            return Ok(None);
         };
         if paths.len() > 1 {
             paths.sort();
@@ -139,12 +150,12 @@ impl Task {
             let display = path.display();
             return Err(format!("{display}: step file is missing").into());
         }
-        Ok(path)
+        Ok(Some(path))
     }
 
     /// Collect goal, plan, branch, and coverage blockers for the current
     /// step.
-    fn step_blockers(
+    pub(super) fn step_blockers(
         &self,
         workspace: &Path,
         step: &Artifact<'_>,
@@ -188,7 +199,7 @@ fn read_good_step(path: &Path) -> Result<ArtifactFile> {
     Err(format!("{}: step is {classification}", path.display()).into())
 }
 
-fn step_status<'a>(step: &'a Artifact<'_>) -> &'a str {
+pub(super) fn step_status<'a>(step: &'a Artifact<'_>) -> &'a str {
     step.get_metadata("Status")
         .map(|metadata| metadata.value())
         .expect("a GOOD step has Status metadata")

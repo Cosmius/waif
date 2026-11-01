@@ -380,7 +380,8 @@ fn inspect_reports_accepted_plan_not_ready_on_task_branch() {
     assert!(output.status.success());
     assert!(stdout.contains("  Current branch:   waif/task"));
     assert!(stdout.contains("  Ready to accept:  no"));
-    assert!(stdout.contains("Next:               Plan next step or review task\n"));
+    assert!(stdout.contains("  Pending items:    P1\nStep:\n  not created yet\n"));
+    assert!(stdout.contains("Next:               Plan next step\n"));
 }
 
 #[cfg(unix)]
@@ -396,7 +397,8 @@ fn inspect_reports_accepted_plan_not_ready_on_other_branch() {
     assert!(output.status.success());
     assert!(stdout.contains("  Current branch:   main"));
     assert!(stdout.contains("  Ready to accept:  no"));
-    assert!(stdout.contains("Next:               Plan next step or review task\n"));
+    assert!(stdout.contains("  Pending items:    P1\nStep:\n  not created yet\n"));
+    assert!(stdout.contains("Next:               Plan next step\n"));
 }
 
 #[cfg(unix)]
@@ -435,7 +437,7 @@ fn inspect_reports_task_branch_occupied_elsewhere() {
     assert!(stdout.contains("  Current branch:   main"));
     assert!(stdout.contains("  Branch elsewhere: yes"));
     assert!(stdout.contains("  Ready to accept:  no"));
-    assert!(stdout.contains("Next:               Plan next step or review task\n"));
+    assert!(stdout.contains("Next:               Plan next step\n"));
 }
 
 #[cfg(unix)]
@@ -488,6 +490,129 @@ fn inspect_help_describes_plan_readiness_and_human_approval() {
 }
 
 #[cfg(unix)]
+#[test]
+fn inspect_reports_ready_drafting_step() {
+    let workspace = git_step_workspace("ready-step");
+    write_step(&workspace, "drafting", TIMESTAMP);
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let step = stdout.split("Step:\n").nth(1).unwrap();
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(step.contains("  Path:             .waif/library/tasks/20260728-1-example/steps/01-first/step.md"));
+    assert!(step.contains("  Classification:   GOOD"));
+    assert!(step.contains("  Status:           drafting"));
+    assert!(step.contains("  Source commit:    not-created"));
+    assert!(step.contains("  Ready to accept:  yes"));
+    assert!(!step.contains("  Blocker:"));
+    assert!(step.contains("Next:               Revise or accept step\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_blocked_drafting_step() {
+    let workspace = git_step_workspace("blocked-step");
+    GitRepo::new(&workspace.path).switch_branch("main").unwrap();
+    write_step(&workspace, "drafting", TIMESTAMP);
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let step = stdout.split("Step:\n").nth(1).unwrap();
+
+    assert!(output.status.success());
+    assert!(step.contains("  Ready to accept:  no"));
+    assert!(step.contains("  Blocker:          current branch main is not the recorded task branch waif/task"));
+    assert!(step.contains("Next:               Revise step\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_incomplete_step() {
+    let workspace = git_step_workspace("incomplete-step");
+    write_step(&workspace, "drafting", "__NOW__");
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let step = stdout.split("Step:\n").nth(1).unwrap();
+
+    assert!(output.status.success());
+    assert!(step.contains("  Classification:   INCOMPLETE"));
+    assert!(step.contains("  Blocker:          step is INCOMPLETE"));
+    assert!(step.contains("Next:               Fill step\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_fails_on_bad_step() {
+    let workspace = git_step_workspace("bad-step");
+    fs::write(step_path(&workspace), "not a step\n").unwrap();
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let step = stdout.split("Step:\n").nth(1).unwrap();
+
+    assert!(!output.status.success());
+    assert!(step.contains("  Classification:   BAD"));
+    assert!(!step.contains("  Status:"));
+    assert!(step.contains("Next:               Check step\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_accepted_step_to_implement() {
+    let workspace = git_step_workspace("implement-step");
+    write_step(&workspace, "accepted", TIMESTAMP);
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let step = stdout.split("Step:\n").nth(1).unwrap();
+
+    assert!(output.status.success());
+    assert!(step.contains("  Status:           accepted"));
+    assert!(step.contains("  Staged changes:   no"));
+    assert!(!step.contains("  Ready to accept:"));
+    assert!(step.contains("Next:               Implement and review step\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_accepted_step_to_commit() {
+    let workspace = git_step_workspace("commit-step");
+    write_step(&workspace, "accepted", TIMESTAMP);
+    fs::write(workspace.path.join("new-file"), "staged\n").unwrap();
+    GitRepo::new(&workspace.path)
+        .stage_file("new-file")
+        .unwrap();
+    let index = fs::read(workspace.path.join(".git/index")).unwrap();
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let step = stdout.split("Step:\n").nth(1).unwrap();
+
+    assert!(output.status.success());
+    assert!(step.contains("  Staged changes:   yes"));
+    assert!(step.contains("Next:               Commit step\n"));
+    assert_eq!(fs::read(workspace.path.join(".git/index")).unwrap(), index);
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_reports_final_review_when_items_done() {
+    let workspace = git_step_workspace("final-review");
+    let plan_path = current_task_path(&workspace).join("plan.md");
+    let plan = fs::read_to_string(&plan_path).unwrap();
+    fs::write(
+        &plan_path,
+        plan.replace("- Status: pending", "- Status: done"),
+    )
+    .unwrap();
+    write_step(&workspace, "done", TIMESTAMP);
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(stdout.contains("  Pending items:    none\n"));
+    assert!(stdout.contains("  Status:           done"));
+    assert!(stdout.contains(&format!("  Source commit:    {DUMMY_COMMIT}")));
+    assert!(stdout.contains("Next:               Request final review\n"));
+}
+
+#[cfg(unix)]
 fn git_plan_workspace(name: &str, status: &str) -> TestDir {
     let workspace = current_task_workspace(name);
     GitRepo::new(&workspace.path)
@@ -529,6 +654,39 @@ fn write_plan(workspace: &TestDir, status: &str, base: &str, updated: &str, ques
          ## Plan Items\n### P1: First\n- Status: pending\n\
          - Goal criteria: opaque coverage\n- Depends on: opaque dependency\n\
          ## Risks\n- P-R1: Risk\n## Cross-Cutting Validation\n- P-V1: Check\n"
+        ),
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+fn git_step_workspace(name: &str) -> TestDir {
+    let workspace = git_plan_workspace(name, "accepted");
+    GitRepo::new(&workspace.path)
+        .create_and_switch_branch("waif/task", "HEAD")
+        .unwrap();
+    fs::create_dir_all(step_path(&workspace).parent().unwrap()).unwrap();
+    workspace
+}
+
+fn step_path(workspace: &TestDir) -> PathBuf {
+    current_task_path(workspace).join("steps/01-first/step.md")
+}
+
+fn write_step(workspace: &TestDir, status: &str, updated: &str) {
+    let commit = if status == "done" {
+        DUMMY_COMMIT
+    } else {
+        "not-created"
+    };
+    fs::write(
+        step_path(workspace),
+        format!(
+            "# Step 1: First\n\n- Status: {status}\n- Source commit: {commit}\n\
+             - Created: {TIMESTAMP}\n- Updated: {updated}\n- Plan items: P1\n\
+             - Goal criteria: G-AC1\n\n## Objective\n\nDo it.\n\n\
+             ## Plan Item Coverage\n\n- S1-PC1: P1 - complete - All.\n\n\
+             ## Context\n\nContext\n\n## Done When\n\n- S1-D1: Done\n"
         ),
     )
     .unwrap();
