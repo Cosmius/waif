@@ -4,25 +4,47 @@ Waif is a file-backed workflow for using an AI agent on one development task.
 It turns a coding conversation into a small set of durable Markdown artifacts:
 a goal, a plan, step plans, step reviews, and a final review.
 
-The point is not to give the AI more hidden state. The point is to help humans
-understand and review what the AI is doing. Waif makes the agent write down its
-interpretation of the goal, its design plan, the intended implementation
-slices, the review evidence, and the completion decision.
+The aim is not to give the AI more hidden state, but to help humans understand
+and review what it is doing. Waif makes the agent write down its interpretation
+of the goal, its design plan, the intended implementation slices, the review
+evidence, and the completion decision.
 
-Waif stands for AI-Assisted Development Workflow, formed from a permutation of
-the capital letters in `AI-assisted development WorkFlow`.
+The name is an anagram of the capital letters in
+`AI-assisted development WorkFlow`.
 
 ## Caution
 
-Due to the inherent uncertainty of AI outputs, use Waif at your own risk.
-This skill set has been tested with Codex GPT-5.5 Medium. Other capable enough
-AI models should also work, but they are not tested.
+AI output is inherently non-deterministic. Use Waif at your own risk.
+
+### Verified Agents and Models
+
+Waif is known to work with these agent and model combinations:
+
+| Agent       | Model       |
+| ----------- | ----------- |
+| Claude Code | Opus 5.5    |
+| Codex       | GPT-6.1 Sol |
+| Codex       | GPT-6 Astra |
+| Codex       | GPT-6 Luna  |
+| Codex       | GPT-5.6 Sol |
+| Codex       | GPT-5.5     |
+
+Other sufficiently capable agents and models may also work, but they have not
+been tested.
+
+### Known Problematic Agents and Models
+
+Waif is known to work poorly with these combinations:
+
+| Agent | Model         |
+| ----- | ------------- |
+| Codex | GPT-6.1 Terra |
 
 ## Purpose
 
 AI-assisted development can produce useful code quickly, but that speed creates
 a review problem. A human may be handed a large diff without a stable record of
-the intended behavior, design choices, review scope, or validation evidence.
+the intended behaviour, design choices, review scope, or validation evidence.
 
 Waif adds structure around that work:
 
@@ -32,13 +54,13 @@ Waif adds structure around that work:
 - review uncommitted source changes before the human stages them;
 - audit the whole branch before calling the task complete.
 
-Use Waif for mid-sized development tasks: changes large enough to benefit from
+Waif suits mid-sized development tasks: changes large enough to benefit from
 planning, traceability, and multiple commits, but not so large that they would
 span hundreds of steps.
 
-For trivial edits, direct execution or an agent's normal plan mode is usually
-lighter. For very large projects, use a larger project-management process and
-treat Waif as too small for the job.
+For trivial edits, direct execution or an agent's built-in plan mode is
+lighter. Very large projects need a fuller project-management process; Waif is
+too small for them.
 
 ## Design
 
@@ -83,11 +105,11 @@ dev-final-review
   -> final task review
 ```
 
-Each skill owns one stage and writes the artifact for that stage. Later skills
-read the accepted artifacts from earlier stages instead of relying on chat
-memory.
+Each skill owns one stage and writes that stage's artifact. Later skills read
+the accepted artifacts from earlier stages rather than relying on chat
+history.
 
-## Packaging
+## Installation
 
 The `waif` binary embeds the skills and protocol documents and builds every
 distributable package. Install it from the repository root:
@@ -96,7 +118,7 @@ distributable package. Install it from the repository root:
 cargo install --path .
 ```
 
-Then build a package with one of:
+Then build a package for your agent:
 
 ```sh
 waif package --target claude-plugin
@@ -107,35 +129,38 @@ waif package --target skill-zip
 
 Each command writes its package under `dist/` in the current directory,
 replacing any previous build of that target, and prints how to install it.
-The packaged `protocol/waif-helper.md` ends with the version, Git commit,
-and SHA-1 of the `waif` binary that built it, to help trace which build
-produced a package. The commit has a `-dirty` suffix when the binary was
-built from uncommitted changes, and is `unknown` outside a Git checkout.
+To trace which build produced a package, the packaged
+`protocol/waif-helper.md` ends with the version, Git commit, and SHA-1 of the
+`waif` binary that built it. The commit has a `-dirty` suffix when the binary
+was built from uncommitted changes, and is `unknown` outside a Git checkout.
 
 ## Usage
 
 Start in the repository where the source change should happen.
 
-WAIF skills apply only when at least one of these conditions holds:
+Waif skills apply only when at least one of these holds:
 
 1. You explicitly invoke a skill.
-2. You explicitly request WAIF.
-3. You are already working within a WAIF task.
+2. You explicitly request Waif.
+3. You are already working within a Waif task.
 
-- Charter creation or amendment alone does not establish task context.
-- Installation and task size alone do not trigger WAIF.
-- Standalone small fixes use direct execution unless you request WAIF or invoke
+Otherwise the agent works as usual:
+
+- Creating or amending the charter does not by itself start a task.
+- Installing Waif, or a task's size, never triggers it.
+- Standalone small fixes use direct execution unless you request Waif or invoke
   a skill.
-- Within an existing WAIF task, requests such as planning the next step can
-  select the corresponding skill without naming it.
-- All acceptance gates remain, including human staging before source commits.
+
+Within an existing Waif task, requests such as "plan the next step" select the
+matching skill without naming it. Every acceptance gate still applies,
+including human staging before source commits.
 
 The examples below name skills to make each stage clear.
 
-Optionally initialize the workflow and set project rules:
+Optionally, initialise the workflow and set project rules:
 
 ```text
-Use dev-workflow-setup to require tests for every behavior change.
+Use dev-workflow-setup to require tests for every behaviour change.
 ```
 
 Draft the goal:
@@ -188,10 +213,10 @@ Run the final review when no more implementation steps remain:
 Implementation is complete. Use dev-final-review.
 ```
 
-For a multi-person project, `dev-conclude-task` can optionally create a
-self-contained teammate handoff after the final review. It is usually of
-little value for a single-person project and is not part of the normal
-workflow. The user decides whether to stage and commit the document:
+On a multi-person project, `dev-conclude-task` can create a self-contained
+handoff for teammates after the final review. It is outside the normal workflow
+and of little value on a solo project. You decide whether to stage and commit
+the document:
 
 ```text
 Use dev-conclude-task to document the completed task for other contributors.
@@ -205,26 +230,28 @@ Each source workspace has a local `.waif/`:
 - `library/tasks/`: task records, shared when `library` is a symlink.
 - `current_task`: local selection pointing to `library/tasks/<task-name>`.
 
-`dev-workflow-setup` initializes the library and maintains the charter;
-`dev-draft-goal` uses it when needed. In linked worktrees, setup asks whether
-to share the main worktree's library or create an independent one. Later stages
-require an established current task. Selection never switches source branches.
+`dev-workflow-setup` initialises the library and maintains the charter;
+`dev-draft-goal` runs it first if the library is missing. In a linked worktree,
+setup asks whether to share the main worktree's library or create an
+independent one. Later stages require an established current task. Selecting a
+task never switches source branches.
 
 Removing a linked worktree preserves shared records; removing an independent
-instance removes its local library. Retain the library and repair dependent
-links when moving or removing the main project. Exclude `.waif/` from source Git.
+instance removes its local library. When moving or removing the main project,
+keep its library and repair the links that depend on it. Exclude `.waif/` from
+source Git.
 
 See [helper usage](protocol/waif-helper.md) for CLI commands.
 
 ## Repository Contents
 
-- `src/` and `tests/`: the `waif` helper CLI, which also builds the packages.
-- `protocol/workflow.md` is the canonical workflow specification.
+- `src/` and `tests/`: the `waif` helper CLI, which also builds packages.
+- `protocol/workflow.md`: the canonical workflow specification.
 - `protocol/waif-helper.md`: deterministic CLI commands for agents.
-- `skills/dev-workflow-setup/` initializes workflows and maintains project rules.
-- `skills/dev-draft-goal/` drafts or revises the task goal.
-- `skills/dev-draft-plan/` drafts or revises the technical plan.
-- `skills/dev-plan-step/` drafts one implementation step.
-- `skills/dev-implement-step/` implements, reviews, and commits one step.
-- `skills/dev-final-review/` performs the task-wide final review.
-- `skills/dev-conclude-task/` creates the self-contained task handoff.
+- `skills/dev-workflow-setup/`: initialises Waif and maintains project rules.
+- `skills/dev-draft-goal/`: drafts or revises the task goal.
+- `skills/dev-draft-plan/`: drafts or revises the technical plan.
+- `skills/dev-plan-step/`: plans one implementation step.
+- `skills/dev-implement-step/`: implements, reviews, and commits one step.
+- `skills/dev-final-review/`: performs the task-wide final review.
+- `skills/dev-conclude-task/`: writes the optional teammate handoff.
