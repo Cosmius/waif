@@ -69,6 +69,23 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
   inspect branch, HEAD, and plan metadata, then repair under the existing
   approval while preserving unrelated edits and branch history. Review
   changed semantic scope with the human.
+- `waif step accept` requires explicit human approval and acts on the current
+  step, the `steps/NN-name/` directory with the greatest number. The step must
+  be GOOD, `drafting` or `amending`, and free of open questions; the goal and
+  plan must be GOOD and accepted; the current branch must be the plan's
+  `Branch`; and each `Plan Item Coverage` entry must name an existing
+  `pending` plan item. An accepted step is an error. It changes only `Status`
+  and `Updated`; failed preconditions leave every file unchanged.
+- `waif step commit (-m MESSAGE | -F FILE)` commits the staged changes of the
+  current `accepted` step. `-F -` reads standard input; FILE is
+  caller-relative. It requires the `step accept` preconditions, a non-blank
+  message, staged changes, and no unmerged index entries, then runs
+  `git commit` on exactly the index with hooks enabled. Afterwards it sets
+  the step's `Source commit`, `Status: done`, and `Updated`, and marks plan
+  items with `complete` coverage `done`, refreshing the plan's `Updated`.
+  Failed preconditions leave the repository and every file unchanged. A
+  failure after the commit reports the commit hash and the artifact that was
+  not updated.
 
 Ordinary task access preserves nominal library and task paths and reports
 native filesystem failures. A low-level mutation failure may leave partial

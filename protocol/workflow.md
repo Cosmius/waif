@@ -240,17 +240,18 @@ The goal and general plan have three statuses:
 drafting -> accepted <-> amending
 ```
 
-Each step plan has three statuses:
+Each step plan has four statuses:
 
 ```text
-drafting -> accepted -> done
+drafting -> accepted <-> amending
+            accepted -> done
 ```
 
 Status meanings:
 
 - `drafting`: the artifact is being prepared for human review.
 - `accepted`: the human has accepted the artifact.
-- `amending`: an accepted goal or general plan is being revised.
+- `amending`: an accepted goal, general plan, or step plan is being revised.
 - `done`: implementation of the step plan is complete.
 
 Only an `accepted` goal and general plan may be consumed by later skills.
@@ -260,10 +261,12 @@ Goals and general plans may repeat the `accepted -> amending -> accepted`
 cycle any number of times. Each amendment requires a new explicit acceptance.
 
 Do not reset an accepted or amending goal or general plan to `drafting`.
-Only step plans follow an accept-once rule. After a step plan changes from
-`drafting` to `accepted`, its planned content is immutable. Only lifecycle
-metadata written by `dev-implement-step` may change after acceptance:
-`Status`, `Updated`, and `Source commit`.
+An accepted step plan changes only through an amendment cycle until it is
+`done`, and a `done` step plan is never revised. `waif step commit` writes
+the step's `Status`, `Updated`, and `Source commit` when the step's source
+commit succeeds, and marks plan items with `complete` coverage `done`.
+Marking a plan item `done` this way is not a plan amendment: the plan's
+`Status` stays `accepted` and no revision is added.
 
 ### Ambiguity Triage
 
@@ -286,10 +289,10 @@ when that section would be empty.
 
 ### Revision Rules
 
-The `Revisions` section applies only to goals and general plans changed after
-acceptance.
+The `Revisions` section applies only to goals, general plans, and step plans
+changed after acceptance.
 
-When modifying an accepted goal or general plan:
+When modifying an accepted goal, general plan, or step plan:
 
 1. Change its status from `accepted` to `amending`.
 2. Create `## Revisions` if absent.

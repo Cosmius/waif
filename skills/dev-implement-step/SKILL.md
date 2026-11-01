@@ -13,9 +13,11 @@ Implement one accepted step through a review-and-acceptance loop.
 ## Procedure
 
 1. Read canonical [workflow.md](../../protocol/workflow.md), resolve the
-   invoking workspace, local library, and current task, and identify the one
-   step whose status is `accepted`. Stop on missing or unusable required
-   context or zero or multiple candidate steps.
+   invoking workspace, local library, and current task, and identify the
+   current step as the step directory with the greatest number. Stop on
+   missing or unusable required context, or when that step is not
+   `accepted`; a drafting or amending step is accepted first through
+   `dev-plan-step` with `waif step accept`.
 2. Read `goal.md`, `plan.md`, and the complete `step.md`. Require all three to
    have `Status: accepted`, verify exact goal-criterion and plan-item mappings,
    and verify the workspace branch.
@@ -42,15 +44,13 @@ Implement one accepted step through a review-and-acceptance loop.
      staged diff is empty, unrelated, or differs materially from the reviewed
      diff, do not commit and explain what the human must correct manually.
    - Rerun required validation when the staged content differs from the content
-     last validated, then commit exactly the staged changes.
-10. After the workspace commit succeeds:
-    - replace `Source commit: not-created` in `step.md` with the full commit
-      hash;
-    - set the step `Status: done`;
-    - refresh the step `Updated` timestamp;
-    - mark mapped plan items `done` only when cumulative coverage from done
-      steps completes their outcomes;
-    - otherwise leave mapped plan items `pending`.
+     last validated, then run `waif step commit -F -` with the commit message
+     on standard input. It commits exactly the staged changes.
+10. Read the `waif step commit` output. On success the helper has already
+    recorded the full commit hash in `Source commit`, set the step
+    `Status: done`, refreshed `Updated`, and marked plan items with
+    `complete` coverage `done`; plan items with only `partial` coverage stay
+    `pending`.
 11. Report completion and provide the workflow guide:
     - use `dev-plan-step` when more implementation is needed;
     - use `dev-final-review` when implementation is complete.
@@ -147,8 +147,6 @@ acceptance gate.
   paths and content.
 - Commit exactly the verified staged diff.
 - Exclude unstaged and unrelated changes.
-- Never mark a step or plan item done before the workspace commit succeeds, or
-  mark a plan item done merely because one mapped step is done.
 - Do not amend or rewrite earlier source commits unless the user requests it.
 - Do not reuse or overwrite review files.
 - Do not write review files outside the current step directory.
@@ -159,8 +157,8 @@ acceptance gate.
 
 - Accepted source changes are committed on the recorded branch.
 - `step.md` has `Status: done` and `Source commit: <full commit hash>`.
-- Fully consumed plan items are `done`.
-- Partially consumed plan items remain `pending`.
+- Plan items with `complete` coverage are `done`.
+- Plan items with only `partial` coverage remain `pending`.
 - All review iterations remain available as
   `steps/NN-short-name/reviewN.md`.
 - Every review content item has a stable, step-and-review-qualified ID.

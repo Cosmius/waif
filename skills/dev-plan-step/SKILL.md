@@ -40,7 +40,11 @@ Consume one coherent part of the general plan and produce an executable
    - no completed plan item receives new work;
    - done conditions match declared coverage;
    - size and coherence rules are satisfied or justified.
-   Set step `Status: accepted` and leave plan-item statuses unchanged.
+   Then run `waif step accept`. Treat unqualified `accept`, `approve`, or
+   equivalent as acceptance of the current step. The helper rechecks the
+   mechanical preconditions and changes only the step's `Status` and
+   `Updated`; plan-item statuses stay unchanged. Follow the
+   [helper guidance](../../protocol/waif-helper.md#commands) for repair.
 
 ## `step.md` Contract
 
@@ -128,8 +132,9 @@ successfully committed implementation changes it to a full commit hash.
   `Plan items: P2, P3`.
 - `Goal criteria` is the union advanced through those plan items.
 - `Source commit` must be `not-created` while the step is `drafting`,
-  `accepted`, or `amending`. Only `dev-implement-step` may replace it, and only
-  with the full commit hash after the workspace commit succeeds.
+  `accepted`, or `amending`. Only `waif step commit`, run by
+  `dev-implement-step`, replaces it with the full commit hash after the
+  workspace commit succeeds.
 - `Plan Item Coverage` must contain one `partial` or `complete` entry for every
   listed plan ID and no others.
 
