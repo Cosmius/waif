@@ -100,7 +100,10 @@ fn package_builds_skill_zip() {
     let file =
         fs::File::open(workspace.path.join("dist/waif-skills.zip")).expect("skill zip should open");
     let archive = zip::ZipArchive::new(file).expect("skill zip should be readable");
-    let mut entries = archive.file_names().collect::<Vec<_>>();
+    let mut entries = archive
+        .file_names()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("skill zip entry names should be readable");
     entries.sort();
     assert_eq!(entries, SKILL_FILES);
 }
