@@ -12,7 +12,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 macro_rules! embed {
     ($($path:literal),* $(,)?) => {
         &[$(
-            ($path, include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../", $path))),
+            ($path, include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/", $path))),
         )*]
     };
 }

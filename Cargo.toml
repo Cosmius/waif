@@ -1,3 +1,11 @@
-[workspace]
-members = ["waif"]
-resolver = "2"
+[package]
+name = "waif"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = { version = "=0.4.39", default-features = false, features = ["clock"] }
+clap = { version = "=4.5.23", features = ["derive"] }
+indoc = "=2.0.7"
+serde_json = "=1.0.150"
+zip = { version = "=2.4.2", default-features = false }
