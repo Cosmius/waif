@@ -25,11 +25,24 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
   guidance. Either init form skips any existing local library entry, even a
   broken link, without checking mode or target. Setup does not select a task
   or change source branches; partial I/O failures are not rolled back.
-- `waif inspect` reports current goal and plan context, mechanical readiness,
-  observed Git facts, and the next action without mutation, including local
-  workflow and library paths. Readiness does not establish human approval.
-  Mechanically blocked plans can be inspected successfully; BAD artifacts
-  and read/query failures fail. Missing setup or selection is a failure.
+- `waif inspect` reports current goal, plan, and step context, mechanical
+  readiness, observed Git facts, and the next action without mutation,
+  including local workflow and library paths. Readiness does not establish
+  human approval. Mechanically blocked plans can be inspected successfully;
+  BAD artifacts and read/query failures fail. Missing setup or selection is
+  a failure.
+  - After an accepted plan, it reports the plan items not yet `done` and
+    the current step, the `steps/NN-name/` directory with the greatest
+    number, with its status and `Source commit`, or that no step exists
+    yet.
+  - A `drafting` or `amending` step also reports acceptance readiness, with
+    one `Blocker:` row per `waif step accept` precondition that fails. An
+    `accepted` step also reports whether changes are staged.
+  - The next action is to fill, revise, or accept the step, implement and
+    review it, commit it, plan the next step, or request the final review
+    once every plan item is `done`.
+  - A BAD current step, several step directories sharing the greatest
+    number, or a missing `step.md` fails with `Next: Check step`.
 - `waif new <TASK_SLUG>` creates and selects the next date-sequenced task.
   The slug uses lowercase letters, digits, and hyphens. It requires explicit
   setup first and never initializes a workflow.

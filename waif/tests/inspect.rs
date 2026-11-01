@@ -484,7 +484,7 @@ fn inspect_help_describes_plan_readiness_and_human_approval() {
     let stdout = stdout.split_whitespace().collect::<Vec<_>>().join(" ");
 
     assert!(output.status.success());
-    assert!(stdout.contains("goal and plan state"));
+    assert!(stdout.contains("goal, plan, and step state"));
     assert!(stdout.contains("mechanical acceptance readiness"));
     assert!(stdout.contains("does not establish human approval"));
 }

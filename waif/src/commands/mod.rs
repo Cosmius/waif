@@ -47,12 +47,14 @@ pub enum Command {
         without validating it."
     })]
     Init(init::InitCommand),
-    /// Report current goal and plan context and the next mechanical action.
+    /// Report goal, plan, and step context and the next mechanical action.
     #[command(long_about = indoc::indoc! {"
-        Report the local instance, library, and current goal and plan state
-        without arguments or mutation. Report mechanical acceptance readiness
-        and the next action when determinable. Readiness does not establish
-        human approval. Succeed only when the reported context is usable."
+        Report the local instance, library, and current goal, plan, and step
+        state without arguments or mutation. After an accepted plan, report
+        pending plan items and the current step. Report mechanical acceptance
+        readiness and the next action when determinable. Readiness does not
+        establish human approval. Succeed only when the reported context is
+        usable."
     })]
     Inspect(inspect::InspectCommand),
     /// Create and select a new workflow task from a validated slug.
