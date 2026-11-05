@@ -248,6 +248,7 @@ See [helper usage](protocol/waif-helper.md) for CLI commands.
 - `src/` and `tests/`: the `waif` helper CLI, which also builds packages.
 - `protocol/workflow.md`: the canonical workflow specification.
 - `protocol/waif-helper.md`: deterministic CLI commands for agents.
+- `protocol/template/`: artifact templates that the skills start from.
 - `skills/dev-workflow-setup/`: initialises Waif and maintains project rules.
 - `skills/dev-draft-goal/`: drafts or revises the task goal.
 - `skills/dev-draft-plan/`: drafts or revises the technical plan.

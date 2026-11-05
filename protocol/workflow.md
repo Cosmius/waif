@@ -181,7 +181,8 @@ or unusable.
 ## Task Artifacts
 
 Task artifacts are the authoritative, human-readable workflow record. Each
-skill-specific contract defines the required content of the artifacts it owns.
+skill-specific contract defines the required content of the artifacts it owns,
+starting from the artifact's template in [template/](template/).
 
 ### Format
 

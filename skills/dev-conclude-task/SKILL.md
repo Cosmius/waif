@@ -32,71 +32,16 @@ Explain the completed task for who knows the project but not the goal.
 6. Use the user's repository-relative destination, or default to
    `docs/task-reports/<task-dir-name>.md`. If no task dir resolves, derive a
    task slug. Do not overwrite uncommitted content without permission.
-7. Write a self-contained document using the contract below. Verify facts
-   against consulted sources and state evidence gaps instead of guessing.
+7. Write a self-contained document using the
+   [Task Conclusion Contract](#task-conclusion-contract). Verify facts against
+   consulted sources and state evidence gaps instead of guessing.
 8. Change only the document. Do not stage or commit anything. Present its path
    and a concise summary.
 
 ## Task Conclusion Contract
 
-```markdown
-# Task: <task title>
-
-- Date: YYYY-MM-DDTHH:MM:SS+HH:MM
-- Task: <plain-language task name>
-- Branch: <workspace branch>
-
-## Executive Summary
-
-- <What changed and why it matters.>
-- <Resulting behavior or outcome.>
-
-## Original Goal
-
-- Outcome:
-  - <Original intended outcome.>
-- Acceptance criteria:
-  - <Criterion in plain language.>
-- Scope:
-  - <Included or excluded behavior needed to understand the task.>
-- Amendments:
-  - <Material change to the original goal, when any.>
-
-## Adopted Approach
-
-- Approach:
-  - <Technical approach used.>
-- Decisions:
-  - <Important decision and rationale.>
-- Constraints or rejected alternatives:
-  - <Relevant constraint or alternative.>
-
-## Implementation
-
-- <Behavior or subsystem>:
-  - Behavior: <What it does.>
-  - Components: <Important paths, interfaces, or data flow.>
-  - History: <Relevant Git history or departure from the plan.>
-  - Tests: <Relevant tests.>
-
-## Validation and Outcome
-
-- Validation:
-  - <Recorded command or observable evidence and its result.>
-- Goal outcome:
-  - <Acceptance-criterion result supported by available evidence.>
-- Review outcome:
-  - <Latest recorded review result, when available.>
-
-## Important Context
-
-- Limitations and residual risks:
-  - <Known limitation or risk, or `None recorded.`>
-- Operational and compatibility notes:
-  - <Important note, or `None recorded.`>
-- Follow-up work:
-  - <Known follow-up, or `None recorded.`>
-```
+Follow the
+[task conclusion template](../../protocol/template/task-conclusion.md).
 
 ## Guardrails
 

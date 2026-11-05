@@ -19,6 +19,12 @@ macro_rules! embed {
 
 /// Every file any package ships; targets select from it by path.
 static CONTENT: &[(&str, &[u8])] = embed![
+    "protocol/template/final-review.md",
+    "protocol/template/goal.md",
+    "protocol/template/implementation-review.md",
+    "protocol/template/plan.md",
+    "protocol/template/step.md",
+    "protocol/template/task-conclusion.md",
     "protocol/waif-helper.md",
     "protocol/workflow.md",
     "protocol/workflow_migration.md",

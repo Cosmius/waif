@@ -72,33 +72,9 @@ checking whether findings were addressed. If subagents are unavailable, review
 in the current session with the same inputs and priorities, and mark the
 fallback in the artifact.
 
-Use this structure for `steps/NN-short-name/reviewN.md`:
-
-```markdown
-# Implementation Review N
-
-- Step: ./step.md
-- Decision: pass
-- Date: YYYY-MM-DDTHH:MM:SS+HH:MM
-- Reviewer: independent subagent
-- Workspace state: uncommitted
-
-## Findings
-
-No findings.
-
-## Scope
-
-- S1-R1-SC1: <Files and behavior reviewed>
-
-## Validation
-
-- S1-R1-V1: `<command>`: passed
-
-## Residual Risks
-
-- S1-R1-RR1: None.
-```
+Follow the
+[implementation review template](../../protocol/template/implementation-review.md)
+for `steps/NN-short-name/reviewN.md`.
 
 Decisions are `pass` and `changes-requested`.
 
@@ -113,12 +89,12 @@ When findings exist, order them by severity:
 ```markdown
 ## Findings
 
-### S1-R1-F1: High - <short title>
+### S1-R1-F1: High - {{ short title }}
 
 - Location: `path/to/file:line`
-- Problem: <observable defect or risk>
-- Impact: <why it matters>
-- Recommendation: <specific correction>
+- Problem: {{ observable defect or risk }}
+- Impact: {{ why it matters }}
+- Recommendation: {{ specific correction }}
 ```
 
 Do not add an artifact `Status`. Review records are immutable observations.

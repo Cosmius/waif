@@ -11,6 +11,12 @@ use test_support::TestDir;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const SKILL_FILES: &[&str] = &[
+    "protocol/template/final-review.md",
+    "protocol/template/goal.md",
+    "protocol/template/implementation-review.md",
+    "protocol/template/plan.md",
+    "protocol/template/step.md",
+    "protocol/template/task-conclusion.md",
     "protocol/waif-helper.md",
     "protocol/workflow.md",
     "protocol/workflow_migration.md",
