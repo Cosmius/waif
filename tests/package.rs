@@ -132,6 +132,7 @@ fn package_appends_binary_hash_to_helper_guide() {
             Packaged by this `waif` binary:
 
             - Version: `{version}`
+            - Schema version: `0.3`
             - Git commit: `{commit}`
             - SHA-1: `{hash}`
         ",

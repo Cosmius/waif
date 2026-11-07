@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::sync::LazyLock;
 
 use clap::Parser;
 
@@ -21,6 +22,16 @@ mod test_support;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+/// The `--version` text: crate version, schema version, and Git commit.
+static VERSION: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "{}\nSchema version: {}\nGit commit: {}",
+        env!("CARGO_PKG_VERSION"),
+        protocol::SCHEMA_VERSION,
+        env!("WAIF_GIT_COMMIT"),
+    )
+});
+
 pub fn run() -> Result<()> {
     Cli::parse().command.run()
 }
@@ -28,6 +39,7 @@ pub fn run() -> Result<()> {
 #[derive(Parser)]
 #[command(
     name = "waif",
+    version = VERSION.as_str(),
     disable_help_subcommand = true,
     override_usage = "waif <check|fill|goal|init|inspect|new|package|plan|\
                       step|switch> [ARGUMENTS]",

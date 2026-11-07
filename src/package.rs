@@ -77,8 +77,8 @@ pub fn build(target: PackageTarget) -> Result<()> {
     }
 }
 
-/// The packaged helper guide, which records the version, Git commit, and
-/// SHA-1 of the packaging binary.
+/// The packaged helper guide, which records the version, schema version, Git
+/// commit, and SHA-1 of the packaging binary.
 const HELPER_GUIDE: &str = "protocol/waif-helper.md";
 
 fn package_file(name: &str) -> Result<Vec<u8>> {
@@ -93,10 +93,12 @@ fn package_file(name: &str) -> Result<Vec<u8>> {
                     Packaged by this `waif` binary:
 
                     - Version: `{version}`
+                    - Schema version: `{schema_version}`
                     - Git commit: `{commit}`
                     - SHA-1: `{hash}`
                 ",
                 version = METADATA.version,
+                schema_version = crate::protocol::SCHEMA_VERSION,
                 commit = env!("WAIF_GIT_COMMIT"),
             }
             .bytes(),
