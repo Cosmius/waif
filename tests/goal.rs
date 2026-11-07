@@ -91,12 +91,12 @@ fn accept_follows_a_symlinked_goal_file() {
 fn accept_rejects_open_questions_without_mutating_the_file() {
     let workspace = current_task_workspace("open-questions");
     let source = format!(
-        "{}\n## Open Questions\n\n- G-Q1: unresolved\n",
+        "{}\n## Questions\n\n### G-Q1: unresolved\n- Status: open\n",
         valid_goal("drafting", "2026-08-17T12:00:00+09:00", "body")
     );
     let (output, contents) = run_rejected_goal(&workspace, &source);
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).contains("blocking open questions"));
+    assert!(stderr(&output).contains("has open questions"));
     assert!(stderr(&output).contains("Workflow dir:"));
     assert!(stderr(&output).contains("Current task:"));
     assert!(stderr(&output).contains("Goal:"));
@@ -190,7 +190,7 @@ fn accept_reports_all_practical_goal_blockers() {
     let workspace = current_task_workspace("accept-all-blockers");
     let path = current_task_path(&workspace).join("goal.md");
     let source = format!(
-        "{}\n## Open Questions\n\n- G-Q1: unresolved\n",
+        "{}\n## Questions\n\n### G-Q1: unresolved\n- Status: open\n",
         valid_goal("accepted", "2026-08-17T12:00:00+09:00", "body")
     );
     fs::write(&path, &source).expect("goal should be written");
@@ -201,7 +201,7 @@ fn accept_reports_all_practical_goal_blockers() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(error.contains("goal cannot be reaccepted"));
-    assert!(error.contains("goal has blocking open questions"));
+    assert!(error.contains("goal has open questions"));
     assert_eq!(contents, source);
 }
 

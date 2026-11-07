@@ -8,6 +8,7 @@ use super::inspection::PlanInspection;
 use super::{replace_artifact, ArtifactClassification, ArtifactFile, Result, Task};
 use crate::artifact::{serialize, Artifact, Metadata};
 use crate::git_repo::GitRepo;
+use crate::schema;
 use crate::schemas::step::{coverage_entries, step_directory_number};
 
 /// The outcome of a successful step commit.
@@ -161,8 +162,8 @@ impl Task {
         step: &Artifact<'_>,
         blockers: &mut Vec<String>,
     ) -> Result<()> {
-        if has_open_questions(step) {
-            blockers.push("step has blocking open questions".to_owned());
+        if schema::has_open_questions(step) {
+            blockers.push("step has open questions".to_owned());
         }
         let Some(plan) = self.inspect_plan(workspace)? else {
             blockers.push("current task has no plan.md".to_owned());
@@ -248,7 +249,7 @@ fn plan_blocker(plan: &PlanInspection) -> &'static str {
         ArtifactClassification::Good => {}
     }
     if plan.has_open_questions() {
-        return "plan has blocking open questions";
+        return "plan has open questions";
     }
     let Some(goal) = plan.goal() else {
         return "referenced goal is missing";
@@ -283,22 +284,6 @@ fn coverage_blockers(plan: &Artifact<'_>, step: &Artifact<'_>) -> Vec<String> {
         }
     }
     blockers
-}
-
-fn section_items<'s, 'a>(
-    artifact: &'s Artifact<'a>,
-    title: &str,
-) -> &'s [crate::artifact::Item<'a>] {
-    artifact
-        .sections()
-        .iter()
-        .find(|section| section.title() == title)
-        .and_then(|section| section.as_itemised())
-        .map_or(&[], |section| section.items())
-}
-
-fn has_open_questions(artifact: &Artifact<'_>) -> bool {
-    !section_items(artifact, "Open Questions").is_empty()
 }
 
 #[cfg(test)]

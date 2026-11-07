@@ -28,7 +28,7 @@ const METADATA: [MetadataRule; 3] = [
 const SECTIONS: [SectionRule; 7] = [
     SectionRule::new("Outcome"),
     SectionRule::new("Acceptance Criteria").with_items(ItemRule::new("AC")),
-    SectionRule::optional("Open Questions").with_items(ItemRule::new("Q")),
+    schema::QUESTIONS,
     SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
     SectionRule::optional("In Scope").with_items(ItemRule::new("IN")),
     SectionRule::optional("Out of Scope").with_items(ItemRule::new("OUT")),

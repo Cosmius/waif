@@ -6,7 +6,7 @@ use crate::test_support::TestDir;
 
 #[test]
 fn accepts_a_drafting_goal_losslessly() {
-    let (source, accepted) = accept_goal_for_test("drafting");
+    let (source, accepted) = accept_goal_for_test("drafting", valid_goal("drafting", "body"));
     assert!(accepted.contains("- Status: accepted\n"));
     assert!(accepted.contains("- Created: 2026-08-17T12:00:00+09:00\n"));
     assert!(accepted.contains("## Outcome\n\nbody\n"));
@@ -15,7 +15,7 @@ fn accepts_a_drafting_goal_losslessly() {
 
 #[test]
 fn accepts_an_amending_goal_losslessly() {
-    let (source, accepted) = accept_goal_for_test("amending");
+    let (source, accepted) = accept_goal_for_test("amending", valid_goal("amending", "body"));
     assert!(accepted.contains("- Status: accepted\n"));
     assert!(accepted.contains("- Created: 2026-08-17T12:00:00+09:00\n"));
     assert!(accepted.contains("## Outcome\n\nbody\n"));
@@ -36,7 +36,7 @@ fn rejects_a_goal_with_open_questions_before_writing() {
     let (result, before, after, classification) = rejected_goal(
         "questions",
         format!(
-            "{}\n## Open Questions\n\n- G-Q1: unresolved\n",
+            "{}\n## Questions\n\n### G-Q1: unresolved\n- Status: open\n",
             valid_goal("drafting", "body")
         ),
     );
@@ -45,13 +45,25 @@ fn rejects_a_goal_with_open_questions_before_writing() {
     assert_eq!(after, before);
 }
 
-fn accept_goal_for_test(status: &str) -> (String, String) {
-    let workspace = TestDir::new(status);
+#[test]
+fn accepts_a_goal_whose_questions_are_settled() {
+    let (_, accepted) = accept_goal_for_test(
+        "settled-questions",
+        format!(
+            "{}\n## Questions\n\n### G-Q1: resolved\n- Status: settled\n",
+            valid_goal("drafting", "body")
+        ),
+    );
+    assert!(accepted.contains("- Status: accepted\n"));
+    assert!(accepted.contains("### G-Q1: resolved\n- Status: settled\n"));
+}
+
+fn accept_goal_for_test(name: &str, source: String) -> (String, String) {
+    let workspace = TestDir::new(name);
     let tasks_dir = workspace.path.join(".waif/library/tasks");
     let task_path = tasks_dir.join("20260818-1-task");
     fs::create_dir_all(&task_path).expect("task should be created");
     let task = Task::new(task_path.clone());
-    let source = valid_goal(status, "body");
     fs::write(task_path.join("goal.md"), &source).expect("goal should be written");
 
     task.accept_goal().expect("goal should be accepted");

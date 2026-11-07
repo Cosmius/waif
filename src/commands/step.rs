@@ -38,9 +38,9 @@ pub enum StepCommand {
     #[command(long_about = indoc::indoc! {"
         Accept the current step, the step directory with the greatest
         number, after explicit human approval. Requires an accepted goal and
-        plan, a GOOD step without blocking open questions whose coverage
-        entries each name an existing pending plan item, and the recorded
-        task branch checked out. Only Status and Updated are changed; failed
+        plan, a GOOD step without open questions whose coverage entries
+        each name an existing pending plan item, and the recorded task
+        branch checked out. Only Status and Updated are changed; failed
         preconditions leave every file unchanged."
     })]
     Accept(AcceptCommand),

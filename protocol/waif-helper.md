@@ -73,10 +73,10 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
     skip checking and recovery copies.
   - PATH is caller-relative and needs no configured instance or selection.
 - `waif goal accept` requires explicit human approval, a `GOOD` drafting or
-  amending goal, and no open questions. It changes only `Status` and `Updated`;
-  failed preconditions leave the goal unchanged.
+  amending goal, and no `open` questions. It changes only `Status` and
+  `Updated`; failed preconditions leave the goal unchanged.
 - `waif plan accept` requires explicit human approval, a GOOD drafting or
-  amending plan without open questions, and a GOOD accepted goal. It
+  amending plan without `open` questions, and a GOOD accepted goal. It
   establishes the recorded branch before changing only Status and Updated.
   Assess untracked files before acceptance. After failure or interruption,
   inspect branch, HEAD, and plan metadata, then repair under the existing
@@ -84,7 +84,7 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
   changed semantic scope with the human.
 - `waif step accept` requires explicit human approval and acts on the current
   step, the `steps/NN-name/` directory with the greatest number. The step must
-  be GOOD, `drafting` or `amending`, and free of open questions; the goal and
+  be GOOD, `drafting` or `amending`, and free of `open` questions; the goal and
   plan must be GOOD and accepted; the current branch must be the plan's
   `Branch`; and each `Plan Item Coverage` entry must name an existing
   `pending` plan item. An accepted step is an error. It changes only `Status`

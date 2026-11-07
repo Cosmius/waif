@@ -26,7 +26,7 @@ impl Task {
                 ArtifactClassification::Bad => "plan is BAD",
                 ArtifactClassification::Incomplete => "plan is INCOMPLETE",
                 ArtifactClassification::Good if inspection.has_open_questions() => {
-                    "plan has blocking open questions"
+                    "plan has open questions"
                 }
                 ArtifactClassification::Good => match inspection.goal() {
                     None => "referenced goal is missing",

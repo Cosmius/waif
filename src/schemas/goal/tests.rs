@@ -121,7 +121,7 @@ fn schema_enforces_known_section_order_and_ignores_unknown_sections() {
         "## In Scope\n- G-IN1: included\n",
         "## Assumptions\n- G-A1: assumed\n",
         "## Custom Two\nopaque\n",
-        "## Open Questions\n- G-Q1: question\n",
+        "## Questions\n### G-Q1: question\n- Status: open\n",
         "## Acceptance Criteria\n- G-AC1: criterion\n",
         "## Outcome\noutcome\n",
     );
@@ -156,9 +156,11 @@ fn schema_enforces_increasing_ids_with_signed_64_bit_boundaries() {
         "- G-AC999999999999999999999999999999999999: larger overflow\n",
         "- G-AC3: out of order\n",
         "- G-AC3: duplicate\n",
-        "## Open Questions\n",
+        "## Questions\n",
         "### G-Q9223372036854775807: maximum\n",
+        "- Status: open\n",
         "### G-Q1: out of order\n",
+        "- Status: open\n",
         "## In Scope\n",
         "- G-IN2: two\n",
         "- G-IN1: out of order\n",
@@ -222,7 +224,7 @@ fn accepts_every_item_namespace_and_opaque_content() {
         "- Updated: 2026-07-31T12:00:00Z\n",
         "## Outcome\ntext\n",
         "## Acceptance Criteria\n### G-AC1: titled\n",
-        "## Open Questions\n### G-Q3: question\nopaque body\n",
+        "## Questions\n### G-Q3: question\n- Status: settled\n\nopaque body\n",
         "## Assumptions\n- G-A4:\n",
         "## In Scope\n- G-IN2: [ ] content is opaque\n",
         "## Out of Scope\n",
@@ -274,7 +276,7 @@ fn enforces_the_exact_family_for_every_itemised_section() {
         "- Updated: 2026-07-31T12:00:00Z\n",
         "## Outcome\ntext\n",
         "## Acceptance Criteria\n- G-IN1: wrong\n",
-        "## Open Questions\n- G-A1: wrong\n",
+        "## Questions\n### G-A1: wrong\n- Status: open\n",
         "## Assumptions\n- G-REV1: wrong\n",
         "## In Scope\n- G-OUT1: wrong\n",
         "## Out of Scope\n- G-Q1: wrong\n",
@@ -287,7 +289,7 @@ fn enforces_the_exact_family_for_every_itemised_section() {
         ("Acceptance Criteria", "G-AC<number>"),
         ("In Scope", "G-IN<number>"),
         ("Out of Scope", "G-OUT<number>"),
-        ("Open Questions", "G-Q<number>"),
+        ("Questions", "G-Q<number>"),
         ("Assumptions", "G-A<number>"),
         ("Revisions", "G-REV<number>"),
     ] {
@@ -432,4 +434,35 @@ fn accumulates_metadata_topology_item_errors_and_warnings() {
     assert!(diagnostics.iter().any(|entry| {
             entry.0 == Severity::Warning && entry.2 == "section `Outcome` is empty"
         }));
+}
+
+#[test]
+fn questions_require_a_valid_status_and_assumptions_are_unchecked() {
+    let source = format!(
+        concat!(
+            "{}",
+            "## Questions\n",
+            "- G-Q1: compact question\n",
+            "- G-Q2: Vide infra.\n",
+            "### G-Q2: placeholder target\n",
+            "- Status: settled\n",
+            "### G-Q3: invalid status\n",
+            "- Status: resolved\n",
+            "### G-Q4: missing status\n",
+            "## Assumptions\n",
+            "- G-A1: compact assumption without metadata\n",
+        ),
+        VALID
+    );
+    let diagnostics = messages(&source);
+
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|entry| (entry.0, entry.1))
+            .collect::<Vec<_>>(),
+        [(Severity::Error, 10), (Severity::Error, 15), (Severity::Error, 16)],
+        "{diagnostics:?}"
+    );
+    assert!(diagnostics[1].2.contains("expected `open` or `settled`"));
 }

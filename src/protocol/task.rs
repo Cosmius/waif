@@ -81,7 +81,7 @@ impl Task {
             blockers.push(format!("goal is {status}"));
         }
         if inspection.has_open_questions() {
-            blockers.push("goal has blocking open questions".to_owned());
+            blockers.push("goal has open questions".to_owned());
         }
         if !blockers.is_empty() {
             return Err(Box::new(ProtocolError::GoalPreconditions(blockers)));

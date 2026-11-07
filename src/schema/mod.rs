@@ -34,6 +34,34 @@ impl Schema {
     }
 }
 
+/// The `Questions` section shared by the goal, plan, and step contracts.
+pub(crate) const QUESTIONS: SectionRule = SectionRule::optional("Questions")
+    .with_items(ItemRule::new("Q").with_metadata(&QUESTION_METADATA));
+
+const QUESTION_METADATA: [MetadataRule; 1] = [MetadataRule {
+    name: "Status",
+    validator: metadata_validators::question_status,
+}];
+
+/// Whether an artifact has a question that is not `settled`.
+///
+/// Placeholders carry no metadata and stand for an expanded question, so only
+/// expanded questions are considered.
+pub(crate) fn has_open_questions(artifact: &Artifact<'_>) -> bool {
+    artifact
+        .sections()
+        .iter()
+        .filter(|section| section.title() == QUESTIONS.name)
+        .filter_map(|section| section.as_itemised())
+        .flat_map(|section| section.items())
+        .filter_map(Item::as_expanded)
+        .any(|question| {
+            question
+                .metadatum("Status")
+                .is_none_or(|status| status.value() != "settled")
+        })
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum ArtifactPrefixRule {
     Known(&'static str),
@@ -477,6 +505,13 @@ pub(crate) mod metadata_validators {
                 "expected `drafting`, `accepted`, `amending`, `done`, or `aborted`, \
                  but got `{value}`"
             ))
+        }
+    }
+
+    pub(crate) fn question_status(value: &str) -> Result<(), String> {
+        match value {
+            "open" | "settled" => Ok(()),
+            _ => Err(format!("expected `open` or `settled`, but got `{value}`")),
         }
     }
 

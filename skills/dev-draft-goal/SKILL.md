@@ -36,7 +36,7 @@ Create the task dir and keep `goal.md` as the product-level contract.
    `waif fill <GOAL_PATH>` and `waif check <GOAL_PATH>`. Resolve `BAD` and
    fill `INCOMPLETE` before presentation. The AI owns semantic review.
 7. Show the `goal.md` path and ask the user to review it.
-8. After explicit human acceptance and with no open questions, run
+8. After explicit human acceptance and with every question `settled`, run
    `waif goal accept`. Treat unqualified `accept`, `approve`, or equivalent as
    acceptance of the current goal.
 9. Do not modify or commit workspace files.
@@ -52,8 +52,8 @@ Preserve IDs and never reuse retired IDs.
 macros. The AI agent owns semantic review: keep `In Scope` substantive and put
 exclusions and non-goals in `Out of Scope`.
 
-Do not accept a goal with blocking `Open Questions`. Follow shared amendment
-and revision rules.
+Do not accept a goal with an `open` question. Follow shared ambiguity triage,
+amendment, and revision rules.
 
 ## Guardrails
 
@@ -67,4 +67,4 @@ and revision rules.
 - The local instance, library, task dir, and `current_task` context are usable.
 - `goal.md` matches the contract and latest user direction.
 - Every goal content item has a stable ID.
-- Accepted goals have no unresolved blocking questions.
+- Accepted goals have no `open` questions.

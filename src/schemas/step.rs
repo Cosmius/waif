@@ -40,7 +40,7 @@ const SECTIONS: [SectionRule; 13] = [
     SectionRule::new("Done Conditions").with_items(ItemRule::new("DC")),
     SectionRule::new("Context"),
     SectionRule::optional("Key Decisions").with_items(ItemRule::new("K")),
-    SectionRule::optional("Open Questions").with_items(ItemRule::new("Q")),
+    schema::QUESTIONS,
     SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
     SectionRule::optional("Changes").with_items(ItemRule::new("C")),
     SectionRule::optional("Tests").with_items(ItemRule::new("T")),

@@ -44,7 +44,7 @@ const METADATA: [MetadataRule; 7] = [
 const SECTIONS: [SectionRule; 9] = [
     SectionRule::new("Technical Summary"),
     SectionRule::new("Decisions").with_items(ItemRule::new("D")),
-    SectionRule::optional("Open Questions").with_items(ItemRule::new("Q")),
+    schema::QUESTIONS,
     SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
     SectionRule::new("Current System"),
     SectionRule::new("Plan Items").with_items(

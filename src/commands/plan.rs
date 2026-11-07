@@ -17,9 +17,9 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
           waif plan accept
 
         Acceptance requires explicit human approval, a GOOD plan and
-        accepted goal, and no blocking open questions. The recorded task
-        branch is established before metadata updates. Already accepted
-        plans return an error without changing branch or artifact state."
+        accepted goal, and no open questions. The recorded task branch is
+        established before metadata updates. Already accepted plans return
+        an error without changing branch or artifact state."
     }
 )]
 pub enum PlanCommand {

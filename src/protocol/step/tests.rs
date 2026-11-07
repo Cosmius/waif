@@ -98,7 +98,7 @@ fn wrong_current_branch_is_rejected() {
 fn step_with_open_questions_is_rejected() {
     let (workspace, task) = fixture("open-question", "drafting");
     let source = format!(
-        "{}\n## Open Questions\n\n- S1-Q1: Unsure\n",
+        "{}\n## Questions\n\n### S1-Q1: Unsure\n- Status: open\n",
         read_step(&task)
     );
     write_step(&task, "01-test", &source);
@@ -106,7 +106,35 @@ fn step_with_open_questions_is_rejected() {
 
     let error = task.accept_step(&workspace.path).unwrap_err().to_string();
 
-    assert!(error.contains("step has blocking open questions"), "{error}");
+    assert!(error.contains("step has open questions"), "{error}");
+    assert_eq!(read_step(&task), source);
+    assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn step_with_settled_questions_is_accepted() {
+    let (workspace, task) = fixture("settled-question", "drafting");
+    let source = format!(
+        "{}\n## Questions\n\n### S1-Q1: Resolved\n- Status: settled\n",
+        read_step(&task)
+    );
+    write_step(&task, "01-test", &source);
+
+    task.accept_step(&workspace.path).unwrap();
+
+    assert!(read_step(&task).contains("- Status: accepted\n"));
+}
+
+#[test]
+fn step_with_compact_question_is_rejected() {
+    let (workspace, task) = fixture("compact-question", "drafting");
+    let source = format!("{}\n## Questions\n\n- S1-Q1: Unsure\n", read_step(&task));
+    write_step(&task, "01-test", &source);
+    let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+    let error = task.accept_step(&workspace.path).unwrap_err().to_string();
+
+    assert!(error.contains("step is BAD"), "{error}");
     assert_eq!(read_step(&task), source);
     assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
 }
@@ -327,14 +355,48 @@ fn plan_with_open_questions_is_rejected() {
     let plan_path = task.path.join("plan.md");
     let plan = fs::read_to_string(&plan_path).unwrap().replace(
         "## Current System",
-        "## Open Questions\n\n- P-Q1: Unsure\n\n## Current System",
+        "## Questions\n\n### P-Q1: Unsure\n- Status: open\n\n## Current System",
     );
     fs::write(&plan_path, &plan).unwrap();
     let before = read_step(&task);
 
     let error = task.accept_step(&workspace.path).unwrap_err().to_string();
 
-    assert!(error.contains("plan has blocking open questions"), "{error}");
+    assert!(error.contains("plan has open questions"), "{error}");
+    assert_eq!(read_step(&task), before);
+    assert_eq!(fs::read_to_string(&plan_path).unwrap(), plan);
+}
+
+#[test]
+fn plan_with_settled_questions_allows_step_acceptance() {
+    let (workspace, task) = fixture("plan-settled-question", "drafting");
+    let plan_path = task.path.join("plan.md");
+    let plan = fs::read_to_string(&plan_path).unwrap().replace(
+        "## Current System",
+        "## Questions\n\n### P-Q1: Resolved\n- Status: settled\n\n## Current System",
+    );
+    fs::write(&plan_path, &plan).unwrap();
+
+    task.accept_step(&workspace.path).unwrap();
+
+    assert!(read_step(&task).contains("- Status: accepted\n"));
+    assert_eq!(fs::read_to_string(&plan_path).unwrap(), plan);
+}
+
+#[test]
+fn plan_with_compact_question_is_rejected() {
+    let (workspace, task) = fixture("plan-compact-question", "drafting");
+    let plan_path = task.path.join("plan.md");
+    let plan = fs::read_to_string(&plan_path).unwrap().replace(
+        "## Current System",
+        "## Questions\n\n- P-Q1: Unsure\n\n## Current System",
+    );
+    fs::write(&plan_path, &plan).unwrap();
+    let before = read_step(&task);
+
+    let error = task.accept_step(&workspace.path).unwrap_err().to_string();
+
+    assert!(error.contains("plan is BAD"), "{error}");
     assert_eq!(read_step(&task), before);
     assert_eq!(fs::read_to_string(&plan_path).unwrap(), plan);
 }

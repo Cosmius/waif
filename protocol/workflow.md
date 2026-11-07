@@ -305,20 +305,27 @@ Marking a plan item `done` this way is not a plan amendment: the plan's
 ### Ambiguity Triage
 
 Before presenting any artifact for human acceptance, triage unresolved
-ambiguity into `Open Questions` and `Assumptions`.
+ambiguity into `Questions` and `Assumptions`. Write both as expanded items
+with the fields of the artifact's template.
 
-- Put major issues in `Open Questions`. Explain each issue in detail, describe
-  why it matters, and provide several concrete options the human can adopt.
-  The artifact must not be accepted until these questions are resolved.
-- Put minor issues in `Assumptions`. Record a best-effort solution so the human
-  can review the choice without blocking acceptance.
+- Put major issues in `Questions` with `Status: open`. Explain each issue in
+  detail, describe why it matters, provide several concrete options the human
+  can adopt, and recommend one. The artifact must not be accepted while any
+  question is `open`.
+- When the human resolves a question, set its `Status` to `settled`, add its
+  `Resolution`, and keep it in place. Carry the answer into the items it
+  changes, such as acceptance criteria, decisions, key decisions, or done
+  conditions, and cite the question's ID there.
+- Put minor issues in `Assumptions`. Record a best-effort choice so the human
+  can review it without blocking acceptance. Replace a disputed assumption
+  with a new question.
 
 An issue is major when its resolution could materially change the artifact's
 outcome, scope, approach, risk, or acceptance criteria. Other ambiguity is
 minor unless the human marks it as blocking.
 
 This rule applies to every artifact that requires human acceptance, including
-the goal, general plan, and step plan. Omit `Open Questions` or `Assumptions`
+the goal, general plan, and step plan. Omit `Questions` or `Assumptions`
 when that section would be empty.
 
 ### Revision Rules

@@ -40,6 +40,7 @@ Consume one coherent part of the general plan and produce an executable
    - coverage is exact;
    - no completed plan item receives new work;
    - done conditions match declared coverage;
+   - every question is `settled` and cited by the items its answer changes;
    - size and coherence rules are satisfied or justified.
    Then run `waif step accept`. Treat unqualified `accept`, `approve`, or
    equivalent as acceptance of the current step. The helper rechecks the

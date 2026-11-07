@@ -320,7 +320,7 @@ fn empty_plan_questions_allow_combined_readiness() {
     replace_plan(
         &task,
         "## Current System",
-        "## Open Questions\n## Current System",
+        "## Questions\n## Current System",
     );
     let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
 
@@ -399,7 +399,7 @@ fn plan_open_questions_block_artifact_prerequisites() {
     let (_workspace, task) = plan_task("plan-questions", "drafting");
     let source = valid_plan("drafting").replace(
         "## Current System",
-        "## Open Questions\n- P-Q1: Unresolved\n## Current System",
+        "## Questions\n### P-Q1: Unresolved\n- Status: open\n## Current System",
     );
     fs::write(task.path.join("plan.md"), source).unwrap();
     let inspection = task.inspect_plan(&_workspace.path).unwrap().unwrap();
@@ -407,6 +407,21 @@ fn plan_open_questions_block_artifact_prerequisites() {
     assert_eq!(inspection.classification(), ArtifactClassification::Good);
     assert!(inspection.has_open_questions());
     assert!(!inspection.ready_to_accept());
+}
+
+#[test]
+fn settled_plan_questions_allow_combined_readiness() {
+    let (workspace, task) = git_plan_task("settled-questions-ready", "drafting");
+    replace_plan(
+        &task,
+        "## Current System",
+        "## Questions\n### P-Q1: Resolved\n- Status: settled\n## Current System",
+    );
+    let inspection = task.inspect_plan(&workspace.path).unwrap().unwrap();
+
+    assert_eq!(inspection.classification(), ArtifactClassification::Good);
+    assert!(!inspection.has_open_questions());
+    assert!(inspection.ready_to_accept());
 }
 
 #[test]
@@ -591,4 +606,4 @@ fn valid_goal(status: &str, updated: &str, questions: &str) -> String {
     )
 }
 
-const QUESTIONS: &str = "\n## Open Questions\n\n- G-Q1: A question\n";
+const QUESTIONS: &str = "\n## Questions\n\n### G-Q1: A question\n- Status: open\n";

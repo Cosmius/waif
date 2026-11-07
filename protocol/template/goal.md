@@ -12,13 +12,25 @@
 
 - G-AC1: {{ Observable, technology-independent result }}
 
-## Open Questions
+## Questions
 
-- G-Q1: {{ Major issue, why it matters, and options the human can adopt }}
+### G-Q1: {{ Short question title }}
+- Status: open
+- Affects: {{ IDs whose content depends on the answer, or none }}
+- Detail: {{ What is ambiguous }}
+- Impact: {{ Why the answer matters }}
+- Options:
+  1. {{ Option }}
+  2. {{ Option }}
+- Recommendation: {{ Preferred option and why }}
 
 ## Assumptions
 
-- G-A1: {{ Minor issue and the best-effort solution adopted }}
+### G-A1: {{ Short assumption title }}
+- Affects: {{ IDs whose content depends on the choice, or none }}
+- Detail: {{ What is ambiguous }}
+- Choice: {{ The single resolution adopted }}
+- Risk: {{ What goes wrong if the choice is wrong }}
 
 ## In Scope
 

@@ -166,13 +166,13 @@ fn inspect_reports_accepted_goal_without_readiness() {
 
 #[cfg(unix)]
 #[test]
-fn inspect_treats_empty_open_questions_as_ready() {
+fn inspect_treats_empty_questions_as_ready() {
     let workspace = current_task_workspace("empty-questions");
     write_goal(
         &workspace,
         "drafting",
         "2026-08-17T12:00:00+09:00",
-        "\n## Open Questions\n",
+        "\n## Questions\n",
     );
 
     let output = run_inspect(&workspace.path);
@@ -411,7 +411,7 @@ fn inspect_reports_plan_questions_without_git() {
         "drafting",
         DUMMY_COMMIT,
         TIMESTAMP,
-        "## Open Questions\n- P-Q1: Choose approach\n",
+        "## Questions\n### P-Q1: Choose approach\n- Status: open\n",
     );
     let output = run_inspect(&workspace.path);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -830,4 +830,4 @@ fn run_inspect(current_dir: &Path) -> Output {
 
 const CURRENT_MANIFEST: &str = "schema_version = \"0.3\"\n";
 
-const QUESTIONS: &str = "\n## Open Questions\n\n- G-Q1: A question\n";
+const QUESTIONS: &str = "\n## Questions\n\n### G-Q1: A question\n- Status: open\n";

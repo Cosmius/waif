@@ -34,10 +34,11 @@ This reference defines two kinds of format rule:
 - A convention is followed by templates, examples, and agents by default.
   Breaking it is acceptable unless the human objects.
 
-In the [Sections](#sections), [Items](#items), and [Revisions](#revisions)
-rules, a rule is checked unless it is called a convention. Each rule of the
-items format comes with a checked example, which shows what checking accepts
-or rejects, and a conventional example, which shows the usual form.
+In the [Sections](#sections), [Items](#items), [Revisions](#revisions), and
+[Questions and Assumptions](#questions-and-assumptions) rules, a rule is
+checked unless it is called a convention. Each rule of the items format comes
+with a checked example, which shows what checking accepts or rejects, and a
+conventional example, which shows the usual form.
 
 ## Common Artifact Envelope
 
@@ -430,6 +431,84 @@ Conventional example:
   - Added API sessions to the timeout work.
 ```
 
+## Questions and Assumptions
+
+The goal, plan, and step contracts declare optional `Questions` and
+`Assumptions` sections, whose items use the artifact's `Q` and `A` families.
+A question records a major issue the human must settle before the artifact is
+accepted. An assumption records a minor issue resolved by a best-effort choice
+that the human accepts with the artifact.
+
+Checked rule: every question that is not a placeholder carries `Status`
+metadata, which is `open` or `settled`. A compact question is therefore an
+error unless it is a placeholder. `waif goal accept`, `waif plan accept`, and
+`waif step accept` reject an artifact with an `open` question. Assumptions
+follow the [items rules](#items) and require no metadata.
+
+Convention: both sections hold only expanded items, so they have no
+placeholders. A settled question stays in place; only its `Status` changes.
+
+Checked example: the compact question and `Status: resolved` are errors; the
+compact assumption is accepted.
+
+```markdown
+## Questions
+
+- P-Q1: Which branch name do linked worktrees use?
+
+### P-Q2: Migration of existing tasks
+- Status: resolved
+
+## Assumptions
+
+- P-A1: Timeouts are in seconds.
+```
+
+Convention: a question carries `Status`, `Affects`, `Detail`, `Impact`,
+`Options`, and `Recommendation` metadata, in that order. `Affects` lists the
+IDs whose content depends on the answer, or `none`. A settled question adds
+`Resolution`, the chosen option and the human's reason. The items its answer
+changes, such as an acceptance criterion, decision, key decision, or done
+condition, cite the question's ID.
+
+Conventional example: `P-Q1` is settled, and `P-D3` cites it.
+
+```markdown
+## Decisions
+
+- P-D3: Linked worktrees use the task branch name (settles P-Q1).
+
+## Questions
+
+### P-Q1: Branch naming for linked worktrees
+- Status: settled
+- Affects: P2, P-D3
+- Detail: Linked worktrees need a branch, and the plan does not name one.
+- Impact: A wrong name breaks `waif plan accept` in linked worktrees.
+- Options:
+  1. Reuse the task branch name.
+  2. Add a worktree suffix.
+- Recommendation: 1, because the task owns one branch.
+- Resolution: 1, because worktrees never share a task.
+```
+
+Convention: an assumption carries `Affects`, `Detail`, `Choice`, and `Risk`
+metadata, in that order. `Choice` states the single resolution adopted, and
+`Risk` what goes wrong if it is wrong. A disputed assumption is replaced by a
+new question, and its ID stays unused.
+
+Conventional example:
+
+```markdown
+## Assumptions
+
+### P-A1: Default timeout unit
+- Affects: P3
+- Detail: The goal gives timeouts without a unit.
+- Choice: Timeouts are in seconds.
+- Risk: Existing configuration in milliseconds times out 1000 times later.
+```
+
 ## Goal Contract
 
 A checked file named exactly `goal.md` receives this contract.
@@ -444,21 +523,23 @@ Updated   RFC 3339 timestamp with Z or a numeric UTC offset
 
 Known sections have this relative order:
 
-| Section             | Type                       | Presence |
-|---------------------|----------------------------|----------|
-| Outcome             | prose                      | required |
-| Acceptance Criteria | itemised; G-AC<n>          | required |
-| Open Questions      | itemised; G-Q<n>           | optional |
-| Assumptions         | itemised; G-A<n>           | optional |
-| In Scope            | itemised; G-IN<n>          | optional |
-| Out of Scope        | itemised; G-OUT<n>         | optional |
-| Revisions           | itemised; G-REV<n>         | optional |
+| Section             | Type                              | Presence |
+|---------------------|-----------------------------------|----------|
+| Outcome             | prose                             | required |
+| Acceptance Criteria | itemised; G-AC<n>                 | required |
+| Questions           | itemised; G-Q<n>; requires Status | optional |
+| Assumptions         | itemised; G-A<n>                  | optional |
+| In Scope            | itemised; G-IN<n>                 | optional |
+| Out of Scope        | itemised; G-OUT<n>                | optional |
+| Revisions           | itemised; G-REV<n>                | optional |
 
 Every goal itemised section follows the [items rules](#items). Item content and
 expanded bodies are opaque. Goal checking does not constrain title content or
 semantic quality.
 
-`Revisions` follows the [revision rules](#revisions).
+`Questions` and `Assumptions` follow the
+[question and assumption rules](#questions-and-assumptions), and `Revisions`
+follows the [revision rules](#revisions).
 
 ## Plan Contract
 
@@ -485,17 +566,17 @@ state.
 
 Known sections have this relative order:
 
-| Section                  | Type                             | Presence |
-|--------------------------|----------------------------------|----------|
-| Technical Summary        | prose                            | required |
-| Decisions                | itemised; P-D<n>                 | required |
-| Open Questions           | itemised; P-Q<n>                 | optional |
-| Assumptions              | itemised; P-A<n>                 | optional |
-| Current System           | prose                            | required |
-| Plan Items               | itemised; P<n>; requires Status  | required |
-| Risks                    | itemised; P-R<n>                 | required |
-| Cross-Cutting Validation | itemised; P-V<n>                 | required |
-| Revisions                | itemised; P-REV<n>               | optional |
+| Section                  | Type                              | Presence |
+|--------------------------|-----------------------------------|----------|
+| Technical Summary        | prose                             | required |
+| Decisions                | itemised; P-D<n>                  | required |
+| Questions                | itemised; P-Q<n>; requires Status | optional |
+| Assumptions              | itemised; P-A<n>                  | optional |
+| Current System           | prose                             | required |
+| Plan Items               | itemised; P<n>; requires Status   | required |
+| Risks                    | itemised; P-R<n>                  | required |
+| Cross-Cutting Validation | itemised; P-V<n>                  | required |
+| Revisions                | itemised; P-REV<n>                | optional |
 
 Every plan itemised section follows the [items rules](#items).
 
@@ -553,7 +634,9 @@ semantic author-facing metadata. They may span lines and are preserved
 exactly; deterministic checking does not interpret their references or
 meaning.
 
-`Revisions` follows the [revision rules](#revisions).
+`Questions` and `Assumptions` follow the
+[question and assumption rules](#questions-and-assumptions), and `Revisions`
+follows the [revision rules](#revisions).
 
 Plan checking validates structure, not the technical quality of decisions,
 outcomes, affected areas, risks, dependencies, or validation commands.
@@ -598,7 +681,7 @@ Known sections have this relative order:
 | Done Conditions      | itemised; S<n>-DC<m>                               | required |
 | Context              | prose                                              | required |
 | Key Decisions        | itemised; S<n>-K<m>                                | optional |
-| Open Questions       | itemised; S<n>-Q<m>                                | optional |
+| Questions            | itemised; S<n>-Q<m>; requires Status               | optional |
 | Assumptions          | itemised; S<n>-A<m>                                | optional |
 | Changes              | itemised; S<n>-C<m>                                | optional |
 | Tests                | itemised; S<n>-T<m>                                | optional |
@@ -646,7 +729,9 @@ Conventional example:
 Covers parsing only; checker diagnostics follow in a later step.
 ```
 
-`Revisions` follows the [revision rules](#revisions).
+`Questions` and `Assumptions` follow the
+[question and assumption rules](#questions-and-assumptions), and `Revisions`
+follows the [revision rules](#revisions).
 
 Item content and prose are opaque. Numeric bounds, complete identifier
 consumption, uniqueness, ordering, section order, and empty sections follow

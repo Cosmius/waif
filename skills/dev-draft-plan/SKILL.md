@@ -36,7 +36,7 @@ Turn the accepted goal into a reviewable general plan.
    root. The AI owns semantic review, including coverage, dependencies,
    feasibility, step impacts, and untracked-file assessment.
 9. Show the `plan.md` path and ask the user to review it.
-10. After explicit human acceptance and with no open questions, run
+10. After explicit human acceptance and with every question `settled`, run
     `waif plan accept`. Treat unqualified `accept`, `approve`, or equivalent as
     acceptance of the current plan. Follow the
     [helper guidance](../../protocol/waif-helper.md#commands) for repair.
@@ -50,7 +50,7 @@ Statuses are:
 - plan: `drafting`, `accepted`, `amending`, `done`, `aborted`;
 - plan item: `pending`, `done`.
 
-- Omit empty `Open Questions`, `Assumptions`, and pre-amendment `Revisions`.
+- Omit empty `Questions`, `Assumptions`, and pre-amendment `Revisions`.
 - Preserve IDs. Append new IDs and mark removed scope explicitly.
 - Each plan item must list every `G-AC<number>` it advances.
 - Plan items must collectively cover every accepted goal criterion.

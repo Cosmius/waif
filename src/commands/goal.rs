@@ -17,14 +17,14 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
           waif goal accept
 
         Acceptance requires explicit human approval, a GOOD drafting or
-        amending goal, and no blocking open questions."
+        amending goal, and no open questions."
     }
 )]
 pub enum GoalCommand {
     /// Accept a complete current goal after explicit human approval.
     #[command(long_about = indoc::indoc! {"
         Accept the current drafting or amending goal after explicit human
-        approval. The goal must be GOOD and have no blocking open questions.
+        approval. The goal must be GOOD and have no open questions.
         Only Status and Updated are changed; failed preconditions leave it
         unchanged."
     })]

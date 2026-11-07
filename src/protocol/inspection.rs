@@ -5,6 +5,7 @@ use super::task::read_optional;
 use super::{ArtifactClassification, ArtifactFile, Result, Task};
 use crate::artifact::Artifact;
 use crate::git_repo::{CurrentBranch, GitRepo};
+use crate::schema;
 
 pub(crate) struct GoalInspection {
     classification: ArtifactClassification,
@@ -22,12 +23,7 @@ impl GoalInspection {
             status: goal
                 .get_metadata("Status")
                 .map(|metadata| metadata.value().to_owned()),
-            has_open_questions: goal.sections().iter().any(|section| {
-                section.title() == "Open Questions"
-                    && section
-                        .as_itemised()
-                        .is_some_and(|questions| !questions.items().is_empty())
-            }),
+            has_open_questions: schema::has_open_questions(goal),
         }
     }
 
@@ -99,12 +95,7 @@ impl PlanInspection {
             status: plan
                 .get_metadata("Status")
                 .map(|metadata| metadata.value().to_owned()),
-            has_open_questions: plan.sections().iter().any(|section| {
-                section.title() == "Open Questions"
-                    && section
-                        .as_itemised()
-                        .is_some_and(|questions| !questions.items().is_empty())
-            }),
+            has_open_questions: schema::has_open_questions(plan),
             goal,
             branch: plan
                 .get_metadata("Branch")
