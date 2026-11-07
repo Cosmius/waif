@@ -437,8 +437,8 @@ fn artifact_file_parsers_use_each_schema_structure() {
         ),
         (
             "step.md",
-            "# Step 1\n## Done When\n- S1-D1: One\n",
-            "Done When",
+            "# Step 1\n## Done Conditions\n- S1-DC1: One\n",
+            "Done Conditions",
         ),
         (
             "review1.md",

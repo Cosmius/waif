@@ -18,9 +18,18 @@
 - Plan item: P1
 - Coverage: partial
 
+## Done Conditions
+
+- S1-DC1: {{ Observable implementation result }}
+- S1-DC2: {{ Required validation passes }}
+
 ## Context
 
 {{ Relevant current behavior and constraints discovered from the workspace. }}
+
+## Key Decisions
+
+- S1-K1: {{ Technical decision for this step }}
 
 ## Open Questions
 
@@ -30,21 +39,10 @@
 
 - S1-A1: {{ Minor issue and the best-effort solution adopted }}
 
-## Done When
-
-- S1-D1: {{ Observable implementation result }}
-- S1-D2: {{ Required validation passes }}
-
 ## Changes
 
-- S1-C1: {{ Concrete change, naming paths and interfaces }}
-- S1-C2: {{ Concrete change }}
-
-## Size and Coherence
-
-{{ Why this scope is coherent as one commit. If the estimate exceeds roughly
-200 changed non-test and non-documentation lines, explain why splitting it
-further would make the step impractical or incoherent. }}
+- S1-C1: {{ Affected file path }}
+- S1-C2: {{ Affected file path }}
 
 ## Tests
 
@@ -54,6 +52,12 @@ further would make the step impractical or incoherent. }}
 
 - S1-V1: `{{ focused command }}`
 - S1-V2: `{{ broader regression command when needed }}`
+
+## Size and Coherence
+
+{{ Why this scope is coherent as one commit. If the estimate exceeds roughly
+200 changed non-test and non-documentation lines, explain why splitting it
+further would make the step impractical or incoherent. }}
 
 ## Risks and Edge Cases
 

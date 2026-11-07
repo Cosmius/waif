@@ -278,7 +278,7 @@ fn fixture(name: &str) -> TestDir {
              - Plan items: P1\n\
              - Goal criteria: G-AC1\n\n## Objective\n\nDo it.\n\n\
              ## Plan Item Coverage\n\n### S1-PC1: All\n- Plan item: P1\n- Coverage: complete\n\n\
-             ## Context\n\nContext\n\n## Done When\n\n- S1-D1: Done\n"
+             ## Done Conditions\n\n- S1-DC1: Done\n\n## Context\n\nContext\n"
         ),
     )
     .unwrap();

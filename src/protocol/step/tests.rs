@@ -97,9 +97,9 @@ fn wrong_current_branch_is_rejected() {
 #[test]
 fn step_with_open_questions_is_rejected() {
     let (workspace, task) = fixture("open-question", "drafting");
-    let source = read_step(&task).replace(
-        "## Done When",
-        "## Open Questions\n\n- S1-Q1: Unsure\n\n## Done When",
+    let source = format!(
+        "{}\n## Open Questions\n\n- S1-Q1: Unsure\n",
+        read_step(&task)
     );
     write_step(&task, "01-test", &source);
     let plan = fs::read(task.path.join("plan.md")).unwrap();
@@ -705,7 +705,7 @@ fn step_source(status: &str) -> String {
          - Created: {TIMESTAMP}\n- Updated: {TIMESTAMP}\n- Plan items: P1\n\
          - Goal criteria: G-AC1\n\n## Objective\n\nDo  it.\n\n\
          ## Plan Item Coverage\n\n### S1-PC1: Part\n- Plan item: P1\n- Coverage: partial\n\n\
-         ## Context\n\nContext\n\n## Done When\n\n- S1-D1: Done\n"
+         ## Done Conditions\n\n- S1-DC1: Done\n\n## Context\n\nContext\n"
     )
 }
 

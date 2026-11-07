@@ -45,8 +45,8 @@ const VALID_STEP: &str = concat!(
     "- Plan items: P1\n",
     "## Objective\nText.\n",
     "## Plan Item Coverage\n### S1-PC1: Example\n- Plan item: P1\n- Coverage: complete\n",
+    "## Done Conditions\n- S1-DC1: Done.\n",
     "## Context\nText.\n",
-    "## Done When\n- S1-D1: Done.\n",
 );
 
 const VALID_REVIEW: &str = concat!(
@@ -230,7 +230,7 @@ fn check_aggregates_step_and_review_schema_errors() {
     let directory = TestDir::new("invalid-step-review");
     let step = directory.path.join("steps/01-example");
     fs::create_dir_all(&step).expect("step directory should be created");
-    fs::write(step.join("step.md"), VALID_STEP.replace("S1-D1", "S2-D1"))
+    fs::write(step.join("step.md"), VALID_STEP.replace("S1-DC1", "S2-DC1"))
         .expect("step should be written");
     fs::write(
         step.join("review1.md"),

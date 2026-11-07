@@ -81,8 +81,8 @@ steps do not map one to one.
 ### Step Plan
 
 A `step plan` is the detailed, executable plan for one step. It defines the
-step's exact plan-item coverage, source changes, tests, validation, risks, and
-done conditions. It is persisted in `steps/NN-name/step.md`.
+step's exact plan-item coverage, done conditions, key decisions, changed files,
+tests, validation, and risks. It is persisted in `steps/NN-name/step.md`.
 
 ### Task Artifact
 

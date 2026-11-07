@@ -33,18 +33,19 @@ const METADATA: [MetadataRule; 4] = [
     },
 ];
 
-const SECTIONS: [SectionRule; 12] = [
+const SECTIONS: [SectionRule; 13] = [
     SectionRule::new("Objective"),
     SectionRule::new("Plan Item Coverage")
         .with_items(ItemRule::new("PC").with_metadata(&COVERAGE_METADATA)),
+    SectionRule::new("Done Conditions").with_items(ItemRule::new("DC")),
     SectionRule::new("Context"),
+    SectionRule::optional("Key Decisions").with_items(ItemRule::new("K")),
     SectionRule::optional("Open Questions").with_items(ItemRule::new("Q")),
     SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
-    SectionRule::new("Done When").with_items(ItemRule::new("D")),
     SectionRule::optional("Changes").with_items(ItemRule::new("C")),
-    SectionRule::optional("Size and Coherence"),
     SectionRule::optional("Tests").with_items(ItemRule::new("T")),
     SectionRule::optional("Validation").with_items(ItemRule::new("V")),
+    SectionRule::optional("Size and Coherence"),
     SectionRule::optional("Risks and Edge Cases").with_items(ItemRule::new("R")),
     SectionRule::optional("Revisions").with_items(ItemRule::new("REV")),
 ];

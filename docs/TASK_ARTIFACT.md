@@ -99,26 +99,26 @@ invalidate the artifact.
 Convention: an optional section with no content is omitted rather than left
 empty.
 
-Checked example: the empty required `Done When` is an error.
+Checked example: the empty required `Done Conditions` is an error.
 
 ```markdown
-## Done When
+## Done Conditions
 
-## Changes
+## Context
 
-- S1-C1: Parse coverage metadata.
+Coverage is parsed by the step schema.
 ```
 
 Conventional example: `Changes` has no items, so it is omitted.
 
 ```markdown
-## Done When
+## Key Decisions
 
-- S1-D1: `waif check` reports a coverage mismatch.
+- S1-K1: Read coverage from item metadata.
 
-## Size and Coherence
+## Tests
 
-One checker change.
+- S1-T1: Add a coverage mismatch test.
 ```
 
 ## Items
@@ -595,16 +595,24 @@ Known sections have this relative order:
 |----------------------|----------------------------------------------------|----------|
 | Objective            | prose                                              | required |
 | Plan Item Coverage   | itemised; S<n>-PC<m>; requires Plan item, Coverage | required |
+| Done Conditions      | itemised; S<n>-DC<m>                               | required |
 | Context              | prose                                              | required |
+| Key Decisions        | itemised; S<n>-K<m>                                | optional |
 | Open Questions       | itemised; S<n>-Q<m>                                | optional |
 | Assumptions          | itemised; S<n>-A<m>                                | optional |
-| Done When            | itemised; S<n>-D<m>                                | required |
 | Changes              | itemised; S<n>-C<m>                                | optional |
-| Size and Coherence   | prose                                              | optional |
 | Tests                | itemised; S<n>-T<m>                                | optional |
 | Validation           | itemised; S<n>-V<m>                                | optional |
+| Size and Coherence   | prose                                              | optional |
 | Risks and Edge Cases | itemised; S<n>-R<m>                                | optional |
 | Revisions            | itemised; S<n>-REV<m>                              | optional |
+
+Agents often cite IDs without their artifact prefix while working in another
+artifact, so the step's families avoid the letters of the goal's and plan's:
+step done conditions use `DC` rather than `AC`, which the goal's acceptance
+criteria use, and step decisions are key decisions, `K`, rather than `D`, which
+the plan's decisions use. A bare `AC2`, `D2`, `DC2`, or `K2` therefore names
+one kind of item.
 
 Every step itemised section follows the [items rules](#items).
 

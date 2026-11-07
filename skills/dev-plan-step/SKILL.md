@@ -26,8 +26,8 @@ Consume one coherent part of the general plan and produce an executable
 4. Create `steps/NN-short-name/step.md`, using one plus the greatest existing
    sequence under `steps/` with at least two digits, and follow the
    [`step.md` Contract](#stepmd-contract).
-5. Inspect relevant code deeply enough to name concrete changes and
-   validation. Estimate changed non-test/doc lines. Keep the step suitable for
+5. Inspect relevant code deeply enough to name key decisions, affected files,
+   and validation. Estimate changed non-test/doc lines. Keep the step suitable for
    one source commit and roughly 200 such lines or fewer. If not practical,
    explain why in `Size and Coherence`. Do not modify source code.
 6. Create or revise the initial step only while `Status: drafting`. An accepted

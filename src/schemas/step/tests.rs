@@ -10,8 +10,8 @@ const VALID: &str = concat!(
     "- Plan items: P2\n- Goal criteria: opaque\n",
     "## Objective\ntext\n",
     "## Plan Item Coverage\n### S3-PC2: Checker\n- Plan item: P2\n- Coverage: complete\n",
+    "## Done Conditions\n- S3-DC1: done\n",
     "## Context\ntext\n",
-    "## Done When\n- S3-D1: done\n",
 );
 
 fn messages(path: &str, source: &str) -> Vec<(Severity, usize, String)> {
@@ -31,8 +31,8 @@ fn messages(path: &str, source: &str) -> Vec<(Severity, usize, String)> {
 fn accepts_conforming_step_and_opaque_semantic_metadata() {
     assert_eq!(messages("steps/03-check/step.md", VALID), []);
     let expanded = VALID.replace(
-        "- S3-D1: done",
-        "### S3-D1: done\n\nOpaque body with `## heading`.",
+        "- S3-DC1: done",
+        "### S3-DC1: done\n\nOpaque body with `## heading`.",
     );
     assert_eq!(messages("steps/03-check/step.md", &expanded), []);
 }
@@ -53,7 +53,7 @@ fn aggregates_lifecycle_coverage_order_and_identity_errors() {
             "### S3-PC2: Checker\n- Plan item: P2",
             "### S4-PC2: Checker\n- Plan item: P3",
         )
-        .replace("S3-D1", "S4-D1");
+        .replace("S3-DC1", "S4-DC1");
     let found = messages("steps/03-check/step.md", &source);
     assert!(found.len() >= 5, "{found:?}");
     assert!(found.iter().any(|entry| entry.2.contains("incompatible")));
@@ -101,7 +101,7 @@ fn malformed_directory_warns_but_keeps_internal_prefix_checks() {
     assert_eq!(found[0].0, Severity::Warning);
     assert!(found[0].2.contains("cannot resolve a step number"));
 
-    let mixed = VALID.replace("S3-D1", "S4-D1");
+    let mixed = VALID.replace("S3-DC1", "S4-DC1");
     let found = messages("steps/not-a-step/step.md", &mixed);
     assert!(found.iter().any(|entry| entry.0 == Severity::Error));
 }
@@ -125,11 +125,11 @@ fn requires_a_nonempty_but_otherwise_opaque_directory_suffix() {
 }
 
 #[test]
-fn validates_title_directory_and_plain_done_when() {
+fn validates_title_directory_and_plain_done_conditions() {
     for source in [
         VALID.replace("Step 3: Check steps", "Step 03: Check steps"),
         VALID.replace("Step 3: Check steps", "Step 3:"),
-        VALID.replace("- S3-D1: done", "- [ ] S3-D1: done"),
+        VALID.replace("- S3-DC1: done", "- [ ] S3-DC1: done"),
     ] {
         assert!(messages("steps/03-check/step.md", &source)
                 .iter()
@@ -141,16 +141,37 @@ fn validates_title_directory_and_plain_done_when() {
 }
 
 #[test]
-fn validates_optional_section_order_and_numeric_bounds() {
-    let out_of_order = VALID.replace(
-        "## Done When\n- S3-D1: done",
-        "## Changes\n- S3-C1: change\n## Done When\n- S3-D1: done",
+fn rejects_context_before_done_conditions() {
+    let source = VALID.replace(
+        "## Done Conditions\n- S3-DC1: done\n## Context\ntext\n",
+        "## Context\ntext\n## Done Conditions\n- S3-DC1: done\n",
     );
-    assert!(messages("steps/03-check/step.md", &out_of_order)
+    assert!(messages("steps/03-check/step.md", &source)
             .iter()
-            .any(|entry| entry.2.contains("must appear before")));
+            .any(|entry| entry.2.contains("section `Done Conditions` must appear before section `Context`")));
+}
 
-    let overflow = VALID.replace("S3-D1", "S9223372036854775808-D1");
+#[test]
+fn rejects_changes_before_key_decisions() {
+    let source = format!(
+        "{VALID}## Changes\n- S3-C1: `src/schemas/step.rs`\n## Key Decisions\n- S3-K1: decision\n"
+    );
+    assert!(messages("steps/03-check/step.md", &source)
+            .iter()
+            .any(|entry| entry.2.contains("section `Key Decisions` must appear before section `Changes`")));
+}
+
+#[test]
+fn accepts_compact_and_expanded_key_decisions() {
+    let source = format!(
+        "{VALID}## Key Decisions\n- S3-K1: Keep one rule.\n- S3-K2: Vide infra, order.\n### S3-K2: Order\nRationale.\n## Changes\n- S3-C1: `src/schemas/step.rs`\n"
+    );
+    assert_eq!(messages("steps/03-check/step.md", &source), []);
+}
+
+#[test]
+fn validates_numeric_bounds() {
+    let overflow = VALID.replace("S3-DC1", "S9223372036854775808-DC1");
     assert!(messages("steps/03-check/step.md", &overflow)
             .iter()
             .any(|entry| entry.2.contains("2^63 - 1")));
@@ -160,7 +181,7 @@ fn validates_optional_section_order_and_numeric_bounds() {
 fn keeps_fenced_headings_opaque_and_uses_nominal_paths() {
     let fenced = VALID.replace(
         "## Context\ntext",
-        "## Context\n```markdown\n## Done When\n- S99-D1: fenced\n```",
+        "## Context\n```markdown\n## Done Conditions\n- S99-DC1: fenced\n```",
     );
     assert_eq!(messages("steps/03-check/step.md", &fenced), []);
 
