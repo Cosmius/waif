@@ -227,7 +227,9 @@ Use dev-conclude-task to document the completed task for other contributors.
 Each source workspace has a local `.waif/`:
 
 - `library/charter.md`: optional project rules read by every skill.
-- `library/tasks/`: task records, shared when `library` is a symlink.
+- `library/waif.toml`: the library manifest, holding its schema version.
+- `library/tasks/`: task records, shared when `library` is a symlink. Each
+  task dir holds a `task.toml` manifest with its schema version.
 - `current_task`: local selection pointing to `library/tasks/<task-name>`.
 
 `dev-workflow-setup` initialises the library and maintains the charter;

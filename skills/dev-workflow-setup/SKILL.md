@@ -18,6 +18,8 @@ Set up the local workflow library and maintain its optional project charter.
    before accessing its local library; read the existing charter when present.
 2. Preserve an existing library entry, including a broken link. Report access
    failures for repair rather than replacing it or choosing a new setup mode.
+   If an existing library's `library/waif.toml` is missing or has another
+   schema version, follow the protocol's Migration section.
 3. If the library is missing, initialize it from the workspace root:
    - In Git projects, identify the main worktree from the first record of
      `git worktree list --porcelain -z`.

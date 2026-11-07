@@ -135,6 +135,16 @@ Name a task dir `YYYYMMDD-N-short-name`, for example
 - Determine `N` by scanning sibling task dirs with the same date prefix.
 - Use a concise lowercase-hyphenated short name.
 
+### Manifests
+
+The library and each task dir have a manifest, `library/waif.toml` and
+`task.toml`, holding the `MAJOR.MINOR` version of the WAIF release that
+introduced their schema:
+
+```toml
+schema_version = "0.3"
+```
+
 ### Current Task
 
 `<workflow-dir>/current_task` is a relative symlink to the active task dir,
@@ -156,12 +166,14 @@ or unusable.
 │   ├── current_task -> library/tasks/20260601-2-task-name
 │   └── library/                 # real directory or linked library symlink
 │       ├── charter.md           # optional
+│       ├── waif.toml            # library manifest
 │       └── tasks/
 │           ├── 20260501-1-task-name/
 │           │   └── ...
 │           ├── 20260601-1-task-name/
 │           │   └── ...
 │           └── 20260601-2-task-name/
+│               ├── task.toml    # task manifest
 │               ├── goal.md
 │               ├── plan.md
 │               ├── steps/
@@ -361,5 +373,6 @@ Example:
 
 ## Migration
 
-When the workflow dir or the current task uses a layout or artifact form this
-protocol no longer describes, follow the [migration notes](../migration/README.md).
+When a manifest is missing or has another schema version, or the workflow dir
+or current task uses a layout or artifact form this protocol no longer
+describes, follow the [migration notes](../migration/README.md).
