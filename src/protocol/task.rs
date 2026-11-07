@@ -196,4 +196,4 @@ fn is_step_artifact_name(name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod acceptance_tests;
+mod tests;
