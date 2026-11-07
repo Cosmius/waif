@@ -8,7 +8,7 @@ use chrono::Local;
 
 use crate::git_repo::GitRepo;
 
-use super::{ProtocolError, Result, Task};
+use super::{manifest, ProtocolError, Result, Task};
 
 pub struct WorkflowDir {
     pub path: PathBuf,
@@ -83,6 +83,7 @@ impl WorkflowDir {
             None => fs::create_dir(self.library_dir())?,
         };
         fs::create_dir(self.tasks_dir())?;
+        manifest::write_library_manifest(&self.library_dir())?;
         match fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -130,6 +131,7 @@ impl WorkflowDir {
         );
         let task_dir = self.tasks_dir().join(&task_name);
         fs::create_dir(&task_dir)?;
+        manifest::write_task_manifest(&task_dir)?;
         Ok(Task::new(task_dir))
     }
 

@@ -9,6 +9,7 @@ use crate::parser::Severity;
 
 mod artifact;
 mod inspection;
+mod manifest;
 mod plan;
 mod step;
 mod task;

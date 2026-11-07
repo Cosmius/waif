@@ -53,6 +53,11 @@ fn new_sequences_tasks_without_touching_existing_repository_metadata() {
     assert!(task_name == format!("{date_before}-2-next-task")
         || task_name == format!("{date_after}-1-next-task"));
     assert!(tasks.join(task_name.as_ref()).is_dir());
+    assert_eq!(
+        fs::read_to_string(tasks.join(task_name.as_ref()).join("task.toml"))
+            .expect("task manifest should be readable"),
+        "schema_version = \"0.3\"\n"
+    );
     assert_eq!(metadata_after, metadata_before);
     assert_eq!(
         fs::read_to_string(workflow.join(".git/sentinel"))
