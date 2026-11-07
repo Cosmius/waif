@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Development Work"
+  short_description: "Review a step or task and write a checked record"
+  default_prompt: "Use $dev-review to review the current step."

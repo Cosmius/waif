@@ -797,8 +797,9 @@ reused.
 `Findings` contains either its [sentinel](#sentinels), `No findings.`, or one
 or more findings with IDs `S<n>-R<m>-F<k>`.
 
-Convention: a `pass` verdict comes with the sentinel and a `concerns` verdict
-with at least one finding.
+Convention: the verdict is the reviewer's overall judgement. Any finding
+above `low` makes it `concerns`. With only `low` findings, the reviewer may
+decide either `pass` or `concerns`.
 
 Finding metadata is not checked. Convention: each finding is an expanded
 item titled with a short description, with `Severity` (`critical`, `high`,

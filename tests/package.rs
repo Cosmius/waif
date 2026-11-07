@@ -18,8 +18,10 @@ const SKILL_FILES: &[&str] = &[
     "protocol/template/goal.md",
     "protocol/template/implementation-review.md",
     "protocol/template/plan.md",
+    "protocol/template/review.md",
     "protocol/template/step.md",
     "protocol/template/task-conclusion.md",
+    "protocol/template/task-review.md",
     "protocol/waif-helper.md",
     "protocol/workflow.md",
     "skills/dev-conclude-task/SKILL.md",
@@ -28,6 +30,7 @@ const SKILL_FILES: &[&str] = &[
     "skills/dev-final-review/SKILL.md",
     "skills/dev-implement-step/SKILL.md",
     "skills/dev-plan-step/SKILL.md",
+    "skills/dev-review/SKILL.md",
     "skills/dev-workflow-setup/SKILL.md",
 ];
 
