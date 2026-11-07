@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::artifact::Artifact;
-use crate::parser::{self, Diagnostic, ParserConfig, Position, SectionConfig};
+use crate::parser::{self, Diagnostic, Position};
 use crate::schema::{
     self, metadata_validators, unpadded_decimal, ArtifactPrefixRule, ArtifactPrefixShape, ItemRule,
     MetadataRule, Schema, SectionRule,
@@ -48,11 +48,12 @@ const SECTIONS: [SectionRule; 12] = [
 ];
 
 pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {
-    parser::parse_with_config(source, &parser_config())
+    parser::parse_with_config(source, &SCHEMA.parser_config())
 }
 
 pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
-    let (artifact, mut diagnostics) = parser::parse_with_diagnostics(source, &parser_config());
+    let (artifact, mut diagnostics) =
+        parser::parse_with_diagnostics(source, &SCHEMA.parser_config());
     let (schema_diagnostics, prefix) = schema::validate_with_prefix(&artifact, &SCHEMA);
     diagnostics.extend(schema_diagnostics);
 
@@ -96,23 +97,6 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
         }
     }
     diagnostics
-}
-
-fn parser_config() -> ParserConfig<'static> {
-    ParserConfig::new(vec![
-        SectionConfig::prose("Objective"),
-        SectionConfig::itemised("Plan Item Coverage"),
-        SectionConfig::prose("Context"),
-        SectionConfig::itemised("Open Questions"),
-        SectionConfig::itemised("Assumptions"),
-        SectionConfig::itemised("Done When"),
-        SectionConfig::itemised("Changes"),
-        SectionConfig::prose("Size and Coherence"),
-        SectionConfig::itemised("Tests"),
-        SectionConfig::itemised("Validation"),
-        SectionConfig::itemised("Risks and Edge Cases"),
-        SectionConfig::itemised("Revisions"),
-    ])
 }
 
 fn source_commit(value: &str) -> Result<(), String> {

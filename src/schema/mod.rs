@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use crate::artifact::{Artifact, FindingsBody, Item, ItemForm, Located, Section, SourceSpan};
+use crate::artifact::{Artifact, Item, ItemForm, Located, Section, SourceSpan};
 use crate::macro_processor;
-use crate::parser::{Diagnostic, Position};
+use crate::parser::{Diagnostic, ParserConfig, Position, SectionConfig};
 
 //region schema definition
 
@@ -12,6 +12,27 @@ pub(crate) struct Schema {
     pub(crate) prefix: ArtifactPrefixRule,
     pub(crate) metadata: &'static [MetadataRule],
     pub(crate) sections: &'static [SectionRule],
+}
+
+impl Schema {
+    /// Derive the parser configuration from the section rules: sections with
+    /// item, plan-item, or findings rules are itemised, and others are prose.
+    pub(crate) fn parser_config(&self) -> ParserConfig<'static> {
+        ParserConfig::new(
+            self.sections
+                .iter()
+                .map(|rule| {
+                    if let Some(findings) = rule.findings {
+                        SectionConfig::itemised(rule.name).with_sentinel(findings.sentinel)
+                    } else if rule.items.is_some() || rule.plan_items.is_some() {
+                        SectionConfig::itemised(rule.name)
+                    } else {
+                        SectionConfig::prose(rule.name)
+                    }
+                })
+                .collect(),
+        )
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -126,9 +147,9 @@ pub(crate) struct PlanItemRule {
 }
 
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
 pub(crate) struct FindingsRule {
     pub(crate) family: &'static str,
+    pub(crate) sentinel: &'static str,
 }
 
 //endregion schema definition
@@ -411,17 +432,20 @@ fn validate_item_forms(
 
 fn validate_plan_items(ctx: &mut ValidationContext, section: &Section, rule: PlanItemRule) {
     let section_name = section.title();
-    let Some(section) = section.as_plan_items() else {
+    let Some(section) = section.as_itemised() else {
         ctx.diagnostics.push(Diagnostic::error_p(
             *section.located_title().span().start(),
-            format!("section {section_name} must be a plan items section"),
+            format!("section {section_name} must be an itemised section"),
         ));
         return;
     };
+    validate_item_forms(ctx, section_name, section.items(), ItemForms::ExpandedOnly);
 
     for item in section.items() {
-        let statuses: Vec<_> = item
-            .value()
+        let Some(expanded) = item.as_expanded() else {
+            continue;
+        };
+        let statuses: Vec<_> = expanded
             .metadata()
             .iter()
             .filter(|entry| entry.value().key() == "Status")
@@ -452,15 +476,15 @@ fn validate_plan_items(ctx: &mut ValidationContext, section: &Section, rule: Pla
                 "duplicate plan-item metadata key `Status`",
             ));
         }
-        if item.value().title().text().is_empty() {
+        if expanded.title().text().is_empty() {
             ctx.diagnostics.push(Diagnostic::error_p(
-                *item.value().span().start(),
+                *item.span().start(),
                 format!("plan item in section `{section_name}` is missing a title"),
             ));
         }
-        let Some(identifier) = item.value().identifier() else {
+        let Some(identifier) = item.identifier() else {
             ctx.diagnostics.push(Diagnostic::error_p(
-                *item.value().span().start(),
+                *item.span().start(),
                 format!("plan item in section `{section_name}` is missing an identifier"),
             ));
             continue;
@@ -493,18 +517,22 @@ fn validate_plan_items(ctx: &mut ValidationContext, section: &Section, rule: Pla
 
 fn validate_findings(ctx: &mut ValidationContext, section: &Section, rule: FindingsRule) {
     let section_name = section.title();
-    let Some(section) = section.as_findings() else {
+    let Some(section) = section.as_itemised() else {
         ctx.diagnostics.push(Diagnostic::error_p(
             *section.located_title().span().start(),
-            format!("section {section_name} must be a findings section"),
+            format!("section {section_name} must be an itemised section"),
         ));
         return;
     };
-
-    let FindingsBody::Items(items) = section.body() else {
+    if section.sentinel().is_some() {
         return;
-    };
-    for finding in items.value() {
+    }
+    validate_item_forms(ctx, section_name, section.items(), ItemForms::ExpandedOnly);
+
+    for finding in section.items() {
+        if finding.form() != ItemForm::Expanded {
+            continue;
+        }
         let Some(identifier) = finding.identifier() else {
             ctx.diagnostics.push(Diagnostic::error_p(
                 *finding.span().start(),
@@ -581,12 +609,9 @@ pub(crate) mod metadata_validators {
 fn section_is_empty(section: &Section) -> bool {
     match section {
         Section::Prose(section) => section.value().body().trim().is_empty(),
-        Section::Itemised(section) => section.value().items().is_empty(),
-        Section::PlanItems(section) => section.value().items().is_empty(),
-        Section::Findings(section) => match section.value().body() {
-            FindingsBody::Sentinel(body) => body.text().trim().is_empty(),
-            FindingsBody::Items(items) => items.value().is_empty(),
-        },
+        Section::Itemised(section) => {
+            section.value().sentinel().is_none() && section.value().items().is_empty()
+        }
     }
 }
 

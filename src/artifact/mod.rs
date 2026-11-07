@@ -73,36 +73,45 @@ impl<'a, L> Artifact<'a, L> {
         &self.sections
     }
 
-    pub fn plan_item(&self, identifier: &str) -> Option<&PlanItem<'a, L>> {
+    /// Return the expanded item with `identifier` in the itemised section
+    /// titled `section`, or `None` when it is missing or not unique.
+    pub fn expanded_item(&self, section: &str, identifier: &str) -> Option<&ExpandedItem<'a, L>> {
         let mut matches = self
             .sections
             .iter()
-            .filter_map(Section::as_plan_items)
-            .flat_map(|section| {
-                section.items().iter().filter(|item| {
-                    item.value()
-                        .identifier()
-                        .is_some_and(|id| id.text() == identifier)
-                })
+            .filter(|candidate| candidate.title() == section)
+            .filter_map(Section::as_itemised)
+            .flat_map(ItemisedSection::items)
+            .filter_map(Item::as_expanded)
+            .filter(|item| {
+                item.identifier
+                    .as_ref()
+                    .is_some_and(|id| id.text() == identifier)
             });
         let item = matches.next()?;
-        matches.next().is_none().then_some(item.value())
+        matches.next().is_none().then_some(item)
     }
 
-    pub fn plan_item_mut(&mut self, identifier: &str) -> Option<&mut PlanItem<'a, L>> {
+    /// Mutable form of [`Artifact::expanded_item`].
+    pub fn expanded_item_mut(
+        &mut self,
+        section: &str,
+        identifier: &str,
+    ) -> Option<&mut ExpandedItem<'a, L>> {
         let mut matches = self
             .sections
             .iter_mut()
-            .filter_map(Section::as_plan_items_mut)
-            .flat_map(|section| {
-                section.items_mut().iter_mut().filter(|item| {
-                    item.value()
-                        .identifier()
-                        .is_some_and(|id| id.text() == identifier)
-                })
+            .filter(|candidate| candidate.title() == section)
+            .filter_map(Section::as_itemised_mut)
+            .flat_map(ItemisedSection::items_mut)
+            .filter_map(Item::as_expanded_mut)
+            .filter(|item| {
+                item.identifier
+                    .as_ref()
+                    .is_some_and(|id| id.text() == identifier)
             });
         let item = matches.next()?;
-        matches.next().is_none().then_some(item.value_mut())
+        matches.next().is_none().then_some(item)
     }
 }
 
@@ -150,8 +159,6 @@ impl<'a, L> Metadata<'a, L> {
 pub enum Section<'a, L = SourceSpan> {
     Prose(Located<ProseSection<'a, L>, L>),
     Itemised(Located<ItemisedSection<'a, L>, L>),
-    PlanItems(Located<PlanItemsSection<'a, L>, L>),
-    Findings(Located<FindingsSection<'a, L>, L>),
 }
 
 impl<'a, L> Section<'a, L> {
@@ -163,8 +170,6 @@ impl<'a, L> Section<'a, L> {
         match self {
             Self::Prose(section) => &section.value.title,
             Self::Itemised(section) => &section.value.title,
-            Self::PlanItems(section) => &section.value.title,
-            Self::Findings(section) => &section.value.title,
         }
     }
 
@@ -172,52 +177,34 @@ impl<'a, L> Section<'a, L> {
         match self {
             Self::Prose(section) => section.span(),
             Self::Itemised(section) => section.span(),
-            Self::PlanItems(section) => section.span(),
-            Self::Findings(section) => section.span(),
         }
     }
 
     pub fn body_span(&self) -> &L {
         match self {
             Self::Prose(section) => section.value.body.span(),
-            Self::Itemised(section) => section.value.items.span(),
-            Self::PlanItems(section) => section.value.items.span(),
-            Self::Findings(section) => section.value.body.span(),
+            Self::Itemised(section) => section.value.body.span(),
         }
     }
 
     pub fn as_prose(&self) -> Option<&ProseSection<'a, L>> {
         match self {
             Self::Prose(section) => Some(section.value()),
-            Self::Itemised(_) | Self::PlanItems(_) | Self::Findings(_) => None,
+            Self::Itemised(_) => None,
         }
     }
 
     pub fn as_itemised(&self) -> Option<&ItemisedSection<'a, L>> {
         match self {
-            Self::Prose(_) | Self::PlanItems(_) | Self::Findings(_) => None,
+            Self::Prose(_) => None,
             Self::Itemised(section) => Some(section.value()),
         }
     }
 
-    pub fn as_plan_items(&self) -> Option<&PlanItemsSection<'a, L>> {
+    pub fn as_itemised_mut(&mut self) -> Option<&mut ItemisedSection<'a, L>> {
         match self {
-            Self::PlanItems(section) => Some(section.value()),
-            Self::Prose(_) | Self::Itemised(_) | Self::Findings(_) => None,
-        }
-    }
-
-    pub fn as_plan_items_mut(&mut self) -> Option<&mut PlanItemsSection<'a, L>> {
-        match self {
-            Self::PlanItems(section) => Some(section.value_mut()),
-            Self::Prose(_) | Self::Itemised(_) | Self::Findings(_) => None,
-        }
-    }
-
-    pub fn as_findings(&self) -> Option<&FindingsSection<'a, L>> {
-        match self {
-            Self::Findings(section) => Some(section.value()),
-            Self::Prose(_) | Self::Itemised(_) | Self::PlanItems(_) => None,
+            Self::Prose(_) => None,
+            Self::Itemised(section) => Some(section.value_mut()),
         }
     }
 }
@@ -241,13 +228,39 @@ impl<'a, L> ProseSection<'a, L> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ItemisedSection<'a, L = SourceSpan> {
     pub(crate) title: Located<&'a str, L>,
-    pub(crate) items: Located<Vec<Item<'a, L>>, L>,
+    pub(crate) body: Located<ItemisedBody<'a, L>, L>,
 }
 
 impl<'a, L> ItemisedSection<'a, L> {
+    /// The section's items; empty when the body is the sentinel.
     pub fn items(&self) -> &[Item<'a, L>] {
-        self.items.value()
+        match self.body.value() {
+            ItemisedBody::Sentinel(_) => &[],
+            ItemisedBody::Items(items) => items,
+        }
     }
+
+    pub fn items_mut(&mut self) -> &mut [Item<'a, L>] {
+        match self.body.value_mut() {
+            ItemisedBody::Sentinel(_) => &mut [],
+            ItemisedBody::Items(items) => items,
+        }
+    }
+
+    pub fn sentinel(&self) -> Option<&Located<&'a str, L>> {
+        match self.body.value() {
+            ItemisedBody::Sentinel(sentinel) => Some(sentinel),
+            ItemisedBody::Items(_) => None,
+        }
+    }
+}
+
+/// An itemised section body: either the section's declared sentinel alone or
+/// its items.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ItemisedBody<'a, L = SourceSpan> {
+    Sentinel(Located<&'a str, L>),
+    Items(Vec<Item<'a, L>>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -304,6 +317,13 @@ impl<'a, L> Item<'a, L> {
             Self::Expanded(item) => Some(item.value()),
         }
     }
+
+    pub fn as_expanded_mut(&mut self) -> Option<&mut ExpandedItem<'a, L>> {
+        match self {
+            Self::Compact(_) => None,
+            Self::Expanded(item) => Some(item.value_mut()),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -330,7 +350,8 @@ pub struct ExpandedItem<'a, L = SourceSpan> {
     pub(crate) identifier: Option<Located<&'a str, L>>,
     pub(crate) title: Located<&'a str, L>,
     pub(crate) delimiter: Option<Located<&'a str, L>>,
-    pub(crate) content: Located<&'a str, L>,
+    pub(crate) metadata: Vec<Located<Metadata<'a, L>, L>>,
+    pub(crate) body: Located<&'a str, L>,
 }
 
 impl<'a, L> ExpandedItem<'a, L> {
@@ -346,126 +367,24 @@ impl<'a, L> ExpandedItem<'a, L> {
         &self.title
     }
 
-    pub fn content(&self) -> &Located<&'a str, L> {
-        &self.content
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct PlanItemsSection<'a, L = SourceSpan> {
-    pub(crate) title: Located<&'a str, L>,
-    pub(crate) items: Located<Vec<Located<PlanItem<'a, L>, L>>, L>,
-}
-
-impl<'a, L> PlanItemsSection<'a, L> {
-    pub fn items(&self) -> &[Located<PlanItem<'a, L>, L>] {
-        self.items.value()
-    }
-
-    pub fn items_mut(&mut self) -> &mut [Located<PlanItem<'a, L>, L>] {
-        self.items.value_mut()
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct PlanItem<'a, L = SourceSpan> {
-    // Keep the ordinary expanded-item representation as the source of truth
-    // for heading components and the complete record span. Plan items add only
-    // a structured view over that item's body: leading metadata followed by
-    // opaque prose.
-    pub(crate) item: Located<ExpandedItem<'a, L>, L>,
-    pub(crate) metadata: Vec<Located<Metadata<'a, L>, L>>,
-    pub(crate) prose: Located<&'a str, L>,
-}
-
-impl<'a, L> PlanItem<'a, L> {
-    pub fn identifier(&self) -> Option<&Located<&'a str, L>> {
-        self.item.value.identifier.as_ref()
-    }
-
-    pub fn title(&self) -> &Located<&'a str, L> {
-        &self.item.value.title
-    }
-
+    /// The leading `- Key: value` entries after the heading.
     pub fn metadata(&self) -> &[Located<Metadata<'a, L>, L>] {
         &self.metadata
     }
 
+    /// Return the entry for `key`, or `None` when it is missing or repeated.
     pub fn metadatum_mut(&mut self, key: &str) -> Option<&mut Metadata<'a, L>> {
         let mut matches = self
             .metadata
             .iter_mut()
             .filter(|entry| entry.value().key() == key);
-        let status = matches.next()?;
-        matches.next().is_none().then_some(status.value_mut())
+        let entry = matches.next()?;
+        matches.next().is_none().then_some(entry.value_mut())
     }
 
-    pub fn prose(&self) -> &Located<&'a str, L> {
-        &self.prose
-    }
-
-    pub fn span(&self) -> &L {
-        self.item.span()
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct FindingsSection<'a, L = SourceSpan> {
-    pub(crate) title: Located<&'a str, L>,
-    pub(crate) body: FindingsBody<'a, L>,
-}
-
-impl<'a, L> FindingsSection<'a, L> {
-    pub fn body(&self) -> &FindingsBody<'a, L> {
+    /// The opaque text after the leading metadata.
+    pub fn body(&self) -> &Located<&'a str, L> {
         &self.body
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum FindingsBody<'a, L = SourceSpan> {
-    Sentinel(Located<&'a str, L>),
-    Items(Located<Vec<Finding<'a, L>>, L>),
-}
-
-impl<'a, L> FindingsBody<'a, L> {
-    pub fn span(&self) -> &L {
-        match self {
-            Self::Sentinel(body) => body.span(),
-            Self::Items(items) => items.span(),
-        }
-    }
-
-    pub fn as_sentinel(&self) -> Option<&'a str> {
-        match self {
-            Self::Sentinel(body) => Some(body.text()),
-            Self::Items(_) => None,
-        }
-    }
-
-    pub fn items(&self) -> Option<&[Finding<'a, L>]> {
-        match self {
-            Self::Items(items) => Some(items.value()),
-            Self::Sentinel(_) => None,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Finding<'a, L = SourceSpan> {
-    pub(crate) item: Located<ExpandedItem<'a, L>, L>,
-}
-
-impl<'a, L> Finding<'a, L> {
-    pub fn identifier(&self) -> Option<&Located<&'a str, L>> {
-        self.item.value.identifier.as_ref()
-    }
-
-    pub fn content(&self) -> &Located<&'a str, L> {
-        &self.item.value.content
-    }
-
-    pub fn span(&self) -> &L {
-        self.item.span()
     }
 }
 
@@ -550,9 +469,10 @@ pub fn serialize(artifact: &Artifact<'_, SourceSpan>) -> String {
         artifact
             .sections
             .iter()
-            .filter_map(Section::as_plan_items)
-            .flat_map(PlanItemsSection::items)
-            .flat_map(|item| item.value.metadata.iter()),
+            .filter_map(Section::as_itemised)
+            .flat_map(ItemisedSection::items)
+            .filter_map(Item::as_expanded)
+            .flat_map(|item| item.metadata.iter()),
     );
     entries.sort_by_key(|entry| entry.value().located_value().span().range().start);
 

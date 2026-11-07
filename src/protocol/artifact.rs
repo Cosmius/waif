@@ -88,7 +88,7 @@ impl ArtifactFile {
 
     pub fn parse_goal(&self) -> Result<Artifact<'_>> {
         let (artifact, diagnostics) =
-            parser::parse_with_diagnostics(&self.contents, &goal::parser_config());
+            parser::parse_with_diagnostics(&self.contents, &goal::SCHEMA.parser_config());
         if diagnostics
             .iter()
             .any(|diagnostic| diagnostic.severity() == Severity::Error)

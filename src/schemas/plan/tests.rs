@@ -106,7 +106,7 @@ fn combines_parser_and_independent_schema_diagnostics() {
 
     assert!(found
             .iter()
-            .any(|entry| entry.2.contains("expected an expanded item")));
+            .any(|entry| entry.2.contains("expected `-`")));
     assert!(found
             .iter()
             .any(|entry| entry.2.contains("metadata `Status`")));

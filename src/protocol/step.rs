@@ -67,7 +67,7 @@ impl Task {
         set_metadata(&mut step, "Status", "done")?;
         set_metadata(&mut step, "Updated", &updated)?;
         for id in &done_items {
-            plan.plan_item_mut(id)
+            plan.expanded_item_mut("Plan Items", id)
                 .and_then(|item| item.metadatum_mut("Status"))
                 .ok_or_else(|| format!("plan item {id} has no single Status"))?
                 .set_value("done")?;
@@ -268,7 +268,7 @@ fn coverage_blockers(plan: &Artifact<'_>, step: &Artifact<'_>) -> Vec<String> {
     for item in section_items(step, "Plan Item Coverage") {
         let text = item.short_description().text();
         let id = text.split_once(" - ").map_or(text, |(id, _)| id).trim();
-        let status = plan.plan_item(id).map(|item| {
+        let status = plan.expanded_item("Plan Items", id).map(|item| {
             item.metadata()
                 .iter()
                 .find(|metadata| metadata.value().key() == "Status")

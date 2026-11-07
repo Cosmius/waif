@@ -81,7 +81,7 @@ mod component_parsers {
         assert_eq!(item.value().identifier.as_ref().unwrap().text(), "P1");
         assert_eq!(item.value().delimiter().unwrap().text(), ":");
         assert_eq!(item.value().title().text(), "First");
-        assert_eq!(item.value().content().text(), "body\n");
+        assert_eq!(item.value().body().text(), "body\n");
         assert_eq!(
             item_context.cursor.peek_line(),
             Some((true, "### P2: Second"))
@@ -505,14 +505,14 @@ mod configured_itemised_sections {
         assert_eq!(first.delimiter().unwrap().text(), ":");
         assert_eq!(first_item.short_description().text(), "α");
         assert!(source[first_item.span().range()].contains("opaque body"));
-        assert!(first.content().text().contains("#### A deeper heading"));
-        assert!(first.content().text().contains("- Before:"));
-        assert!(first.content().text().contains("- G-AC1:"));
+        assert!(first.body().text().contains("#### A deeper heading"));
+        assert!(first.body().text().contains("- Before:"));
+        assert!(first.body().text().contains("- G-AC1:"));
         assert!(first
-            .content()
+            .body()
             .text()
             .contains("- malformed compact-looking"));
-        assert!(first.content().text().contains("- nested list"));
+        assert!(first.body().text().contains("- nested list"));
         assert_eq!(
             &source[first.marker().span().range()],
             first.marker().text()
@@ -527,8 +527,8 @@ mod configured_itemised_sections {
             first_item.short_description().text()
         );
         assert_eq!(
-            &source[first.content().span().range()],
-            first.content().text()
+            &source[first.body().span().range()],
+            first.body().text()
         );
         assert_eq!(
             &source[first_item.span().range()],
@@ -546,7 +546,7 @@ mod configured_itemised_sections {
         assert!(items[1].identifier().is_none());
         assert!(expanded(&items[1]).delimiter().is_none());
         assert_eq!(expanded(&items[1]).title().text(), "missing delimiter");
-        assert_eq!(expanded(&items[1]).content().text(), "second body\n");
+        assert_eq!(expanded(&items[1]).body().text(), "second body\n");
         assert!(items[2].identifier().is_none());
         assert!(expanded(&items[2]).delimiter().is_none());
         assert_eq!(expanded(&items[2]).title().text(), ": empty identifier");
@@ -574,7 +574,7 @@ mod configured_itemised_sections {
         assert_eq!(expanded_item.form(), crate::artifact::ItemForm::Expanded);
         assert_eq!(expanded_item.identifier().unwrap().text(), "G-AC1");
         assert_eq!(expanded_item.short_description().text(), "expanded");
-        assert_eq!(expanded(expanded_item).content().text(), "body\n");
+        assert_eq!(expanded(expanded_item).body().text(), "body\n");
     }
 
     #[test]
@@ -595,7 +595,7 @@ mod configured_itemised_sections {
         let items = itemised(&artifact.sections()[0]).items();
 
         assert_eq!(items.len(), 2);
-        let body = expanded(&items[0]).content().text();
+        let body = expanded(&items[0]).body().text();
         assert!(body.contains("### not a peer"));
         assert!(body.contains("- not a mixed form"));
         assert!(body.contains("#### deeper heading"));
@@ -844,6 +844,33 @@ mod configured_itemised_sections {
             )
         );
     }
+
+    #[test]
+    fn expanded_item_metadata_changes_preserve_other_source() {
+        let source = concat!(
+            "# Goal\r\n",
+            "## Revisions\r\n",
+            "### G-REV1: Narrow scope\r\n",
+            "- Before: old value\r\n",
+            "- Changed: kept\r\n",
+            "  - nested detail\r\n",
+            "Body text.\r\n",
+        );
+        let mut artifact = parse_with_config(source, &itemised_config("Revisions"))
+            .expect("revision should parse");
+        artifact
+            .expanded_item_mut("Revisions", "G-REV1")
+            .expect("unique revision")
+            .metadatum_mut("Before")
+            .expect("unique entry")
+            .set_value("new value")
+            .expect("value should be valid");
+
+        assert_eq!(
+            serialize(&artifact),
+            source.replacen("old value", "new value", 1)
+        );
+    }
 }
 
 mod mixed_itemised_sections {
@@ -922,7 +949,7 @@ mod mixed_itemised_sections {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].form(), ItemForm::Expanded);
         assert_eq!(
-            expanded(&items[0]).content().text(),
+            expanded(&items[0]).body().text(),
             "body\n- P-D1: too late\n"
         );
     }
@@ -945,7 +972,7 @@ mod mixed_itemised_sections {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].form(), ItemForm::Expanded);
         assert_eq!(
-            expanded(&items[0]).content().text(),
+            expanded(&items[0]).body().text(),
             "- first reason\n  - nested reason\n- prose label: still opaque\n\
                  - rationale-note: also opaque\n"
         );
@@ -1170,7 +1197,7 @@ mod plan_items {
     use super::*;
 
     fn config() -> ParserConfig<'static> {
-        ParserConfig::new(vec![SectionConfig::plan_items("Plan Items")])
+        ParserConfig::new(vec![SectionConfig::itemised("Plan Items")])
     }
 
     #[test]
@@ -1191,24 +1218,22 @@ mod plan_items {
             "- Status: done\n",
         );
         let artifact = parse_with_config(source, &config()).expect("plan items should parse");
-        let section = artifact.sections()[0]
-            .as_plan_items()
-            .expect("section should contain plan items");
+        let section = itemised(&artifact.sections()[0]);
 
         assert_eq!(section.items().len(), 2);
         let first = &section.items()[0];
-        assert_eq!(first.value().identifier().expect("identifier").text(), "P1");
-        assert_eq!(first.value().title().text(), "First item");
-        assert_eq!(first.value().metadata().len(), 3);
-        assert_eq!(first.value().metadata()[0].value().key(), "Status");
-        assert_eq!(first.value().metadata()[0].value().value(), "pending");
-        assert_eq!(first.value().metadata()[1].value().key(), "Goal criteria");
-        assert_eq!(first.value().metadata()[2].value().key(), "Status");
+        assert_eq!(first.identifier().expect("identifier").text(), "P1");
+        assert_eq!(expanded(first).title().text(), "First item");
+        assert_eq!(expanded(first).metadata().len(), 3);
+        assert_eq!(expanded(first).metadata()[0].value().key(), "Status");
+        assert_eq!(expanded(first).metadata()[0].value().value(), "pending");
+        assert_eq!(expanded(first).metadata()[1].value().key(), "Goal criteria");
+        assert_eq!(expanded(first).metadata()[2].value().key(), "Status");
         assert_eq!(
-            first.value().metadata()[2].value().value(),
+            expanded(first).metadata()[2].value().value(),
             "opaque after boundary"
         );
-        assert!(first.value().prose().text().contains("#### Details"));
+        assert!(expanded(first).body().text().contains("#### Details"));
         let first_source = &source[first.span().range()];
         assert!(first_source.starts_with("### P1: First item"));
         assert!(!first_source.contains("### P2: Second item"));
@@ -1233,16 +1258,13 @@ mod plan_items {
         let artifact = parse_with_config(source, &config()).expect("fences should be honored");
         assert_eq!(artifact.title(), "Plan");
         assert_eq!(artifact.sections().len(), 1);
-        let items = artifact.sections()[0]
-            .as_plan_items()
-            .expect("plan items")
-            .items();
+        let items = itemised(&artifact.sections()[0]).items();
 
         assert_eq!(items.len(), 2);
-        assert!(items[0].value().prose().text().contains("# Fenced title"));
-        assert!(items[0].value().prose().text().contains("## Fenced section"));
-        assert!(items[0].value().prose().text().contains("### P999: fenced example"));
-        assert_eq!(items[1].value().identifier().expect("identifier").text(), "P2");
+        assert!(expanded(&items[0]).body().text().contains("# Fenced title"));
+        assert!(expanded(&items[0]).body().text().contains("## Fenced section"));
+        assert!(expanded(&items[0]).body().text().contains("### P999: fenced example"));
+        assert_eq!(items[1].identifier().expect("identifier").text(), "P2");
     }
 
     #[test]
@@ -1257,10 +1279,7 @@ mod plan_items {
             "- Status: done\r\n",
         );
         let artifact = parse_with_config(source, &config()).expect("plan items should parse");
-        let items = artifact.sections()[0]
-            .as_plan_items()
-            .expect("plan items")
-            .items();
+        let items = itemised(&artifact.sections()[0]).items();
         let first = &items[0];
 
         let item_start = source.find("### P1: First").expect("first item start");
@@ -1270,14 +1289,14 @@ mod plan_items {
 
         let status_start = source.find("- Status: pending").expect("status start");
         let status_end = status_start + "- Status: pending\r\n".len();
-        assert_eq!(first.value().metadata()[0].span().range(), status_start..status_end);
-        assert_eq!(first.value().metadata()[0].span().start_line(), 4);
+        assert_eq!(expanded(first).metadata()[0].span().range(), status_start..status_end);
+        assert_eq!(expanded(first).metadata()[0].span().start_line(), 4);
 
-        assert_eq!(first.value().metadata().len(), 2);
-        assert_eq!(first.value().metadata()[1].value().key(), "Outcome");
-        assert_eq!(first.value().prose().span().range(), item_end..item_end);
-        assert_eq!(first.value().prose().span().start_line(), 6);
-        assert_eq!(first.value().prose().text(), "");
+        assert_eq!(expanded(first).metadata().len(), 2);
+        assert_eq!(expanded(first).metadata()[1].value().key(), "Outcome");
+        assert_eq!(expanded(first).body().span().range(), item_end..item_end);
+        assert_eq!(expanded(first).body().span().start_line(), 6);
+        assert_eq!(expanded(first).body().text(), "");
     }
 
     #[test]
@@ -1292,9 +1311,9 @@ mod plan_items {
         );
         let mut artifact = parse_with_config(source, &config()).expect("plan should parse");
 
-        assert!(artifact.plan_item("P").is_none());
+        assert!(artifact.expanded_item("Plan Items", "P").is_none());
         assert_eq!(
-            artifact.plan_item("P1").expect("exact item").title().text(),
+            artifact.expanded_item("Plan Items", "P1").expect("exact item").title().text(),
             "値"
         );
         artifact.metadata_mut()[0]
@@ -1302,7 +1321,7 @@ mod plan_items {
             .set_value("amending")
             .expect("top-level status should be mutable");
         artifact
-            .plan_item_mut("P1")
+            .expanded_item_mut("Plan Items", "P1")
             .expect("exact item")
             .metadatum_mut("Status")
             .expect("unique status")
@@ -1333,10 +1352,10 @@ mod plan_items {
         );
         let mut artifact = parse_with_config(source, &config()).expect("structure should parse");
 
-        assert!(artifact.plan_item("P1").is_none());
-        assert!(artifact.plan_item_mut("P1").is_none());
+        assert!(artifact.expanded_item("Plan Items", "P1").is_none());
+        assert!(artifact.expanded_item_mut("Plan Items", "P1").is_none());
         assert!(artifact
-            .plan_item_mut("P2")
+            .expanded_item_mut("Plan Items", "P2")
             .expect("unique item")
             .metadatum_mut("Status")
             .is_none());
@@ -1357,7 +1376,7 @@ mod plan_items {
             let mut artifact =
                 parse_with_config(&source, &config()).expect("plan item should parse");
             let status = artifact
-                .plan_item_mut("P1")
+                .expanded_item_mut("Plan Items", "P1")
                 .expect("exact item")
                 .metadatum_mut("Status")
                 .expect("unique status");
@@ -1367,10 +1386,10 @@ mod plan_items {
                 serialize(&artifact),
                 source.replacen("- Status: pending", "- Status: done", 1)
             );
-            let item = artifact.plan_item("P1").expect("item");
+            let item = artifact.expanded_item("Plan Items", "P1").expect("item");
             assert_eq!(item.metadata().len(), 2);
             assert_eq!(item.metadata()[1].value().key(), "Outcome");
-            assert_eq!(item.prose().text(), "");
+            assert_eq!(item.body().text(), "");
         }
     }
 
@@ -1386,16 +1405,13 @@ mod plan_items {
         );
 
         let (artifact, diagnostics) = parse_with_diagnostics(source, &config());
-        let items = artifact.sections()[0]
-            .as_plan_items()
-            .expect("plan items")
-            .items();
+        let items = itemised(&artifact.sections()[0]).items();
 
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].line(), 3);
         assert_eq!(diagnostics[0].message(), "unexpected code block");
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].value().identifier().expect("identifier").text(), "P2");
+        assert_eq!(items[0].identifier().expect("identifier").text(), "P2");
     }
 
     #[test]
@@ -1408,20 +1424,17 @@ mod plan_items {
             "### : Missing identifier\n",
         );
         let artifact = parse_with_config(source, &config()).expect("items should parse");
-        let items = artifact.sections()[0]
-            .as_plan_items()
-            .expect("plan items")
-            .items();
+        let items = itemised(&artifact.sections()[0]).items();
 
         assert_eq!(items.len(), 3);
-        assert_eq!(items[0].value().identifier().expect("identifier").text(), "P1");
-        assert_eq!(items[0].value().prose().text(), "");
-        assert!(items[0].value().metadata().is_empty());
-        assert!(items[1].value().identifier().is_none());
-        assert!(items[1].value().item.value().delimiter().is_none());
-        assert!(items[2].value().identifier().is_none());
-        assert!(items[2].value().item.value().delimiter().is_none());
-        assert_eq!(items[2].value().title().text(), ": Missing identifier");
+        assert_eq!(items[0].identifier().expect("identifier").text(), "P1");
+        assert_eq!(expanded(&items[0]).body().text(), "");
+        assert!(expanded(&items[0]).metadata().is_empty());
+        assert!(items[1].identifier().is_none());
+        assert!(expanded(&items[1]).delimiter().is_none());
+        assert!(items[2].identifier().is_none());
+        assert!(expanded(&items[2]).delimiter().is_none());
+        assert_eq!(expanded(&items[2]).title().text(), ": Missing identifier");
     }
 
     #[test]
@@ -1439,12 +1452,9 @@ mod plan_items {
         let artifact = parse_with_config(source, &config()).expect("structure should parse");
 
         assert_eq!(artifact.sections().len(), 2);
-        let items = artifact.sections()[0]
-            .as_plan_items()
-            .expect("plan items")
-            .items();
+        let items = itemised(&artifact.sections()[0]).items();
         assert_eq!(items.len(), 2);
-        assert!(items[1].value().identifier().is_none());
+        assert!(items[1].identifier().is_none());
         assert_eq!(artifact.sections()[1].title(), "Following section");
 
         let diagnostics = parse_with_config(
@@ -1512,18 +1522,43 @@ mod findings {
     use super::*;
 
     fn config() -> ParserConfig<'static> {
-        ParserConfig::new(vec![SectionConfig::findings("Findings")])
+        ParserConfig::new(vec![
+            SectionConfig::itemised("Findings").with_sentinel("No findings.")
+        ])
     }
 
     #[test]
     fn parses_the_exact_no_findings_sentinel() {
         let source = "# Review\n## Findings\nNo findings.\n";
         let artifact = parse_with_config(source, &config()).expect("should parse");
-        let section = artifact.sections()[0]
-            .as_findings()
-            .expect("findings section should be structured");
-        assert_eq!(section.body().as_sentinel(), Some("No findings."));
-        assert_eq!(section.body().span().start_line(), 3);
+        let sentinel = itemised(&artifact.sections()[0])
+            .sentinel()
+            .expect("findings section should hold the sentinel");
+        assert_eq!(sentinel.text(), "No findings.");
+        assert_eq!(sentinel.span().start_line(), 3);
+    }
+
+    #[test]
+    fn reports_the_sentinel_with_a_finding_and_parses_later_sections() {
+        let source = concat!(
+            "# Review\n",
+            "## Findings\n",
+            "No findings.\n",
+            "\n",
+            "### F1: Example\n",
+            "## Next\n",
+            "text\n",
+        );
+
+        let (artifact, diagnostics) = parse_with_diagnostics(source, &config());
+        let items = itemised(&artifact.sections()[0]).items();
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].severity(), Severity::Error);
+        assert_eq!(diagnostics[0].line(), 3);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].identifier().expect("ID").text(), "F1");
+        assert_eq!(artifact.sections()[1].title(), "Next");
     }
 
     #[test]
@@ -1545,7 +1580,7 @@ mod findings {
     }
 
     #[test]
-    fn parses_expanded_findings_and_preserves_opaque_bodies() {
+    fn parses_expanded_findings() {
         let source = concat!(
             "# Review\n",
             "## Findings\n",
@@ -1555,13 +1590,9 @@ mod findings {
             "text\n",
         );
         let artifact = parse_with_config(source, &config()).expect("should parse");
-        let section = artifact.sections()[0]
-            .as_findings()
-            .expect("findings section should be structured");
-        let items = section.body().items().expect("expanded findings");
+        let items = itemised(&artifact.sections()[0]).items();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].identifier().expect("ID").text(), "F1");
-        assert_eq!(items[0].content().text(), "- Severity: opaque\n");
         assert_eq!(artifact.sections()[1].title(), "Next");
     }
 
@@ -1577,10 +1608,7 @@ mod findings {
             "## Next\n",
         );
         let artifact = parse_with_config(source, &config()).expect("should parse");
-        let section = artifact.sections()[0]
-            .as_findings()
-            .expect("findings section should be structured");
-        assert_eq!(section.body().items().expect("items").len(), 1);
+        assert_eq!(itemised(&artifact.sections()[0]).items().len(), 1);
         assert_eq!(artifact.sections()[1].title(), "Next");
     }
 }

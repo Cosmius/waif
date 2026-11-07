@@ -1,5 +1,5 @@
 use crate::artifact::Artifact;
-use crate::parser::{self, Diagnostic, ParserConfig, SectionConfig};
+use crate::parser::{self, Diagnostic};
 use crate::schema::{
     self, metadata_validators, ArtifactPrefixRule, ItemRule, MetadataRule, PlanItemRule, Schema,
     SectionRule,
@@ -75,27 +75,14 @@ fn full_commit(value: &str) -> Result<(), String> {
 }
 
 pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {
-    parser::parse_with_config(source, &parser_config())
+    parser::parse_with_config(source, &SCHEMA.parser_config())
 }
 
 pub(crate) fn check(source: &str) -> Vec<Diagnostic> {
-    let (artifact, mut diagnostics) = parser::parse_with_diagnostics(source, &parser_config());
+    let (artifact, mut diagnostics) =
+        parser::parse_with_diagnostics(source, &SCHEMA.parser_config());
     diagnostics.extend(schema::validate(&artifact, &SCHEMA));
     diagnostics
-}
-
-fn parser_config() -> ParserConfig<'static> {
-    ParserConfig::new(vec![
-        SectionConfig::prose("Technical Summary"),
-        SectionConfig::itemised("Decisions"),
-        SectionConfig::itemised("Open Questions"),
-        SectionConfig::itemised("Assumptions"),
-        SectionConfig::prose("Current System"),
-        SectionConfig::plan_items("Plan Items"),
-        SectionConfig::itemised("Risks"),
-        SectionConfig::itemised("Cross-Cutting Validation"),
-        SectionConfig::itemised("Revisions"),
-    ])
 }
 
 #[cfg(test)]

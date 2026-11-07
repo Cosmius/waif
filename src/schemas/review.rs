@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use crate::artifact::{Artifact, FindingsBody, Metadata};
-use crate::parser::{self, Diagnostic, ParserConfig, Position, SectionConfig};
+use crate::artifact::{Artifact, Item, Located, Metadata};
+use crate::parser::{self, Diagnostic, Position};
 use crate::schema::{
     self, metadata_validators, unpadded_decimal, ArtifactPrefixRule, ArtifactPrefixShape,
     FindingsRule, ItemRule, MetadataRule, Schema, SectionRule,
@@ -38,18 +38,22 @@ const METADATA: [MetadataRule; 5] = [
 ];
 
 const SECTIONS: [SectionRule; 4] = [
-    SectionRule::new("Findings").with_findings(FindingsRule { family: "F" }),
+    SectionRule::new("Findings").with_findings(FindingsRule {
+        family: "F",
+        sentinel: "No findings.",
+    }),
     SectionRule::optional("Scope").with_items(ItemRule::new("SC")),
     SectionRule::optional("Validation").with_items(ItemRule::new("V")),
     SectionRule::optional("Residual Risks").with_items(ItemRule::new("RR")),
 ];
 
 pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {
-    parser::parse_with_config(source, &parser_config())
+    parser::parse_with_config(source, &SCHEMA.parser_config())
 }
 
 pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
-    let (artifact, mut diagnostics) = parser::parse_with_diagnostics(source, &parser_config());
+    let (artifact, mut diagnostics) =
+        parser::parse_with_diagnostics(source, &SCHEMA.parser_config());
     let (schema_diagnostics, prefix) = schema::validate_with_prefix(&artifact, &SCHEMA);
     diagnostics.extend(schema_diagnostics);
 
@@ -108,15 +112,6 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
         }
     }
     diagnostics
-}
-
-fn parser_config() -> ParserConfig<'static> {
-    ParserConfig::new(vec![
-        SectionConfig::findings("Findings"),
-        SectionConfig::itemised("Scope"),
-        SectionConfig::itemised("Validation"),
-        SectionConfig::itemised("Residual Risks"),
-    ])
 }
 
 fn step_path(value: &str) -> Result<(), String> {
@@ -182,28 +177,34 @@ fn validate_decision_findings(diagnostics: &mut Vec<Diagnostic>, artifact: &Arti
         .sections()
         .iter()
         .find(|section| section.title() == "Findings")
-        .and_then(|section| section.as_findings())
     else {
         return;
     };
-    let (empty, sentinel) = match section.body() {
-        FindingsBody::Sentinel(_) => (false, true),
-        FindingsBody::Items(items) => (items.value().is_empty(), false),
+    let Some(findings) = section.as_itemised() else {
+        return;
     };
+    let sentinel = findings.sentinel().is_some();
+    let empty = !sentinel && findings.items().is_empty();
+    let position = *findings
+        .sentinel()
+        .map(Located::span)
+        .or_else(|| findings.items().first().map(Item::span))
+        .unwrap_or(section.body_span())
+        .start();
     if empty {
         diagnostics.push(Diagnostic::error_p(
-            *section.body().span().start(),
+            position,
             "section `Findings` must contain `No findings.` or at least one finding",
         ));
     }
     match decision {
         Some("pass") if !sentinel => diagnostics.push(Diagnostic::error_p(
-            *section.body().span().start(),
+            position,
             "decision `pass` requires the exact `No findings.` sentinel",
         )),
         Some("changes-requested") if sentinel || empty => {
             diagnostics.push(Diagnostic::error_p(
-                *section.body().span().start(),
+                position,
                 "decision `changes-requested` requires at least one finding",
             ));
         }

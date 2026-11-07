@@ -372,7 +372,7 @@ Create tests.
         .with_goal(|goal| goal.metadata()[0].value().value().to_owned())
         .expect("goal should parse");
     let plan_items_are_structured = task
-        .with_plan(|plan| plan.sections()[0].as_plan_items().is_some())
+        .with_plan(|plan| plan.sections()[0].as_itemised().is_some())
         .expect("plan should parse");
 
     assert_eq!(status.as_deref(), Some("drafting"));
@@ -466,8 +466,9 @@ fn artifact_file_parsers_use_each_schema_structure() {
             .find(|section| section.title() == section_name)
             .expect("configured section should exist");
         let configured = match file.kind() {
-            ArtifactKind::Plan => section.as_plan_items().is_some(),
-            ArtifactKind::ImplementationReview => section.as_findings().is_some(),
+            ArtifactKind::ImplementationReview => section
+                .as_itemised()
+                .is_some_and(|findings| findings.sentinel().is_some()),
             _ => section.as_itemised().is_some(),
         };
         assert!(configured, "section should be configured for {name}");

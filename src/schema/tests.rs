@@ -1,14 +1,17 @@
 use super::*;
-use crate::parser::{self, ParserConfig, SectionConfig};
+use crate::parser;
 
 const FINDINGS_SCHEMA: Schema = Schema {
     prefix: ArtifactPrefixRule::Known(""),
     metadata: &[],
-    sections: &[SectionRule::new("Findings").with_findings(FindingsRule { family: "F" })],
+    sections: &[SectionRule::new("Findings").with_findings(FindingsRule {
+        family: "F",
+        sentinel: "No findings.",
+    })],
 };
 
 fn check(source: &str) -> Vec<Diagnostic> {
-    let config = ParserConfig::new(vec![SectionConfig::findings("Findings")]);
+    let config = FINDINGS_SCHEMA.parser_config();
     let (artifact, mut diagnostics) = parser::parse_with_diagnostics(source, &config);
     diagnostics.extend(validate(&artifact, &FINDINGS_SCHEMA));
     diagnostics
@@ -57,10 +60,13 @@ fn known_step_and_review_prefixes_match_exactly() {
     const REVIEW_SCHEMA: Schema = Schema {
         prefix: ArtifactPrefixRule::Known("S2-R3-"),
         metadata: &[],
-        sections: &[SectionRule::new("Findings").with_findings(FindingsRule { family: "F" })],
+        sections: &[SectionRule::new("Findings").with_findings(FindingsRule {
+            family: "F",
+            sentinel: "No findings.",
+        })],
     };
-    let step_config = ParserConfig::new(vec![SectionConfig::itemised("Changes")]);
-    let review_config = ParserConfig::new(vec![SectionConfig::findings("Findings")]);
+    let step_config = STEP_SCHEMA.parser_config();
+    let review_config = REVIEW_SCHEMA.parser_config();
 
     let step = parser::parse_with_config("# Step\n## Changes\n- S2-C1: valid\n", &step_config)
         .expect("valid step");
@@ -93,10 +99,7 @@ fn plan_items_remain_independent_of_unknown_artifact_prefixes() {
             SectionRule::new("Changes").with_items(ItemRule::new("C")),
         ],
     };
-    let config = ParserConfig::new(vec![
-        SectionConfig::plan_items("Plan Items"),
-        SectionConfig::itemised("Changes"),
-    ]);
+    let config = SCHEMA.parser_config();
     let valid = concat!(
         "# Step\n",
         "## Plan Items\n### P1: independent\n- Status: pending\n",
@@ -127,10 +130,7 @@ fn unknown_step_prefix_is_observed_once_across_item_families() {
             SectionRule::new("Tests").with_items(ItemRule::new("T")),
         ],
     };
-    let config = ParserConfig::new(vec![
-        SectionConfig::itemised("Changes"),
-        SectionConfig::itemised("Tests"),
-    ]);
+    let config = SCHEMA.parser_config();
     let source = concat!(
         "# Step\n",
         "## Changes\n- S12-C1: first\n",
@@ -156,14 +156,14 @@ fn unknown_review_prefix_is_shared_with_findings() {
         prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Review),
         metadata: &[],
         sections: &[
-            SectionRule::new("Findings").with_findings(FindingsRule { family: "F" }),
+            SectionRule::new("Findings").with_findings(FindingsRule {
+                family: "F",
+                sentinel: "No findings.",
+            }),
             SectionRule::new("Validation").with_items(ItemRule::new("V")),
         ],
     };
-    let config = ParserConfig::new(vec![
-        SectionConfig::findings("Findings"),
-        SectionConfig::itemised("Validation"),
-    ]);
+    let config = SCHEMA.parser_config();
     let source = concat!(
         "# Review\n",
         "## Findings\n### S4-R2-F1: finding\n",
@@ -190,9 +190,12 @@ fn unknown_prefix_rejects_malformed_ids_without_binding() {
     const SCHEMA: Schema = Schema {
         prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Review),
         metadata: &[],
-        sections: &[SectionRule::new("Findings").with_findings(FindingsRule { family: "F" })],
+        sections: &[SectionRule::new("Findings").with_findings(FindingsRule {
+            family: "F",
+            sentinel: "No findings.",
+        })],
     };
-    let config = ParserConfig::new(vec![SectionConfig::findings("Findings")]);
+    let config = SCHEMA.parser_config();
     for identifier in [
         "S0-R1-F1",
         "S01-R1-F1",
@@ -225,7 +228,7 @@ fn unbound_step_diagnostic_includes_prefix_trailing_dash() {
         metadata: &[],
         sections: &[SectionRule::new("Changes").with_items(ItemRule::new("C"))],
     };
-    let config = ParserConfig::new(vec![SectionConfig::itemised("Changes")]);
+    let config = SCHEMA.parser_config();
     let artifact =
         parser::parse_with_config("# Step\n## Changes\n- S0-C1: malformed prefix\n", &config)
             .expect("parsed artifact");
@@ -252,7 +255,7 @@ fn metadata_macro_skips_only_its_value_validator() {
         }],
         sections: &[],
     };
-    let config = ParserConfig::default();
+    let config = SCHEMA.parser_config();
 
     let source = "# Artifact\n- Value: prefix__NOW__suffix\n";
     let artifact = parser::parse_with_config(source, &config).expect("parsed artifact");

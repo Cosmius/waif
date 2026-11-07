@@ -1,8 +1,7 @@
 use self::cursor::Cursor;
 use crate::artifact::{
-    Artifact, CompactItem, ExpandedItem, Finding, FindingsBody, FindingsSection, Item,
-    ItemisedSection, Located, Metadata, PlanItem, PlanItemsSection, ProseSection, Section,
-    SourceSpan,
+    Artifact, CompactItem, ExpandedItem, Item, ItemisedBody, ItemisedSection, Located, Metadata,
+    ProseSection, Section, SourceSpan,
 };
 use std::fmt;
 use std::iter::repeat_n;
@@ -100,17 +99,15 @@ impl fmt::Display for Diagnostic {
 //region parser entry point
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SectionType {
+pub enum SectionType<'a> {
     Prose,
-    Itemised,
-    PlanItems,
-    Findings,
+    Itemised { sentinel: Option<&'a str> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SectionConfig<'a> {
     name: &'a str,
-    section_type: SectionType,
+    section_type: SectionType<'a>,
 }
 
 impl<'a> SectionConfig<'a> {
@@ -119,18 +116,19 @@ impl<'a> SectionConfig<'a> {
     }
 
     pub const fn itemised(name: &'a str) -> Self {
-        Self::with_type(name, SectionType::Itemised)
+        Self::with_type(name, SectionType::Itemised { sentinel: None })
     }
 
-    pub const fn plan_items(name: &'a str) -> Self {
-        Self::with_type(name, SectionType::PlanItems)
+    /// Declare the text an itemised section body may consist of instead of
+    /// items.
+    pub const fn with_sentinel(mut self, sentinel: &'a str) -> Self {
+        self.section_type = SectionType::Itemised {
+            sentinel: Some(sentinel),
+        };
+        self
     }
 
-    pub const fn findings(name: &'a str) -> Self {
-        Self::with_type(name, SectionType::Findings)
-    }
-
-    const fn with_type(name: &'a str, section_type: SectionType) -> Self {
+    const fn with_type(name: &'a str, section_type: SectionType<'a>) -> Self {
         Self { name, section_type }
     }
 }
@@ -145,7 +143,7 @@ impl<'a> ParserConfig<'a> {
         Self { sections }
     }
 
-    fn section_type(&self, name: &str) -> SectionType {
+    fn section_type(&self, name: &str) -> SectionType<'a> {
         self.sections
             .iter()
             .find(|section| section.name == name)
@@ -371,40 +369,55 @@ fn p_section<'a>(ctx: &mut ParsingContext<'_, 'a>) -> Option<Section<'a>> {
             ProseSection::new(section.title, section.content),
             span,
         ))),
-        SectionType::Itemised => {
+        SectionType::Itemised { sentinel } => {
             ctx.cursor.rewind(body_start);
-            let items = p_itemised_items(ctx, body_end);
+            let body = p_itemised_body(ctx, body_end, sentinel);
             Some(Section::Itemised(Located::new(
                 ItemisedSection {
                     title: section.title,
-                    items: Located::new(items, body_span),
-                },
-                span,
-            )))
-        }
-        SectionType::PlanItems => {
-            ctx.cursor.rewind(body_start);
-            let items = p_plan_items(ctx, body_end);
-            Some(Section::PlanItems(Located::new(
-                PlanItemsSection {
-                    title: section.title,
-                    items: Located::new(items, body_span),
-                },
-                span,
-            )))
-        }
-        SectionType::Findings => {
-            ctx.cursor.rewind(body_start);
-            let body = p_findings_body(ctx, body_end);
-            Some(Section::Findings(Located::new(
-                FindingsSection {
-                    title: section.title,
-                    body,
+                    body: Located::new(body, body_span),
                 },
                 span,
             )))
         }
     }
+}
+
+/// Parse an itemised section body: the declared `sentinel` alone, or items.
+fn p_itemised_body<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+    body_end: usize,
+    sentinel: Option<&str>,
+) -> ItemisedBody<'a> {
+    if let Some(sentinel) = sentinel {
+        if let Ok(sentinel) = ctx.try_(|ctx| p_sentinel(ctx, body_end, sentinel)) {
+            return ItemisedBody::Sentinel(sentinel);
+        }
+    }
+    ItemisedBody::Items(p_itemised_items(ctx, body_end))
+}
+
+/// Parse a section body that is exactly `sentinel`, ignoring surrounding blank
+/// lines and spaces or tabs on its line.
+fn p_sentinel<'a>(
+    ctx: &mut ParsingContext<'_, 'a>,
+    body_end: usize,
+    sentinel: &str,
+) -> Result<Located<&'a str>, ()> {
+    let old_limit = ctx.cursor.limit(body_end);
+    ctx.cursor.skip_whitespace_lines();
+    ctx.cursor.skip_whitespaces_inline();
+    let start = ctx.cursor.position();
+    for expected in sentinel.chars() {
+        ctx.cursor.take_if(|ch| ch == expected).ok_or(())?;
+    }
+    let end = ctx.cursor.position();
+    ctx.cursor.skip_whitespace_lines();
+    if !ctx.cursor.is_eof() {
+        return Err(());
+    }
+    ctx.cursor.limit(old_limit);
+    Ok(ctx.located_with_pos(start, end))
 }
 
 fn p_itemised_items<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> Vec<Item<'a>> {
@@ -480,13 +493,20 @@ fn p_expanded_item<'a>(
         Err(_) => (None, None, section.title),
     };
 
+    let content_end = *section.content.span().end();
+    subctx.cursor.rewind(*section.content.span().start());
+    subctx.cursor.limit(content_end.offset());
+    let metadata = p_metadata(&mut subctx);
+    let body = subctx.located_with_pos(subctx.cursor.position(), content_end);
+
     Ok(Located::new(
         ExpandedItem {
             marker: section.marker,
             identifier,
             title,
             delimiter,
-            content: section.content,
+            metadata,
+            body,
         },
         span,
     ))
@@ -567,65 +587,6 @@ fn p_compact_item<'a>(
             span,
         ),
     })
-}
-
-fn p_plan_items<'a>(
-    ctx: &mut ParsingContext<'_, 'a>,
-    body_end: usize,
-) -> Vec<Located<PlanItem<'a>>> {
-    p_expanded_items(ctx, body_end)
-        .into_iter()
-        .map(|item| {
-            let mut subctx = ctx.clone();
-            // let (item, span) = li.unpack();
-            subctx.cursor.rewind(*item.value().content().span().start());
-            subctx.cursor.skip_whitespace_lines();
-            let metadata = p_metadata(&mut subctx);
-            let prose_start = subctx.cursor.position();
-            let content_end = *item.span().end();
-            let span = item.span().clone();
-            Located::new(
-                PlanItem {
-                    item,
-                    metadata,
-                    prose: ctx.located_with_pos(prose_start, content_end),
-                },
-                span,
-            )
-        })
-        .collect()
-}
-
-fn p_findings_body<'a>(ctx: &mut ParsingContext<'_, 'a>, body_end: usize) -> FindingsBody<'a> {
-    ctx.cursor.skip_whitespace_lines();
-    if ctx
-        .cursor
-        .peek_line()
-        .is_some_and(|(_, line)| line.trim() == "No findings.")
-    {
-        ctx.cursor.skip_whitespaces_inline();
-        let start = ctx.cursor.position();
-        ctx.cursor.take_while(|ch| ch != '.');
-        ctx.cursor.take().expect("expect .");
-        let end = ctx.cursor.position();
-        ctx.cursor.take_line();
-        ctx.cursor.skip_whitespace_lines();
-        if !ctx.cursor.is_eof() && peek_heading_level(ctx).is_err() {
-            let pos = ctx.cursor.position();
-            ctx.diagnostics
-                .push(Diagnostic::error_p(pos, "expect a heading"));
-            ctx.cursor.skip_to_offset(body_end);
-        }
-        FindingsBody::Sentinel(ctx.located_with_pos(start, end))
-    } else {
-        let start = ctx.cursor.position();
-        let items = p_expanded_items(ctx, body_end)
-            .into_iter()
-            .map(|item| Finding { item })
-            .collect();
-        let end = ctx.cursor.position();
-        FindingsBody::Items(Located::new(items, SourceSpan::new(start, end)))
-    }
 }
 
 //endregion artifact envelope

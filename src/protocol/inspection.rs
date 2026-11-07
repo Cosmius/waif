@@ -256,14 +256,17 @@ impl PlanInspection {
 fn pending_items(plan: &Artifact<'_>) -> Vec<String> {
     plan.sections()
         .iter()
-        .filter_map(|section| section.as_plan_items())
+        .filter(|section| section.title() == "Plan Items")
+        .filter_map(|section| section.as_itemised())
         .flat_map(|section| section.items())
         .filter(|item| {
-            !item.value().metadata().iter().any(|metadata| {
-                metadata.value().key() == "Status" && metadata.value().value() == "done"
+            item.as_expanded().is_some_and(|expanded| {
+                !expanded.metadata().iter().any(|metadata| {
+                    metadata.value().key() == "Status" && metadata.value().value() == "done"
+                })
             })
         })
-        .filter_map(|item| item.value().identifier().map(|id| id.text().to_owned()))
+        .filter_map(|item| item.identifier().map(|id| id.text().to_owned()))
         .collect()
 }
 
