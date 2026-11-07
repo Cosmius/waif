@@ -363,6 +363,10 @@ impl<'a, L> ExpandedItem<'a, L> {
         &self.marker
     }
 
+    pub fn identifier(&self) -> Option<&Located<&'a str, L>> {
+        self.identifier.as_ref()
+    }
+
     pub fn delimiter(&self) -> Option<&Located<&'a str, L>> {
         self.delimiter.as_ref()
     }
@@ -374,6 +378,16 @@ impl<'a, L> ExpandedItem<'a, L> {
     /// The leading `- Key: value` entries after the heading.
     pub fn metadata(&self) -> &[Located<Metadata<'a, L>, L>] {
         &self.metadata
+    }
+
+    /// Return the entry for `key`, or `None` when it is missing or repeated.
+    pub fn metadatum(&self, key: &str) -> Option<&Metadata<'a, L>> {
+        let mut matches = self
+            .metadata
+            .iter()
+            .filter(|entry| entry.value().key() == key);
+        let entry = matches.next()?;
+        matches.next().is_none().then_some(entry.value())
     }
 
     /// Return the entry for `key`, or `None` when it is missing or repeated.

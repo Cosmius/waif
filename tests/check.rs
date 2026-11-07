@@ -44,7 +44,7 @@ const VALID_STEP: &str = concat!(
     "- Updated: 2026-08-02T12:01:00+09:00\n",
     "- Plan items: P1\n",
     "## Objective\nText.\n",
-    "## Plan Item Coverage\n- S1-PC1: P1 - complete - example\n",
+    "## Plan Item Coverage\n### S1-PC1: Example\n- Plan item: P1\n- Coverage: complete\n",
     "## Context\nText.\n",
     "## Done When\n- S1-D1: Done.\n",
 );

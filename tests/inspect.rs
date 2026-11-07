@@ -685,7 +685,7 @@ fn write_step(workspace: &TestDir, status: &str, updated: &str) {
             "# Step 1: First\n\n- Status: {status}\n- Source commit: {commit}\n\
              - Created: {TIMESTAMP}\n- Updated: {updated}\n- Plan items: P1\n\
              - Goal criteria: G-AC1\n\n## Objective\n\nDo it.\n\n\
-             ## Plan Item Coverage\n\n- S1-PC1: P1 - complete - All.\n\n\
+             ## Plan Item Coverage\n\n### S1-PC1: All\n- Plan item: P1\n- Coverage: complete\n\n\
              ## Context\n\nContext\n\n## Done When\n\n- S1-D1: Done\n"
         ),
     )

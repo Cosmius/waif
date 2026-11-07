@@ -6,9 +6,9 @@ use chrono::{Local, SecondsFormat};
 
 use super::inspection::PlanInspection;
 use super::{replace_artifact, ArtifactClassification, ArtifactFile, Result, Task};
-use crate::artifact::{serialize, Artifact};
+use crate::artifact::{serialize, Artifact, Metadata};
 use crate::git_repo::GitRepo;
-use crate::schemas::step::step_directory_number;
+use crate::schemas::step::{coverage_entries, step_directory_number};
 
 /// The outcome of a successful step commit.
 #[derive(Debug)]
@@ -229,12 +229,13 @@ fn now() -> String {
 
 /// List the plan items whose coverage entry is `complete`.
 fn complete_items(step: &Artifact<'_>) -> Vec<String> {
-    section_items(step, "Plan Item Coverage")
-        .iter()
-        .filter_map(|item| {
-            let mut fields = item.short_description().text().split(" - ");
-            let id = fields.next()?.trim();
-            (fields.next()?.trim() == "complete").then(|| id.to_owned())
+    coverage_entries(step)
+        .into_iter()
+        .filter(|entry| entry.coverage == Some("complete"))
+        .filter_map(|entry| {
+            entry
+                .plan_item
+                .map(|plan_item| plan_item.value().to_owned())
         })
         .collect()
 }
@@ -265,9 +266,10 @@ fn plan_blocker(plan: &PlanInspection) -> &'static str {
 /// The step schema already rejects duplicate coverage entries.
 fn coverage_blockers(plan: &Artifact<'_>, step: &Artifact<'_>) -> Vec<String> {
     let mut blockers = Vec::new();
-    for item in section_items(step, "Plan Item Coverage") {
-        let text = item.short_description().text();
-        let id = text.split_once(" - ").map_or(text, |(id, _)| id).trim();
+    for id in coverage_entries(step)
+        .into_iter()
+        .filter_map(|entry| entry.plan_item.map(Metadata::value))
+    {
         let status = plan.expanded_item("Plan Items", id).map(|item| {
             item.metadata()
                 .iter()

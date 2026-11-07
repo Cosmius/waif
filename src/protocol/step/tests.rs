@@ -114,7 +114,10 @@ fn step_with_open_questions_is_rejected() {
 #[test]
 fn unknown_plan_item_is_rejected() {
     let (workspace, task) = fixture("unknown-item", "drafting");
-    let source = read_step(&task).replace("- S1-PC1: P1", "- S1-PC9: P9");
+    let source = read_step(&task).replace(
+        "### S1-PC1: Part\n- Plan item: P1",
+        "### S1-PC9: Part\n- Plan item: P9",
+    );
     write_step(&task, "01-test", &source);
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
@@ -128,7 +131,10 @@ fn unknown_plan_item_is_rejected() {
 #[test]
 fn done_plan_item_is_rejected() {
     let (workspace, task) = fixture("done-item", "drafting");
-    let source = read_step(&task).replace("- S1-PC1: P1", "- S1-PC2: P2");
+    let source = read_step(&task).replace(
+        "### S1-PC1: Part\n- Plan item: P1",
+        "### S1-PC2: Part\n- Plan item: P2",
+    );
     write_step(&task, "01-test", &source);
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
@@ -143,8 +149,9 @@ fn done_plan_item_is_rejected() {
 fn duplicate_coverage_entry_is_rejected() {
     let (workspace, task) = fixture("duplicate-coverage", "drafting");
     let source = read_step(&task).replace(
-        "- S1-PC1: P1 - partial - Part.\n",
-        "- S1-PC1: P1 - partial - Part.\n- S1-PC1: P1 - partial - Again.\n",
+        "### S1-PC1: Part\n- Plan item: P1\n- Coverage: partial\n",
+        "### S1-PC1: Part\n- Plan item: P1\n- Coverage: partial\n\n\
+         ### S1-PC1: Again\n- Plan item: P1\n- Coverage: partial\n",
     );
     write_step(&task, "01-test", &source);
     let plan = fs::read(task.path.join("plan.md")).unwrap();
@@ -396,7 +403,7 @@ fn missing_steps_directory_is_rejected() {
 #[test]
 fn committing_complete_step_records_commit_and_marks_plan_item_done() {
     let (workspace, task) = fixture("commit-complete", "accepted");
-    let source = read_step(&task).replace("partial - Part.", "complete - All.");
+    let source = read_step(&task).replace("- Coverage: partial", "- Coverage: complete");
     write_step(&task, "01-test", &source);
     let repo = GitRepo::new(&workspace.path);
     let base = repo.last_commit().unwrap();
@@ -622,7 +629,7 @@ fn step_write_failure_after_commit_reports_hash_and_step() {
 #[test]
 fn plan_write_failure_after_commit_reports_hash_and_plan() {
     let (workspace, task) = fixture("commit-plan-unwritable", "accepted");
-    let source = read_step(&task).replace("partial - Part.", "complete - All.");
+    let source = read_step(&task).replace("- Coverage: partial", "- Coverage: complete");
     write_step(&task, "01-test", &source);
     install_hook(&workspace, &format!("chmod a-w '{}'", task.path.display()));
     stage(&workspace, "a.txt", "staged\n");
@@ -697,7 +704,7 @@ fn step_source(status: &str) -> String {
         "# Step 1: Test\n\n- Status: {status}\n- Source commit: not-created\n\
          - Created: {TIMESTAMP}\n- Updated: {TIMESTAMP}\n- Plan items: P1\n\
          - Goal criteria: G-AC1\n\n## Objective\n\nDo  it.\n\n\
-         ## Plan Item Coverage\n\n- S1-PC1: P1 - partial - Part.\n\n\
+         ## Plan Item Coverage\n\n### S1-PC1: Part\n- Plan item: P1\n- Coverage: partial\n\n\
          ## Context\n\nContext\n\n## Done When\n\n- S1-D1: Done\n"
     )
 }

@@ -9,7 +9,7 @@ const VALID: &str = concat!(
     "- Updated: 2026-08-02T12:01:00+09:00\n",
     "- Plan items: P2\n- Goal criteria: opaque\n",
     "## Objective\ntext\n",
-    "## Plan Item Coverage\n- S3-PC2: P2 - complete - checker\n",
+    "## Plan Item Coverage\n### S3-PC2: Checker\n- Plan item: P2\n- Coverage: complete\n",
     "## Context\ntext\n",
     "## Done When\n- S3-D1: done\n",
 );
@@ -49,20 +49,49 @@ fn aggregates_lifecycle_coverage_order_and_identity_errors() {
         .replace("- Status: accepted", "- Updated: invalid\n- Status: done")
         .replace("- Updated: 2026-08-02T12:01:00+09:00\n", "")
         .replace("not-created", "abc")
-        .replace("S3-PC2: P2", "S4-PC2: P3")
+        .replace(
+            "### S3-PC2: Checker\n- Plan item: P2",
+            "### S4-PC2: Checker\n- Plan item: P3",
+        )
         .replace("S3-D1", "S4-D1");
     let found = messages("steps/03-check/step.md", &source);
     assert!(found.len() >= 5, "{found:?}");
     assert!(found.iter().any(|entry| entry.2.contains("incompatible")));
     assert!(found
             .iter()
-            .any(|entry| entry.2.contains("must match covered")));
+            .any(|entry| entry.2.contains("expected `P2` for coverage entry `S4-PC2`")));
     assert!(found
             .iter()
             .any(|entry| entry.2.contains("containing directory")));
     assert!(found
             .iter()
             .any(|entry| { entry.1 == 11 && entry.2.contains("containing directory") }));
+}
+
+#[test]
+fn reports_a_coverage_mismatch_and_an_invalid_coverage_value() {
+    let source = VALID.replace(
+        "### S3-PC2: Checker\n- Plan item: P2\n- Coverage: complete\n",
+        "### S3-PC2: Parser support\n- Plan item: P4\n- Coverage: most\n- Note: parsing only\n",
+    );
+    let found = messages("steps/03-check/step.md", &source);
+
+    assert_eq!(found.len(), 2);
+    assert_eq!(found[0],    (Severity::Error, 13, "item metadata `Coverage` expected `partial` or `complete`, but got `most`".into()));
+    assert_eq!(found[1],    (Severity::Error, 12, "item metadata `Plan item` expected `P2` for coverage entry `S3-PC2`, but got `P4`".into()));
+}
+
+#[test]
+fn reports_missing_coverage_metadata_on_a_compact_entry() {
+    let source = VALID.replace(
+        "### S3-PC2: Checker\n- Plan item: P2\n- Coverage: complete\n",
+        "- S3-PC2: P2 - complete - checker\n",
+    );
+    let found = messages("steps/03-check/step.md", &source);
+
+    assert_eq!(found.len(), 2);
+    assert_eq!(found[0],    (Severity::Error, 11, "item in section `Plan Item Coverage` is missing required metadata `Plan item`".into()));
+    assert_eq!(found[1],    (Severity::Error, 11, "item in section `Plan Item Coverage` is missing required metadata `Coverage`".into()));
 }
 
 #[test]

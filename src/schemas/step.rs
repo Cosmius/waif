@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use crate::artifact::Artifact;
+use crate::artifact::{Artifact, Located, Metadata};
+use crate::macro_processor;
 use crate::parser::{self, Diagnostic, Position};
 use crate::schema::{
     self, metadata_validators, unpadded_decimal, ArtifactPrefixRule, ArtifactPrefixShape, ItemRule,
@@ -34,7 +35,8 @@ const METADATA: [MetadataRule; 4] = [
 
 const SECTIONS: [SectionRule; 12] = [
     SectionRule::new("Objective"),
-    SectionRule::new("Plan Item Coverage").with_items(ItemRule::new("PC")),
+    SectionRule::new("Plan Item Coverage")
+        .with_items(ItemRule::new("PC").with_metadata(&COVERAGE_METADATA)),
     SectionRule::new("Context"),
     SectionRule::optional("Open Questions").with_items(ItemRule::new("Q")),
     SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
@@ -46,6 +48,59 @@ const SECTIONS: [SectionRule; 12] = [
     SectionRule::optional("Risks and Edge Cases").with_items(ItemRule::new("R")),
     SectionRule::optional("Revisions").with_items(ItemRule::new("REV")),
 ];
+
+const COVERAGE_METADATA: [MetadataRule; 2] = [
+    MetadataRule {
+        name: "Plan item",
+        validator: any_value,
+    },
+    MetadataRule {
+        name: "Coverage",
+        validator: coverage,
+    },
+];
+
+/// Accept any value of a key that only needs to be present.
+fn any_value(_: &str) -> Result<(), String> {
+    Ok(())
+}
+
+fn coverage(value: &str) -> Result<(), String> {
+    match value {
+        "partial" | "complete" => Ok(()),
+        _ => Err(format!(
+            "expected `partial` or `complete`, but got `{value}`"
+        )),
+    }
+}
+
+/// A `Plan Item Coverage` entry. `plan_item` and `coverage` are `None` when
+/// the key is missing or repeated.
+pub(crate) struct CoverageEntry<'s, 'a> {
+    pub(crate) identifier: Option<&'s Located<&'a str>>,
+    pub(crate) plan_item: Option<&'s Metadata<'a>>,
+    pub(crate) coverage: Option<&'s str>,
+}
+
+/// Read the coverage of every expanded `Plan Item Coverage` entry in source
+/// order. Placeholders carry no coverage and are skipped.
+pub(crate) fn coverage_entries<'s, 'a>(step: &'s Artifact<'a>) -> Vec<CoverageEntry<'s, 'a>> {
+    step.sections()
+        .iter()
+        .find(|section| section.title() == "Plan Item Coverage")
+        .and_then(|section| section.as_itemised())
+        .map_or(&[][..], |section| section.items())
+        .iter()
+        .filter_map(|item| {
+            let expanded = item.as_expanded()?;
+            Some(CoverageEntry {
+                identifier: expanded.identifier(),
+                plan_item: expanded.metadatum("Plan item"),
+                coverage: expanded.metadatum("Coverage").map(Metadata::value),
+            })
+        })
+        .collect()
+}
 
 pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {
     parser::parse_with_config(source, &SCHEMA.parser_config())
@@ -151,43 +206,30 @@ fn validate_lifecycle(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) {
     }
 }
 
+/// Report a `Plan item` that is not `P<m>` for coverage entry `S<n>-PC<m>`.
 fn validate_coverage(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) {
-    let Some(section) = artifact
-        .sections()
-        .iter()
-        .find(|section| section.title() == "Plan Item Coverage")
-        .and_then(|section| section.as_itemised())
-    else {
-        return;
-    };
-    for item in section.items() {
-        let id_number = item
-            .identifier()
-            .and_then(|id| id.text().rsplit_once("-PC"))
-            .and_then(|(_, number)| unpadded_decimal(number));
-        let short_description = item.short_description().text();
-        let parsed = short_description
-            .strip_prefix('P')
-            .and_then(|description| description.split_once(" - "))
-            .and_then(|(number, rest)| {
-                let number = unpadded_decimal(number)?;
-                let (coverage, description) = rest.split_once(" - ")?;
-                matches!(coverage, "partial" | "complete").then_some((number, description))
-            });
-        match (id_number, parsed) {
-            (Some(id), Some((plan, description))) if !description.trim().is_empty() => {
-                if id != plan {
-                    diagnostics.push(Diagnostic::error_p(
-                        *item.span().start(),
-                        format!("coverage ID suffix `{id}` must match covered plan ID `P{plan}`"),
-                    ));
-                }
-            }
-            (Some(_), _) => diagnostics.push(Diagnostic::error_p(
-                *item.span().start(),
-                "coverage entry must use `P<number> - partial | complete - <description>`",
-            )),
-            _ => {}
+    for entry in coverage_entries(artifact) {
+        let (Some(identifier), Some(plan_item)) = (entry.identifier, entry.plan_item) else {
+            continue;
+        };
+        let Some(number) = identifier
+            .text()
+            .rsplit_once("-PC")
+            .and_then(|(_, number)| unpadded_decimal(number))
+        else {
+            continue;
+        };
+        let value = plan_item.value();
+        let expected = format!("P{number}");
+        if value != expected && macro_processor::scan(value).is_empty() {
+            diagnostics.push(Diagnostic::error_p(
+                *plan_item.located_value().span().start(),
+                format!(
+                    "item metadata `Plan item` expected `{expected}` for coverage entry `{}`, \
+                     but got `{value}`",
+                    identifier.text()
+                ),
+            ));
         }
     }
 }
