@@ -3,8 +3,8 @@ use std::path::Path;
 use crate::artifact::{Artifact, Item, Located, Metadata};
 use crate::parser::{self, Diagnostic, Position};
 use crate::schema::{
-    self, metadata_validators, unpadded_decimal, ArtifactPrefixRule, ArtifactPrefixShape,
-    FindingsRule, ItemRule, MetadataRule, Schema, SectionRule,
+    self, metadata_validators, unpadded_decimal, ArtifactPrefixRule, ArtifactPrefixShape, ItemRule,
+    MetadataRule, Schema, SectionRule,
 };
 use crate::schemas::step::step_directory_number;
 
@@ -38,10 +38,7 @@ const METADATA: [MetadataRule; 5] = [
 ];
 
 const SECTIONS: [SectionRule; 4] = [
-    SectionRule::new("Findings").with_findings(FindingsRule {
-        family: "F",
-        sentinel: "No findings.",
-    }),
+    SectionRule::new("Findings").with_items(ItemRule::new("F").with_sentinel("No findings.")),
     SectionRule::optional("Scope").with_items(ItemRule::new("SC")),
     SectionRule::optional("Validation").with_items(ItemRule::new("V")),
     SectionRule::optional("Residual Risks").with_items(ItemRule::new("RR")),
@@ -184,25 +181,18 @@ fn validate_decision_findings(diagnostics: &mut Vec<Diagnostic>, artifact: &Arti
         return;
     };
     let sentinel = findings.sentinel().is_some();
-    let empty = !sentinel && findings.items().is_empty();
     let position = *findings
         .sentinel()
         .map(Located::span)
         .or_else(|| findings.items().first().map(Item::span))
         .unwrap_or(section.body_span())
         .start();
-    if empty {
-        diagnostics.push(Diagnostic::error_p(
-            position,
-            "section `Findings` must contain `No findings.` or at least one finding",
-        ));
-    }
     match decision {
         Some("pass") if !sentinel => diagnostics.push(Diagnostic::error_p(
             position,
             "decision `pass` requires the exact `No findings.` sentinel",
         )),
-        Some("changes-requested") if sentinel || empty => {
+        Some("changes-requested") if findings.items().is_empty() => {
             diagnostics.push(Diagnostic::error_p(
                 position,
                 "decision `changes-requested` requires at least one finding",

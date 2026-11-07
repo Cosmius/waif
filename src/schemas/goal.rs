@@ -32,7 +32,7 @@ const SECTIONS: [SectionRule; 7] = [
     SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
     SectionRule::optional("In Scope").with_items(ItemRule::new("IN")),
     SectionRule::optional("Out of Scope").with_items(ItemRule::new("OUT")),
-    SectionRule::optional("Revisions").with_items(ItemRule::new("REV").expanded_only()),
+    SectionRule::optional("Revisions").with_items(ItemRule::new("REV")),
 ];
 
 pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {

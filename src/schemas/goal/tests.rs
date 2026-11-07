@@ -214,34 +214,6 @@ fn reports_missing_and_duplicate_known_or_unknown_sections() {
 }
 
 #[test]
-fn enforces_expanded_revisions_but_accepts_both_ordinary_forms() {
-    let compact_revisions = format!("{VALID}## Revisions\n- G-REV1: compact\n");
-    let diagnostics = messages(&compact_revisions);
-    assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].0, Severity::Error);
-    assert!(diagnostics[0].2.contains("requires expanded items"));
-
-    for revisions in [
-        "## Revisions\n### G-REV1: expanded\nopaque body\n",
-        "## In Scope\n- G-IN1: compact\n",
-        "## In Scope\n### G-IN1: expanded\nopaque body\n",
-    ] {
-        assert_eq!(messages(&format!("{VALID}{revisions}")), []);
-    }
-}
-
-#[test]
-fn rejects_mixed_forms_in_an_ordinary_itemised_section() {
-    let source = format!("{VALID}## In Scope\n- G-IN1: compact\n### G-IN2: expanded\n");
-    let diagnostics = messages(&source);
-
-    assert!(diagnostics.iter().any(|entry| {
-            entry.1 == 11
-                && entry.2 == "itemised section `In Scope` cannot mix compact and expanded items"
-        }));
-}
-
-#[test]
 fn accepts_every_item_namespace_and_opaque_content() {
     let source = concat!(
         "# Goal\n",
@@ -249,7 +221,7 @@ fn accepts_every_item_namespace_and_opaque_content() {
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
         "## Outcome\ntext\n",
-        "## Acceptance Criteria\n### G-AC1:\n",
+        "## Acceptance Criteria\n### G-AC1: titled\n",
         "## Open Questions\n### G-Q3: question\nopaque body\n",
         "## Assumptions\n- G-A4:\n",
         "## In Scope\n- G-IN2: [ ] content is opaque\n",
@@ -398,26 +370,18 @@ fn reports_empty_sections_as_non_failing_warnings() {
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
         "## Outcome\n\n",
-        "## Acceptance Criteria\n\n",
+        "## Acceptance Criteria\n- G-AC1: one\n",
         "## Custom\n \t\n",
     );
     let diagnostics = messages(source);
 
-    assert_eq!(diagnostics.len(), 3);
+    assert_eq!(diagnostics.len(), 2);
     assert_eq!(
             diagnostics[0],
             (Severity::Warning, 5, "section `Outcome` is empty".into(),)
         );
     assert_eq!(
             diagnostics[1],
-            (
-                Severity::Warning,
-                7,
-                "section `Acceptance Criteria` is empty".into(),
-            )
-        );
-    assert_eq!(
-            diagnostics[2],
             (Severity::Warning, 9, "section `Custom` is empty".into(),)
         );
 }

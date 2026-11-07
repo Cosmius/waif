@@ -112,7 +112,7 @@ fn validates_title_directory_and_plain_done_when() {
 }
 
 #[test]
-fn validates_optional_section_order_forms_and_numeric_bounds() {
+fn validates_optional_section_order_and_numeric_bounds() {
     let out_of_order = VALID.replace(
         "## Done When\n- S3-D1: done",
         "## Changes\n- S3-C1: change\n## Done When\n- S3-D1: done",
@@ -120,11 +120,6 @@ fn validates_optional_section_order_forms_and_numeric_bounds() {
     assert!(messages("steps/03-check/step.md", &out_of_order)
             .iter()
             .any(|entry| entry.2.contains("must appear before")));
-
-    let compact_revision = format!("{VALID}## Revisions\n- S3-REV1: compact\n");
-    assert!(messages("steps/03-check/step.md", &compact_revision)
-            .iter()
-            .any(|entry| entry.2.contains("requires expanded items")));
 
     let overflow = VALID.replace("S3-D1", "S9223372036854775808-D1");
     assert!(messages("steps/03-check/step.md", &overflow)

@@ -269,7 +269,7 @@ pub enum Item<'a, L = SourceSpan> {
     Expanded(Located<ExpandedItem<'a, L>, L>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ItemForm {
     Compact,
     Expanded,
@@ -341,6 +341,10 @@ impl<'a, L> CompactItem<'a, L> {
 
     pub fn delimiter(&self) -> Option<&Located<&'a str, L>> {
         self.delimiter.as_ref()
+    }
+
+    pub fn identifier(&self) -> Option<&Located<&'a str, L>> {
+        self.identifier.as_ref()
     }
 }
 

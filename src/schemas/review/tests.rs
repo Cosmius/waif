@@ -28,6 +28,12 @@ fn accepts_pass_and_changes_requested_reviews() {
 }
 
 #[test]
+fn accepts_a_sentinel_surrounded_by_spaces_and_a_tab() {
+    let padded = PASS.replace("No findings.", " \tNo findings.  ");
+    assert!(check(Path::new("steps/04-check/review1.md"), &padded).is_empty());
+}
+
+#[test]
 fn aggregates_metadata_section_and_decision_errors() {
     let source = PASS
         .replace("- Step: ./step.md\n", "- Step: wrong\n")
@@ -88,7 +94,7 @@ fn rejects_empty_findings_and_mixed_review_prefixes() {
     let diagnostics = check(Path::new("steps/04-check/review1.md"), &empty);
     assert!(diagnostics.iter().any(|diagnostic| diagnostic
             .message()
-            .contains("section `Findings` must contain")));
+            .contains("section `Findings` must not be empty")));
 
     let mixed = PASS.replace("S4-R1-V1", "S4-R2-V1");
     let diagnostics = check(Path::new("steps/04-check/review1.md"), &mixed);

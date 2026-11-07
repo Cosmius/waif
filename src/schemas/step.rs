@@ -44,7 +44,7 @@ const SECTIONS: [SectionRule; 12] = [
     SectionRule::optional("Tests").with_items(ItemRule::new("T")),
     SectionRule::optional("Validation").with_items(ItemRule::new("V")),
     SectionRule::optional("Risks and Edge Cases").with_items(ItemRule::new("R")),
-    SectionRule::optional("Revisions").with_items(ItemRule::new("REV").expanded_only()),
+    SectionRule::optional("Revisions").with_items(ItemRule::new("REV")),
 ];
 
 pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {

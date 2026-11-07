@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use crate::artifact::{Artifact, Item, ItemForm, Located, Section, SourceSpan};
+use crate::artifact::{Artifact, Item, ItemForm, Located, Metadata, Section, SourceSpan};
 use crate::macro_processor;
 use crate::parser::{Diagnostic, ParserConfig, Position, SectionConfig};
 
@@ -16,19 +16,18 @@ pub(crate) struct Schema {
 
 impl Schema {
     /// Derive the parser configuration from the section rules: sections with
-    /// item, plan-item, or findings rules are itemised, and others are prose.
+    /// an item rule are itemised, and others are prose.
     pub(crate) fn parser_config(&self) -> ParserConfig<'static> {
         ParserConfig::new(
             self.sections
                 .iter()
-                .map(|rule| {
-                    if let Some(findings) = rule.findings {
-                        SectionConfig::itemised(rule.name).with_sentinel(findings.sentinel)
-                    } else if rule.items.is_some() || rule.plan_items.is_some() {
-                        SectionConfig::itemised(rule.name)
-                    } else {
-                        SectionConfig::prose(rule.name)
-                    }
+                .map(|rule| match rule.items {
+                    Some(ItemRule {
+                        sentinel: Some(sentinel),
+                        ..
+                    }) => SectionConfig::itemised(rule.name).with_sentinel(sentinel),
+                    Some(_) => SectionConfig::itemised(rule.name),
+                    None => SectionConfig::prose(rule.name),
                 })
                 .collect(),
         )
@@ -58,8 +57,6 @@ pub(crate) struct SectionRule {
     pub(crate) name: &'static str,
     pub(crate) required: bool,
     pub(crate) items: Option<ItemRule>,
-    pub(crate) plan_items: Option<PlanItemRule>,
-    pub(crate) findings: Option<FindingsRule>,
 }
 
 impl SectionRule {
@@ -68,8 +65,6 @@ impl SectionRule {
             name,
             required: true,
             items: None,
-            plan_items: None,
-            findings: None,
         }
     }
 
@@ -78,8 +73,6 @@ impl SectionRule {
             name,
             required: false,
             items: None,
-            plan_items: None,
-            findings: None,
         }
     }
 
@@ -87,69 +80,45 @@ impl SectionRule {
         self.items = Some(items);
         self
     }
-
-    pub(crate) const fn with_plan_items(mut self, plan_items: PlanItemRule) -> Self {
-        self.plan_items = Some(plan_items);
-        self
-    }
-
-    pub(crate) const fn with_findings(mut self, findings: FindingsRule) -> Self {
-        self.findings = Some(findings);
-        self
-    }
 }
 
+/// The configuration of an itemised section.
 #[derive(Clone, Copy)]
 pub(crate) struct ItemRule {
+    /// The ID family, such as `AC` in `G-AC1`.
     pub(crate) family: &'static str,
-    pub(crate) expanded_family: Option<&'static str>,
-    pub(crate) forms: ItemForms,
+    /// Keys that every item except a placeholder must carry as metadata.
+    pub(crate) metadata: &'static [MetadataRule],
+    /// The text that may form the whole section body instead of items.
+    pub(crate) sentinel: Option<&'static str>,
+    /// Whether IDs omit the artifact prefix, as plan items do.
+    pub(crate) unprefixed: bool,
 }
 
 impl ItemRule {
     pub(crate) const fn new(family: &'static str) -> Self {
         Self {
             family,
-            expanded_family: None,
-            forms: ItemForms::Consistent,
+            metadata: &[],
+            sentinel: None,
+            unprefixed: false,
         }
     }
 
-    pub(crate) const fn expanded_only(mut self) -> Self {
-        self.forms = ItemForms::ExpandedOnly;
+    pub(crate) const fn with_metadata(mut self, metadata: &'static [MetadataRule]) -> Self {
+        self.metadata = metadata;
         self
     }
 
-    pub(crate) const fn mixed(mut self) -> Self {
-        self.forms = ItemForms::Mixed;
+    pub(crate) const fn with_sentinel(mut self, sentinel: &'static str) -> Self {
+        self.sentinel = Some(sentinel);
         self
     }
 
-    pub(crate) const fn with_expanded_family(mut self, family: &'static str) -> Self {
-        self.expanded_family = Some(family);
+    pub(crate) const fn unprefixed(mut self) -> Self {
+        self.unprefixed = true;
         self
     }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum ItemForms {
-    Consistent,
-    ExpandedOnly,
-    // The parser represents itemised sections as compact items followed by
-    // expanded items. Once an expanded item starts, compact-looking bullets
-    // are its opaque body, so a compact item cannot structurally follow it.
-    Mixed,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct PlanItemRule {
-    pub(crate) statuses: &'static [&'static str],
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct FindingsRule {
-    pub(crate) family: &'static str,
-    pub(crate) sentinel: &'static str,
 }
 
 //endregion schema definition
@@ -160,7 +129,7 @@ struct ValidationContext {
     schema: Schema,
     diagnostics: Vec<Diagnostic>,
     observed_prefix: Option<ObservedArtifactPrefix>,
-    item_seq_map: HashMap<&'static str, ItemSeq>,
+    item_seq_map: HashMap<(&'static str, ItemForm), ItemSeq>,
 }
 
 impl ValidationContext {
@@ -176,16 +145,19 @@ impl ValidationContext {
     fn on_seeing_id(
         &mut self,
         section_name: &str,
-        family: &'static str,
+        sequence: (&'static str, ItemForm),
         number: i64,
         position: Position,
         id_text: &str,
         prefix_for_error_info: &str,
     ) {
-        let item_seq = self.item_seq_map.entry(family).or_insert_with(|| ItemSeq {
-            seen: HashSet::new(),
-            last: 0,
-        });
+        let item_seq = self
+            .item_seq_map
+            .entry(sequence)
+            .or_insert_with(|| ItemSeq {
+                seen: HashSet::new(),
+                last: 0,
+            });
         if !item_seq.seen.insert(number) {
             self.diagnostics.push(Diagnostic::error_p(
                 position,
@@ -243,33 +215,9 @@ pub(crate) fn validate_with_prefix(
 }
 
 fn validate_metadata(ctx: &mut ValidationContext, artifact: &Artifact) {
-    let mut seen = HashSet::new();
-
-    for metadata in artifact.metadata() {
-        let pos = *metadata.span().start();
-        let metadata = metadata.value();
-        let key = metadata.key();
-        if !seen.insert(key) {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                pos,
-                format!("duplicate metadata key `{key}`"),
-            ));
-        }
-
-        if let Some(rule) = ctx.schema.metadata.iter().find(|rule| rule.name == key) {
-            let value = metadata.value();
-            if macro_processor::scan(value).is_empty() {
-                if let Err(message) = (rule.validator)(value) {
-                    ctx.diagnostics.push(Diagnostic::error_p(
-                        pos,
-                        format!("metadata `{}` {message}", rule.name),
-                    ));
-                }
-            }
-        }
-    }
-
-    for rule in ctx.schema.metadata {
+    let rules = ctx.schema.metadata;
+    let seen = validate_entries(ctx, artifact.metadata(), rules, "metadata");
+    for rule in rules {
         if !seen.contains(rule.name) {
             ctx.diagnostics.push(Diagnostic::error_p(
                 *artifact.located_title().span().end(),
@@ -277,6 +225,42 @@ fn validate_metadata(ctx: &mut ValidationContext, artifact: &Artifact) {
             ));
         }
     }
+}
+
+/// Report repeated keys and values rejected by their rule's validator, which
+/// is skipped for a value containing a macro. Return the keys seen.
+fn validate_entries<'a>(
+    ctx: &mut ValidationContext,
+    entries: &[Located<Metadata<'a>>],
+    rules: &[MetadataRule],
+    kind: &str,
+) -> HashSet<&'a str> {
+    let mut seen = HashSet::new();
+
+    for entry in entries {
+        let pos = *entry.span().start();
+        let metadata = entry.value();
+        let key = metadata.key();
+        if !seen.insert(key) {
+            ctx.diagnostics.push(Diagnostic::error_p(
+                pos,
+                format!("duplicate {kind} key `{key}`"),
+            ));
+        }
+
+        if let Some(rule) = rules.iter().find(|rule| rule.name == key) {
+            let value = metadata.value();
+            if macro_processor::scan(value).is_empty() {
+                if let Err(message) = (rule.validator)(value) {
+                    ctx.diagnostics.push(Diagnostic::error_p(
+                        pos,
+                        format!("{kind} `{}` {message}", rule.name),
+                    ));
+                }
+            }
+        }
+    }
+    seen
 }
 
 fn validate_sections(ctx: &mut ValidationContext, artifact: &Artifact) {
@@ -292,13 +276,6 @@ fn validate_sections(ctx: &mut ValidationContext, artifact: &Artifact) {
                 format!("duplicate section `{name}`"),
             ));
         }
-        if section_is_empty(section) {
-            ctx.diagnostics.push(Diagnostic::warning_p(
-                pos,
-                format!("section `{name}` is empty"),
-            ));
-        }
-
         let Some((rank, rule)) = ctx
             .schema
             .sections
@@ -306,8 +283,21 @@ fn validate_sections(ctx: &mut ValidationContext, artifact: &Artifact) {
             .enumerate()
             .find(|(_, rule)| rule.name == name)
         else {
+            if section_is_empty(section) {
+                ctx.diagnostics.push(empty_section_warning(pos, name));
+            }
             continue;
         };
+        if section_is_empty(section) {
+            if rule.required && rule.items.is_some() {
+                ctx.diagnostics.push(Diagnostic::error_p(
+                    pos,
+                    format!("required section `{name}` must not be empty"),
+                ));
+            } else {
+                ctx.diagnostics.push(empty_section_warning(pos, name));
+            }
+        }
         if let Some((greatest_rank, greatest_name)) = greatest_known {
             if rank < greatest_rank {
                 ctx.diagnostics.push(Diagnostic::error_p(
@@ -324,12 +314,6 @@ fn validate_sections(ctx: &mut ValidationContext, artifact: &Artifact) {
         if let Some(item_rule) = rule.items {
             validate_items(ctx, section, item_rule);
         }
-        if let Some(plan_item_rule) = rule.plan_items {
-            validate_plan_items(ctx, section, plan_item_rule);
-        }
-        if let Some(findings_rule) = rule.findings {
-            validate_findings(ctx, section, findings_rule);
-        }
     }
 
     for rule in ctx.schema.sections.iter().filter(|rule| rule.required) {
@@ -342,6 +326,7 @@ fn validate_sections(ctx: &mut ValidationContext, artifact: &Artifact) {
     }
 }
 
+/// Validate every item of an itemised section against the section's rule.
 fn validate_items(ctx: &mut ValidationContext, section: &Section, rule: ItemRule) {
     let section_name = section.title();
     let Some(section) = section.as_itemised() else {
@@ -351,223 +336,125 @@ fn validate_items(ctx: &mut ValidationContext, section: &Section, rule: ItemRule
         ));
         return;
     };
-    validate_item_forms(ctx, section_name, section.items(), rule.forms);
+    let prefix = if rule.unprefixed {
+        ArtifactPrefixRule::Known("")
+    } else {
+        ctx.schema.prefix
+    };
+    let expanded_ids: HashSet<_> = section
+        .items()
+        .iter()
+        .filter(|item| item.form() == ItemForm::Expanded)
+        .filter_map(Item::identifier)
+        .map(Located::text)
+        .collect();
 
     for item in section.items() {
-        let Some(identifier) = item.identifier() else {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                *item.span().start(),
-                format!(
-                    "item in section `{}` is missing an identifier; expected `{}<number>`",
-                    section_name,
-                    expected_identifier(
-                        ctx.schema.prefix,
-                        rule.family,
-                        ctx.observed_prefix.as_ref()
-                    )
-                ),
-            ));
-            continue;
-        };
-        let identifier_text = identifier.text();
-        let family = match item.form() {
-            ItemForm::Compact => rule.family,
-            ItemForm::Expanded => rule.expanded_family.unwrap_or(rule.family),
-        };
-        let Ok(number) = match_item_identifier(ctx, family, identifier) else {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                *identifier.span().start(),
-                format!(
-                    "item identifier `{identifier_text}` in section `{}` must use \
-                     `{}<number>`, where number is from 1 through `2^63 - 1`",
-                    section_name,
-                    expected_identifier(ctx.schema.prefix, family, ctx.observed_prefix.as_ref())
-                ),
-            ));
-            continue;
-        };
-        let prefix_for_error_info =
-            expected_identifier(ctx.schema.prefix, family, ctx.observed_prefix.as_ref());
-        ctx.on_seeing_id(
-            section_name,
-            family,
-            number,
-            *identifier.span().start(),
-            identifier_text,
-            &prefix_for_error_info,
-        );
-    }
-}
+        validate_item_identifier(ctx, section_name, rule.family, prefix, item);
 
-fn validate_item_forms(
-    ctx: &mut ValidationContext,
-    section_name: &str,
-    items: &[Item],
-    forms: ItemForms,
-) {
-    let required = match forms {
-        ItemForms::Consistent => match items.first() {
-            Some(first) => first.form(),
-            None => return,
-        },
-        ItemForms::ExpandedOnly => ItemForm::Expanded,
-        ItemForms::Mixed => return,
-    };
-    let Some(conflicting) = items.iter().find(|item| item.form() != required) else {
-        return;
-    };
-
-    match forms {
-        ItemForms::Consistent => ctx.diagnostics.push(Diagnostic::error_p(
-            *conflicting.span().start(),
-            format!("itemised section `{section_name}` cannot mix compact and expanded items"),
-        )),
-        ItemForms::ExpandedOnly => ctx.diagnostics.push(Diagnostic::error_p(
-            *conflicting.span().start(),
-            format!("section `{section_name}` requires expanded items in `### ID: title` form"),
-        )),
-        ItemForms::Mixed => unreachable!("mixed forms return before comparison"),
-    }
-}
-
-fn validate_plan_items(ctx: &mut ValidationContext, section: &Section, rule: PlanItemRule) {
-    let section_name = section.title();
-    let Some(section) = section.as_itemised() else {
-        ctx.diagnostics.push(Diagnostic::error_p(
-            *section.located_title().span().start(),
-            format!("section {section_name} must be an itemised section"),
-        ));
-        return;
-    };
-    validate_item_forms(ctx, section_name, section.items(), ItemForms::ExpandedOnly);
-
-    for item in section.items() {
-        let Some(expanded) = item.as_expanded() else {
-            continue;
+        let pos = *item.span().start();
+        let seen = match item {
+            Item::Expanded(ei) => {
+                if ei.value().title().text().is_empty() {
+                    ctx.diagnostics.push(Diagnostic::error_p(
+                        pos,
+                        format!("item in section `{section_name}` is missing a title"),
+                    ));
+                }
+                validate_entries(ctx, ei.value().metadata(), rule.metadata, "item metadata")
+            }
+            Item::Compact(ci) => {
+                match ci.value().identifier() {
+                    Some(identifier) if expanded_ids.contains(identifier.text()) => {
+                        // A placeholder stands in for its expanded item and
+                        // carries no metadata of its own.
+                        if is_placeholder(item.short_description().text()) {
+                            continue;
+                        }
+                        ctx.diagnostics.push(Diagnostic::error_p(
+                            pos,
+                            format!(
+                                "compact item `{}` in section `{section_name}` shares its \
+                                 identifier with an expanded item but does not start with \
+                                 `Vide infra`",
+                                identifier.text()
+                            ),
+                        ));
+                    }
+                    _ => {}
+                }
+                HashSet::new()
+            }
         };
-        let statuses: Vec<_> = expanded
-            .metadata()
-            .iter()
-            .filter(|entry| entry.value().key() == "Status")
-            .collect();
-        if statuses.is_empty() {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                *item.span().start(),
-                format!(
-                    "plan item in section `{section_name}` is missing required metadata `Status`"
-                ),
-            ));
-        }
-        for status in &statuses {
-            if !rule.statuses.contains(&status.value().value()) {
+        for metadata_rule in rule.metadata {
+            if !seen.contains(metadata_rule.name) {
                 ctx.diagnostics.push(Diagnostic::error_p(
-                    *status.span().start(),
+                    pos,
                     format!(
-                        "plan-item metadata `Status` expected {}, but got `{}`",
-                        joined_choices(rule.statuses),
-                        status.value().value()
+                        "item in section `{section_name}` is missing required metadata `{}`",
+                        metadata_rule.name
                     ),
                 ));
             }
         }
-        for duplicate in statuses.iter().skip(1) {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                *duplicate.span().start(),
-                "duplicate plan-item metadata key `Status`",
-            ));
-        }
-        if expanded.title().text().is_empty() {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                *item.span().start(),
-                format!("plan item in section `{section_name}` is missing a title"),
-            ));
-        }
-        let Some(identifier) = item.identifier() else {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                *item.span().start(),
-                format!("plan item in section `{section_name}` is missing an identifier"),
-            ));
-            continue;
-        };
-        let Some(number) = identifier
-            .text()
-            .strip_prefix('P')
-            .and_then(unpadded_decimal)
-        else {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                *identifier.span().start(),
-                format!(
-                    "plan item identifier `{}` in section `{section_name}` must use \
-                 `P<number>`, where number is from 1 through `2^63 - 1`",
-                    identifier.text()
-                ),
-            ));
-            continue;
-        };
-        ctx.on_seeing_id(
-            section_name,
-            "P",
-            number,
-            *identifier.span().start(),
-            identifier.text(),
-            "P",
-        );
     }
 }
 
-fn validate_findings(ctx: &mut ValidationContext, section: &Section, rule: FindingsRule) {
-    let section_name = section.title();
-    let Some(section) = section.as_itemised() else {
+/// Check an item's ID against the section's family and track its order and
+/// uniqueness within the item's group of compact or expanded items.
+fn validate_item_identifier(
+    ctx: &mut ValidationContext,
+    section_name: &str,
+    family: &'static str,
+    prefix: ArtifactPrefixRule,
+    item: &Item,
+) {
+    let Some(identifier) = item.identifier() else {
         ctx.diagnostics.push(Diagnostic::error_p(
-            *section.located_title().span().start(),
-            format!("section {section_name} must be an itemised section"),
+            *item.span().start(),
+            format!(
+                "item in section `{}` is missing an identifier; expected `{}<number>`",
+                section_name,
+                expected_identifier(prefix, family, ctx.observed_prefix.as_ref())
+            ),
         ));
         return;
     };
-    if section.sentinel().is_some() {
-        return;
-    }
-    validate_item_forms(ctx, section_name, section.items(), ItemForms::ExpandedOnly);
-
-    for finding in section.items() {
-        if finding.form() != ItemForm::Expanded {
-            continue;
-        }
-        let Some(identifier) = finding.identifier() else {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                *finding.span().start(),
-                format!("finding in section `{section_name}` is missing an identifier"),
-            ));
-            continue;
-        };
-        let Ok(number) = match_item_identifier(ctx, rule.family, identifier) else {
-            ctx.diagnostics.push(Diagnostic::error_p(
-                *identifier.span().start(),
-                format!(
-                    "finding identifier `{}` in section `{section_name}` must use \
+    let identifier_text = identifier.text();
+    let Ok(number) = match_item_identifier(ctx, prefix, family, identifier) else {
+        ctx.diagnostics.push(Diagnostic::error_p(
+            *identifier.span().start(),
+            format!(
+                "item identifier `{identifier_text}` in section `{}` must use \
                  `{}<number>`, where number is from 1 through `2^63 - 1`",
-                    identifier.text(),
-                    expected_identifier(
-                        ctx.schema.prefix,
-                        rule.family,
-                        ctx.observed_prefix.as_ref()
-                    )
-                ),
-            ));
-            continue;
-        };
+                section_name,
+                expected_identifier(prefix, family, ctx.observed_prefix.as_ref())
+            ),
+        ));
+        return;
+    };
+    let prefix_for_error_info = expected_identifier(prefix, family, ctx.observed_prefix.as_ref());
+    ctx.on_seeing_id(
+        section_name,
+        (family, item.form()),
+        number,
+        *identifier.span().start(),
+        identifier_text,
+        &prefix_for_error_info,
+    );
+}
 
-        let prefix_for_error_info =
-            expected_identifier(ctx.schema.prefix, rule.family, ctx.observed_prefix.as_ref());
-        ctx.on_seeing_id(
-            section_name,
-            rule.family,
-            number,
-            *finding.span().start(),
-            identifier.text(),
-            &prefix_for_error_info,
-        );
-    }
+/// Whether compact item content starts with `Vide infra` or `vide infra` as a
+/// whole word.
+fn is_placeholder(content: &str) -> bool {
+    let rest = match content.strip_prefix("Vide infra") {
+        Some(rest) => rest,
+        None => match content.strip_prefix("vide infra") {
+            Some(rest) => rest,
+            None => return false,
+        },
+    };
+    !rest.starts_with(|ch: char| ch.is_alphanumeric() || ch == '_')
 }
 
 //endregion validations
@@ -606,6 +493,10 @@ pub(crate) mod metadata_validators {
 
 //region helpers
 
+fn empty_section_warning(pos: Position, name: &str) -> Diagnostic {
+    Diagnostic::warning_p(pos, format!("section `{name}` is empty"))
+}
+
 fn section_is_empty(section: &Section) -> bool {
     match section {
         Section::Prose(section) => section.value().body().trim().is_empty(),
@@ -635,21 +526,14 @@ fn expected_identifier(
     }
 }
 
-fn joined_choices(choices: &[&str]) -> String {
-    choices
-        .iter()
-        .map(|choice| format!("`{choice}`"))
-        .collect::<Vec<_>>()
-        .join(" or ")
-}
-
 fn match_item_identifier(
     ctx: &mut ValidationContext,
+    prefix: ArtifactPrefixRule,
     family: &str,
     identifier: &Located<&str>,
 ) -> Result<i64, ()> {
     let text = identifier.text();
-    let (prefix_end, components) = match ctx.schema.prefix {
+    let (prefix_end, components) = match prefix {
         ArtifactPrefixRule::Known(prefix) => {
             if !text.starts_with(prefix) {
                 return Err(());
@@ -663,7 +547,7 @@ fn match_item_identifier(
         .and_then(unpadded_decimal)
         .ok_or(())?;
 
-    if matches!(ctx.schema.prefix, ArtifactPrefixRule::Unknown(_)) {
+    if matches!(prefix, ArtifactPrefixRule::Unknown(_)) {
         let prefix_text = &text[..prefix_end];
         if let Some(previous) = ctx.observed_prefix.as_ref() {
             if previous.text != prefix_text {

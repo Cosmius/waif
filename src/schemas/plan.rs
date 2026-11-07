@@ -1,8 +1,7 @@
 use crate::artifact::Artifact;
 use crate::parser::{self, Diagnostic};
 use crate::schema::{
-    self, metadata_validators, ArtifactPrefixRule, ItemRule, MetadataRule, PlanItemRule, Schema,
-    SectionRule,
+    self, metadata_validators, ArtifactPrefixRule, ItemRule, MetadataRule, Schema, SectionRule,
 };
 
 const SCHEMA: Schema = Schema {
@@ -44,17 +43,32 @@ const METADATA: [MetadataRule; 7] = [
 
 const SECTIONS: [SectionRule; 9] = [
     SectionRule::new("Technical Summary"),
-    SectionRule::new("Decisions").with_items(ItemRule::new("D").with_expanded_family("DD").mixed()),
+    SectionRule::new("Decisions").with_items(ItemRule::new("D")),
     SectionRule::optional("Open Questions").with_items(ItemRule::new("Q")),
     SectionRule::optional("Assumptions").with_items(ItemRule::new("A")),
     SectionRule::new("Current System"),
-    SectionRule::new("Plan Items").with_plan_items(PlanItemRule {
-        statuses: &["pending", "done"],
-    }),
+    SectionRule::new("Plan Items").with_items(
+        ItemRule::new("P")
+            .unprefixed()
+            .with_metadata(&PLAN_ITEM_METADATA),
+    ),
     SectionRule::new("Risks").with_items(ItemRule::new("R")),
     SectionRule::new("Cross-Cutting Validation").with_items(ItemRule::new("V")),
-    SectionRule::optional("Revisions").with_items(ItemRule::new("REV").expanded_only()),
+    SectionRule::optional("Revisions").with_items(ItemRule::new("REV")),
 ];
+
+const PLAN_ITEM_METADATA: [MetadataRule; 1] = [MetadataRule {
+    name: "Status",
+    validator: plan_item_status,
+}];
+
+fn plan_item_status(value: &str) -> Result<(), String> {
+    if matches!(value, "pending" | "done") {
+        Ok(())
+    } else {
+        Err(format!("expected `pending` or `done`, but got `{value}`"))
+    }
+}
 
 fn exact_goal(value: &str) -> Result<(), String> {
     (value == "./goal.md")

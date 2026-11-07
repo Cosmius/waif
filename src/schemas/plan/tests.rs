@@ -9,7 +9,7 @@ const VALID: &str = concat!(
     "- Created: 2026-08-01T10:00:00+09:00\n",
     "- Updated: 2026-08-01T11:00:00+09:00\n",
     "## Technical Summary\ntext\n",
-    "## Decisions\n- P-D1: compact\n### P-DD1: Expanded\nbody\n",
+    "## Decisions\n- P-D1: compact\n### P-D2: Expanded\nbody\n",
     "## Current System\ntext\n",
     "## Plan Items\n### P1: First\n- Status: pending\n",
     "- Goal criteria: opaque\n#### Detail\ntext\n",
@@ -34,16 +34,15 @@ fn validates_metadata_sections_and_decision_families_exhaustively() {
     let source = VALID
         .replace("- Goal: ./goal.md", "- Goal: goal.md")
         .replace("- Branch: waif/task", "- Branch: ")
-        .replace("## Risks", "## Revisions\n- P-REV1: compact\n## Risks")
         .replace("- P-D1: compact", "- P-DD1: wrong")
-        .replace("### P-DD1: Expanded", "### P-D1: Wrong");
+        .replace("### P-D2: Expanded", "### P-DD2: Wrong");
     let found = messages(&source);
     assert!(
             found
                 .iter()
                 .filter(|entry| entry.0 == Severity::Error)
                 .count()
-                >= 5
+                >= 4
         );
     assert!(found
             .iter()
@@ -51,11 +50,7 @@ fn validates_metadata_sections_and_decision_families_exhaustively() {
     assert!(found
             .iter()
             .any(|entry| entry.2.contains("metadata `Branch`")));
-    assert!(found.iter().any(|entry| entry.2.contains("P-D<number>")));
-    assert!(found.iter().any(|entry| entry.2.contains("P-DD<number>")));
-    assert!(found
-            .iter()
-            .any(|entry| entry.2.contains("requires expanded items")));
+    assert_eq!(found.iter().filter(|entry| entry.2.contains("P-D<number>")).count(), 2);
 }
 
 #[test]
@@ -73,7 +68,7 @@ fn validates_plan_item_ids_titles_and_statuses() {
     assert!(found.iter().any(|entry| entry.2.contains("got `blocked`")));
     assert!(found
             .iter()
-            .any(|entry| entry.2.contains("duplicate plan-item")));
+            .any(|entry| entry.2.contains("duplicate item metadata key `Status`")));
     assert!(found
             .iter()
             .any(|entry| entry.2.contains("missing a title")));

@@ -256,8 +256,7 @@ fn check_aggregates_plan_schema_errors_with_other_artifacts() {
         .replace(
             "### P1: Item\n- Status: pending",
             "### P0: Item\n- Status: blocked",
-        )
-        .replace("## Risks", "## Revisions\n- P-REV1: wrong form\n## Risks");
+        );
     fs::write(directory.path.join("goal.md"), VALID_GOAL).expect("goal should be written");
     fs::write(directory.path.join("plan.md"), plan).expect("plan should be written");
 
@@ -267,9 +266,8 @@ fn check_aggregates_plan_schema_errors_with_other_artifacts() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr.contains("plan.md:2: ERROR: metadata `Status`"));
-    assert!(stderr.contains("plan item identifier `P0`"));
-    assert!(stderr.contains("plan-item metadata `Status`"));
-    assert!(stderr.contains("section `Revisions` requires expanded items"));
+    assert!(stderr.contains("item identifier `P0`"));
+    assert!(stderr.contains("item metadata `Status`"));
     assert!(stdout.contains("checked 2 artifact(s); 1 invalid"));
 }
 
@@ -351,6 +349,7 @@ fn check_reports_warning_only_goals_as_valid() {
         "- Updated: 2026-07-31T21:00:00+09:00\n",
         "## Outcome\n",
         "## Acceptance Criteria\n",
+        "- G-AC1: Checked.\n",
     );
     fs::write(&artifact, source).expect("goal should be written");
 
@@ -360,7 +359,6 @@ fn check_reports_warning_only_goals_as_valid() {
 
     assert!(output.status.success());
     assert!(stderr.contains("goal.md:5: WARNING: section `Outcome` is empty"));
-    assert!(stderr.contains("goal.md:6: WARNING: section `Acceptance Criteria` is empty"));
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
 }
 

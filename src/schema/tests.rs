@@ -4,10 +4,8 @@ use crate::parser;
 const FINDINGS_SCHEMA: Schema = Schema {
     prefix: ArtifactPrefixRule::Known(""),
     metadata: &[],
-    sections: &[SectionRule::new("Findings").with_findings(FindingsRule {
-        family: "F",
-        sentinel: "No findings.",
-    })],
+    sections: &[SectionRule::optional("Findings")
+        .with_items(ItemRule::new("F").with_sentinel("No findings."))],
 };
 
 fn check(source: &str) -> Vec<Diagnostic> {
@@ -60,10 +58,8 @@ fn known_step_and_review_prefixes_match_exactly() {
     const REVIEW_SCHEMA: Schema = Schema {
         prefix: ArtifactPrefixRule::Known("S2-R3-"),
         metadata: &[],
-        sections: &[SectionRule::new("Findings").with_findings(FindingsRule {
-            family: "F",
-            sentinel: "No findings.",
-        })],
+        sections: &[SectionRule::new("Findings")
+            .with_items(ItemRule::new("F").with_sentinel("No findings."))],
     };
     let step_config = STEP_SCHEMA.parser_config();
     let review_config = REVIEW_SCHEMA.parser_config();
@@ -89,13 +85,26 @@ fn known_step_and_review_prefixes_match_exactly() {
 
 #[test]
 fn plan_items_remain_independent_of_unknown_artifact_prefixes() {
+    fn pending(value: &str) -> Result<(), String> {
+        if value == "pending" {
+            Ok(())
+        } else {
+            Err(format!("expected `pending`, but got `{value}`"))
+        }
+    }
+
     const SCHEMA: Schema = Schema {
         prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Step),
         metadata: &[],
         sections: &[
-            SectionRule::new("Plan Items").with_plan_items(PlanItemRule {
-                statuses: &["pending"],
-            }),
+            SectionRule::new("Plan Items").with_items(
+                ItemRule::new("P")
+                    .unprefixed()
+                    .with_metadata(&[MetadataRule {
+                        name: "Status",
+                        validator: pending,
+                    }]),
+            ),
             SectionRule::new("Changes").with_items(ItemRule::new("C")),
         ],
     };
@@ -156,10 +165,8 @@ fn unknown_review_prefix_is_shared_with_findings() {
         prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Review),
         metadata: &[],
         sections: &[
-            SectionRule::new("Findings").with_findings(FindingsRule {
-                family: "F",
-                sentinel: "No findings.",
-            }),
+            SectionRule::new("Findings")
+                .with_items(ItemRule::new("F").with_sentinel("No findings.")),
             SectionRule::new("Validation").with_items(ItemRule::new("V")),
         ],
     };
@@ -190,10 +197,8 @@ fn unknown_prefix_rejects_malformed_ids_without_binding() {
     const SCHEMA: Schema = Schema {
         prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::Review),
         metadata: &[],
-        sections: &[SectionRule::new("Findings").with_findings(FindingsRule {
-            family: "F",
-            sentinel: "No findings.",
-        })],
+        sections: &[SectionRule::new("Findings")
+            .with_items(ItemRule::new("F").with_sentinel("No findings."))],
     };
     let config = SCHEMA.parser_config();
     for identifier in [
@@ -243,10 +248,6 @@ fn unbound_step_diagnostic_includes_prefix_trailing_dash() {
 
 #[test]
 fn metadata_macro_skips_only_its_value_validator() {
-    fn reject_value(value: &str) -> Result<(), String> {
-        Err(format!("rejected `{value}`"))
-    }
-
     const SCHEMA: Schema = Schema {
         prefix: ArtifactPrefixRule::Known(""),
         metadata: &[MetadataRule {
@@ -270,4 +271,128 @@ fn metadata_macro_skips_only_its_value_validator() {
     let diagnostics = validate(&artifact, &SCHEMA);
     assert_eq!(diagnostics.len(), 1);
     assert!(diagnostics[0].message().contains("duplicate metadata key `Value`"));
+}
+
+fn reject_value(value: &str) -> Result<(), String> {
+    Err(format!("rejected `{value}`"))
+}
+
+const ITEMS_SCHEMA: Schema = Schema {
+    prefix: ArtifactPrefixRule::Known("X-"),
+    metadata: &[],
+    sections: &[
+        SectionRule::new("Decisions").with_items(ItemRule::new("D")),
+        SectionRule::optional("Records").with_items(ItemRule::new("R").with_metadata(&[
+            MetadataRule {
+                name: "Key",
+                validator: reject_value,
+            },
+        ])),
+    ],
+};
+
+fn check_items(source: &str) -> Vec<Diagnostic> {
+    let (artifact, mut diagnostics) =
+        parser::parse_with_diagnostics(source, &ITEMS_SCHEMA.parser_config());
+    diagnostics.extend(validate(&artifact, &ITEMS_SCHEMA));
+    diagnostics
+}
+
+#[test]
+fn orders_compact_and_expanded_items_independently() {
+    let source = concat!(
+        "# Artifact\n",
+        "## Decisions\n",
+        "- X-D1: Keep the parser line-oriented.\n",
+        "- X-D3: Reject unknown section names.\n",
+        "\n",
+        "### X-D2: Storage format\n",
+    );
+
+    assert!(check_items(source).is_empty());
+}
+
+#[test]
+fn accepts_a_placeholder_before_its_expanded_item() {
+    let source = concat!(
+        "# Artifact\n",
+        "## Decisions\n",
+        "- X-D2: vide infra; see the trade-offs below\n",
+        "  - covers storage and caching\n",
+        "\n",
+        "### X-D2: Storage format\n",
+    );
+
+    assert!(check_items(source).is_empty());
+}
+
+#[test]
+fn rejects_a_compact_item_sharing_an_expanded_id_without_vide_infra() {
+    let source = concat!(
+        "# Artifact\n",
+        "## Decisions\n",
+        "- X-D2: See below.\n",
+        "\n",
+        "### X-D2: Storage format\n",
+    );
+    let diagnostics = check_items(source);
+
+    assert_eq!(diagnostics.len(),     1);
+    assert_eq!(diagnostics[0].line(), 3);
+    assert!(diagnostics[0].message().contains("compact item `X-D2` in section `Decisions` shares its identifier"));
+}
+
+#[test]
+fn rejects_a_repeated_item_metadata_key_without_required_metadata() {
+    let source = concat!(
+        "# Artifact\n",
+        "## Decisions\n",
+        "### X-D1: Storage format\n",
+        "- Reason: speed\n",
+        "- Reason: size\n",
+    );
+    let diagnostics = check_items(source);
+
+    assert_eq!(diagnostics.len(),        1);
+    assert_eq!(diagnostics[0].line(),    5);
+    assert_eq!(diagnostics[0].message(), "duplicate item metadata key `Reason`");
+}
+
+#[test]
+fn reports_required_metadata_missing_from_a_compact_item() {
+    let source = concat!(
+        "# Artifact\n",
+        "## Decisions\n",
+        "- X-D1: Decision.\n",
+        "## Records\n",
+        "- X-R1: Compact record.\n",
+    );
+    let diagnostics = check_items(source);
+
+    assert_eq!(diagnostics.len(),     1);
+    assert_eq!(diagnostics[0].line(), 5);
+    assert!(diagnostics[0].message().contains("missing required metadata `Key`"));
+}
+
+#[test]
+fn skips_a_required_metadata_validator_for_a_macro_value() {
+    let source = concat!(
+        "# Artifact\n",
+        "## Decisions\n",
+        "- X-D1: Decision.\n",
+        "## Records\n",
+        "### X-R1: Record\n",
+        "- Key: __NOW__\n",
+    );
+
+    assert!(check_items(source).is_empty());
+}
+
+#[test]
+fn rejects_an_empty_required_itemised_section() {
+    let diagnostics = check_items("# Artifact\n## Decisions\n\n");
+
+    assert_eq!(diagnostics.len(),         1);
+    assert_eq!(diagnostics[0].severity(), crate::parser::Severity::Error);
+    assert_eq!(diagnostics[0].message(),  "required section `Decisions` must not be empty");
 }
