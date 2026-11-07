@@ -90,7 +90,6 @@ When findings exist, order them by severity:
 ## Findings
 
 ### S1-R1-F1: High - {{ short title }}
-
 - Location: `path/to/file:line`
 - Problem: {{ observable defect or risk }}
 - Impact: {{ why it matters }}

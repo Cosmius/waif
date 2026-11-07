@@ -15,8 +15,9 @@
 ## Decisions
 
 - P-D1: {{ Technical decision, rationale, and alternatives rejected }}
+- P-D2: Vide infra, {{ crucial decision name }}.
 
-### P-DD1: {{ Crucial technical decision }}
+### P-D2: {{ Crucial technical decision }}
 
 {{ Further explanation for a decision that needs its own section. }}
 
@@ -35,7 +36,6 @@
 ## Plan Items
 
 ### P1: {{ Broad implementation unit }}
-
 - Status: pending
 - Goal criteria: G-AC1
 - Outcome: {{ technical result }}
@@ -44,7 +44,6 @@
 - Validation: `{{ command or observable check }}`
 
 ### P2: {{ Broad implementation unit }}
-
 - Status: pending
 - Goal criteria: G-AC1, G-AC2
 - Outcome: {{ technical result }}
@@ -63,7 +62,6 @@
 ## Revisions
 
 ### P-REV1: YYYY-MM-DDTHH:MM:SS+HH:MM - {{ amendment title }}
-
 - Before: {{ What the accepted plan said before this amendment. }}
 - Changed:
   - {{ Change made during this amendment cycle. }}

@@ -19,6 +19,9 @@ macro_rules! embed {
 
 /// Every file any package ships; targets select from it by path.
 static CONTENT: &[(&str, &[u8])] = embed![
+    "migration/README.md",
+    "migration/v0.1.md",
+    "migration/v0.2.md",
     "protocol/template/final-review.md",
     "protocol/template/goal.md",
     "protocol/template/implementation-review.md",
@@ -27,7 +30,6 @@ static CONTENT: &[(&str, &[u8])] = embed![
     "protocol/template/task-conclusion.md",
     "protocol/waif-helper.md",
     "protocol/workflow.md",
-    "protocol/workflow_migration.md",
     "skills/dev-conclude-task/SKILL.md",
     "skills/dev-conclude-task/agents/openai.yaml",
     "skills/dev-draft-goal/SKILL.md",

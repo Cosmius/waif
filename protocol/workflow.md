@@ -104,9 +104,6 @@ project root. Run task-context helpers and source Git commands from this root.
 The `workflow dir` is the local instance at `<workspace-dir>/.waif`.
 Each source worktree has its own instance and current-task pointer.
 
-If an existing workflow dir uses a previous schema, see the
-[migration guide](workflow_migration.md).
-
 ### Workflow Library
 
 The `workflow library` is `<workflow-dir>/library`, containing `charter.md`
@@ -195,9 +192,12 @@ starting from the artifact's template in [template/](template/).
   defined by the owning skill's artifact contract.
 - Omit optional sections when they contain no content.
 - Use task-dir-relative paths when one task artifact refers to another.
+- Write an item that needs its own section as `### ID: title`, with its
+  `- Key: value` metadata directly below the heading. When the section also
+  has `- ID: content` items, put it after them and keep a one-line
+  `Vide infra` placeholder with the same ID in its place among them.
 - Indent each continuation line of a wrapped `- ID: content` item so its
-  content begins in the same column as the content after `ID: `. This
-  alignment is presentation only.
+  content begins in the same column as the content after `ID: `.
 
 ```markdown
 - G-AC1: First line of an acceptance criterion that wraps.
@@ -345,7 +345,6 @@ Example:
 ## Revisions
 
 ### G-REV1: 2026-06-14T18:30:00+09:00 - Extend timeout scope
-
 - Before: The goal covered configurable timeouts for browser sessions only.
 - Changed:
   - Added API sessions to the required timeout behavior.
@@ -359,3 +358,8 @@ Example:
 - Never commit workflow artifacts to the workspace repository.
 - Preserve completed artifacts and source commits as history when upstream
   artifacts are revised.
+
+## Migration
+
+When the workflow dir or the current task uses a layout or artifact form this
+protocol no longer describes, follow the [migration notes](../migration/README.md).

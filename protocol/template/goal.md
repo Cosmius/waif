@@ -31,7 +31,6 @@
 ## Revisions
 
 ### G-REV1: YYYY-MM-DDTHH:MM:SS+HH:MM - {{ amendment title }}
-
 - Before: {{ What the accepted goal said before this amendment. }}
 - Changed:
   - {{ Change made during this amendment cycle. }}

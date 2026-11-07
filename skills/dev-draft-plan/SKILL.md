@@ -55,8 +55,9 @@ Statuses are:
 - Each plan item must list every `G-AC<number>` it advances.
 - Plan items must collectively cover every accepted goal criterion.
 - Decisions record durable technical choices that later steps should follow.
-- Compact decisions use `P-D<number>`. Expanded decisions use
-  `P-DD<number>` and follow all compact decisions.
+- Decisions use `P-D<number>`. A decision that needs its own section follows
+  the `- P-D<number>` decisions as `### P-D<number>`, with a `Vide infra`
+  placeholder at its number among them.
 - Use `P-REV<number>` for expanded plan revision records.
 
 Follow the shared item-ID, ambiguity, amendment, and revision rules.

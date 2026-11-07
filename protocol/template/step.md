@@ -14,7 +14,9 @@
 
 ## Plan Item Coverage
 
-- S1-PC1: P1 - partial - {{ the exact part consumed by this step }}
+### S1-PC1: {{ part of P1 consumed by this step }}
+- Plan item: P1
+- Coverage: partial
 
 ## Context
 
@@ -60,7 +62,6 @@ further would make the step impractical or incoherent. }}
 ## Revisions
 
 ### S1-REV1: YYYY-MM-DDTHH:MM:SS+HH:MM - {{ revision title }}
-
 - Before: {{ accepted content before the amendment }}
 - Changed:
   - {{ change included in this amendment cycle }}

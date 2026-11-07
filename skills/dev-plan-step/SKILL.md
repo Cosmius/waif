@@ -68,9 +68,10 @@ whatever `Source commit` it had.
   `accepted`, or `amending`. In the normal lifecycle, `waif step commit`, run
   by `dev-implement-step`, replaces it with the full commit hash after the
   workspace commit succeeds.
-- `Plan Item Coverage` must contain one `partial` or `complete` entry for every
-  listed plan ID and no others. Use `complete` instead of `partial` when this
-  step is expected to finish the remaining outcome of the plan item.
+- `Plan Item Coverage` must contain one entry for every listed plan ID and no
+  others, naming it in `Plan item` and setting `Coverage` to `partial` or
+  `complete`. Use `complete` instead of `partial` when this step is expected
+  to finish the remaining outcome of the plan item.
 
 Omit empty optional sections. While a step is `amending`, use expanded
 `Revisions` records and the shared amendment-cycle rules. In the normal

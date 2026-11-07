@@ -5,7 +5,9 @@ use serde_json::{json, Value};
 use super::{write_files, write_json, Metadata, PackageTargetImpl, Result, StagingDir};
 
 const PACKAGE_FILES: &[&str] = &[
-    "protocol/workflow_migration.md",
+    "migration/README.md",
+    "migration/v0.1.md",
+    "migration/v0.2.md",
     "protocol/workflow.md",
     "protocol/waif-helper.md",
     "protocol/template/final-review.md",
