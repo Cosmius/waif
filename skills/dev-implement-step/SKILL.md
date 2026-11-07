@@ -27,18 +27,16 @@ Implement one accepted step through a review-and-acceptance loop.
    existing code patterns. Add or update tests proportionate to the change.
 5. Run every validation command in `step.md`, plus relevant repository checks.
    Fix failures caused by the step.
-6. Spawn a new independent subagent to review the uncommitted workspace diff.
-   Give it the goal, plan, step, repository instructions, diff, and validation
-   results, but not a desired verdict. If subagents are unavailable, perform
-   the review in the current session and record that fallback in
-   `steps/NN-short-name/reviewN.md`.
-7. Save the next gapless `reviewN.md` in the current step directory using the
-   [Implementation Review Contract](#implementation-review-contract). Scope
-   review numbering to that step directory.
-8. Present the implementation and review findings to the user.
-9. Interpret the response:
-   - On requested changes, revise the implementation, rerun validation, run a
-     fresh review, and create `reviewN+1.md` in the same step directory.
+6. Spawn a fresh subagent and ask it to use `dev-review` on the current
+   step. Pass the validation results and any REF or record path other than
+   its defaults, but no suggested verdict or explanation of the changes. If
+   subagents are unavailable, run `dev-review` in the current session.
+7. Present the implementation with the record's verdict, findings, and path,
+   only when nothing changed after the latest record was written; any later
+   change needs a new record first.
+8. Interpret the response:
+   - On requested changes, revise the implementation, rerun validation, and
+     obtain a new review record as in step 6.
    - Accept changes only when the human manually stages them. Inspect the staged
      diff and verify it contains only reviewed changes for this step. If the
      staged diff is empty, unrelated, or differs materially from the reviewed
@@ -46,72 +44,14 @@ Implement one accepted step through a review-and-acceptance loop.
    - Rerun required validation when the staged content differs from the content
      last validated, then run `waif step commit -F -` with the commit message
      on standard input. It commits exactly the staged changes.
-10. Read the `waif step commit` output. On success the helper has already
-    recorded the full commit hash in `Source commit`, set the step
-    `Status: done`, refreshed `Updated`, and marked plan items with
-    `complete` coverage `done`; plan items with only `partial` coverage stay
-    `pending`.
-11. Report completion and provide the workflow guide:
+9. Read the `waif step commit` output. On success the helper has already
+   recorded the full commit hash in `Source commit`, set the step
+   `Status: done`, refreshed `Updated`, and marked plan items with `complete`
+   coverage `done`; plan items with only `partial` coverage stay `pending`.
+10. Report completion and provide the workflow guide:
     - use `dev-plan-step` when more implementation is needed;
     - use `dev-final-review` when implementation is complete.
     Do not ask for or infer the human's completion decision in this skill.
-
-## Implementation Review Contract
-
-Review the current uncommitted workspace diff against:
-
-- the accepted goal;
-- the accepted general plan;
-- the current accepted step;
-- applicable repository instructions;
-- executed validation and its actual output.
-
-Use a newly spawned subagent for every iteration when available. Do not suggest
-a verdict or reveal previous conclusions. Include prior review files only when
-checking whether findings were addressed. If subagents are unavailable, review
-in the current session with the same inputs and priorities, and mark the
-fallback in the artifact.
-
-Follow the
-[implementation review template](../../protocol/template/implementation-review.md)
-for `steps/NN-short-name/reviewN.md`.
-
-Decisions are `pass` and `changes-requested`.
-
-Reviewers are:
-- `independent subagent`;
-- `current session - subagent unavailable`.
-
-Always identify which reviewer produced the artifact.
-
-When findings exist, order them by severity:
-
-```markdown
-## Findings
-
-### S1-R1-F1: High - {{ short title }}
-- Location: `path/to/file:line`
-- Problem: {{ observable defect or risk }}
-- Impact: {{ why it matters }}
-- Recommendation: {{ specific correction }}
-```
-
-Do not add an artifact `Status`. Review records are immutable observations.
-- Create `review1.md`, `review2.md`, and so on in the current step directory
-  without gaps or overwrites.
-- Scope the review number `N` to the current step directory. Do not number
-  implementation reviews globally across the task.
-- Prefix review content IDs with unpadded step and review numbers, such as
-  `S1-R2-F1`.
-- Preserve source artifact IDs when referring to goal criteria, plan items, or
-  step items.
-
-## Review Priorities
-
-The reviewer must prioritize correctness, regressions, security, data loss,
-concurrency, compatibility, and missing tests. Findings must cite files and
-lines where possible. A review is evidence for the human, not an automatic
-acceptance gate.
 
 ## Guardrails
 
@@ -123,8 +63,6 @@ acceptance gate.
 - Commit exactly the verified staged diff.
 - Exclude unstaged and unrelated changes.
 - Do not amend or rewrite earlier source commits unless the user requests it.
-- Do not reuse or overwrite review files.
-- Do not write review files outside the current step directory.
 - Stop when new instructions would materially change the accepted step plan.
   Do not revise the accepted artifact or continue under changed scope.
 
@@ -134,6 +72,5 @@ acceptance gate.
 - `step.md` has `Status: done` and `Source commit: <full commit hash>`.
 - Plan items with `complete` coverage are `done`.
 - Plan items with only `partial` coverage remain `pending`.
-- All review iterations remain available as
-  `steps/NN-short-name/reviewN.md`.
-- Every review content item has a stable, step-and-review-qualified ID.
+- Every review record written by `dev-review` remains in the step
+  directory.

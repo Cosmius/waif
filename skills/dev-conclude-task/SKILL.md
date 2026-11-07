@@ -19,8 +19,8 @@ Explain the completed task for who knows the project but not the goal.
    ask whether to continue. If the user continues, use the identified dir and
    available evidence without requiring accepted or done statuses.
 3. Read available `goal.md`, `plan.md`, and every `steps/*/step.md`. For each
-   step, read only its highest-numbered `reviewN.md`. Read task-level
-   `review.md` when present.
+   step, read only its highest-numbered `reviewN.md`. Read the
+   highest-numbered `reviews/reviewN.md` when present.
 4. Resolve the Git range from `plan.md`: use its `Base commit` through the tip
    of its recorded `Branch`. If `plan.md` is missing or the range cannot be
    resolved, ask the user for the Git range and pause. Read the log for that

@@ -5,9 +5,10 @@ file are canonical.
 
 ## Workflow Overview
 
-The workflow has five skills and four human acceptance gates. Each skill owns
-one stage, persists its output in the workflow dir, and stops at its gate
-instead of silently advancing.
+The workflow has five stage skills and four human acceptance gates. Each
+stage skill owns one stage, persists its output in the workflow dir, and stops
+at its gate instead of silently advancing. The supporting `dev-review` skill
+writes every review record for `dev-implement-step` and `dev-final-review`.
 
 ```text
 dev-draft-goal
@@ -22,18 +23,18 @@ dev-implement-step
      -> more steps: return to dev-plan-step
      -> final review: continue to dev-final-review
 dev-final-review
-  -> final task review
+  -> new task review record
 ```
 
 ### Milestones
 
-| Stage               | Skill                | Requires                  | Milestone                                                 |
-|---------------------|----------------------|---------------------------|-----------------------------------------------------------|
-| Goal                | `dev-draft-goal`     | User request              | Accepted `goal.md` in a new or current task dir           |
-| General plan        | `dev-draft-plan`     | Accepted goal             | Accepted `plan.md` and checked-out workspace task branch  |
-| Step plan           | `dev-plan-step`      | Accepted goal and plan    | One accepted `steps/NN-name/step.md` mapped to plan items |
-| Step implementation | `dev-implement-step` | One accepted step         | Validated, reviewed, human-accepted source commit         |
-| Final review        | `dev-final-review`   | User requests final review | `review.md` covering the whole task                       |
+| Stage               | Skill                | Requires                   | Milestone                                                 |
+|---------------------|----------------------|----------------------------|-----------------------------------------------------------|
+| Goal                | `dev-draft-goal`     | User request               | Accepted `goal.md` in a new or current task dir           |
+| General plan        | `dev-draft-plan`     | Accepted goal              | Accepted `plan.md` and checked-out workspace task branch  |
+| Step plan           | `dev-plan-step`      | Accepted goal and plan     | One accepted `steps/NN-name/step.md` mapped to plan items |
+| Step implementation | `dev-implement-step` | One accepted step          | Validated, reviewed, human-accepted source commit         |
+| Final review        | `dev-final-review`   | User requests final review | A new `reviews/reviewN.md` covering the whole task        |
 
 ### Human Gates and Loops
 
@@ -55,8 +56,10 @@ dev-final-review
 - `dev-plan-step` plans one coherent implementation step without changing
   the workspace source.
 - `dev-implement-step` completes one accepted step.
-- `dev-final-review` audits and reports; it does not modify the workspace
-  source.
+- `dev-final-review` obtains and reports the task-wide review; it does not
+  modify the workspace source.
+- `dev-review` writes one review record of a step or the whole task, or
+  records a waiver on one; it never modifies the workspace source.
 
 ## Terms
 
@@ -89,7 +92,7 @@ tests, validation, and risks. It is persisted in `steps/NN-name/step.md`.
 A `task artifact` is a durable Markdown record of task state, decisions,
 plans, reviews, or results stored in the task dir. Task artifacts include
 `goal.md`, `plan.md`, each `steps/NN-name/step.md`, each
-`steps/NN-name/reviewN.md`, and `review.md`.
+`steps/NN-name/reviewN.md`, and each `reviews/reviewN.md`.
 
 ### Workspace Dir
 
@@ -183,7 +186,8 @@ or unusable.
 │               │       ├── step.md
 │               │       ├── review1.md
 │               │       └── review2.md
-│               └── review.md
+│               └── reviews/
+│                   └── review1.md
 └── <workspace files>
 ```
 
@@ -237,11 +241,11 @@ Use these artifact prefixes:
 - `G-` for goal items;
 - `P-` and `P<number>` for plan content and plan items;
 - `S<NN>-` for step content;
-- `S<NN>-R<N>-` for implementation-review content;
-- `FR-` for final-review content.
+- `S<NN>-R<N>-` for step review content;
+- `R<N>-` for task review content.
 
-Review records and the final review use `Decision` or `Verdict` rather than a
-lifecycle `Status`. Do not add fields that imply unsupported workflow state.
+Review records use `Verdict` rather than a lifecycle `Status`. Do not add
+fields that imply unsupported workflow state.
 
 ### Timestamps
 

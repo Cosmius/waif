@@ -8,82 +8,30 @@ description: >-
 
 # Final Task Review
 
-Audit the complete task and write the durable final review.
+Obtain a new task-wide review record and present it.
 
 ## Procedure
 
 1. Read [workflow.md](../../protocol/workflow.md), resolve the invoking
    workspace, local library, and current task, and stop if required context is
    missing or unusable.
-2. Read the complete accepted `goal.md`, accepted `plan.md`, every
-   `steps/*/step.md`, and every `steps/*/review*.md`. Read step artifacts in
-   step sequence order and review files in review-number order within each
-   step.
-3. Read workflow artifacts as context for the code review. Do not raise
-   workflow or procedure findings unless they are necessary to explain how a
-   substantive code, behavior, validation, or integration risk arose. Check
-   only enough task-level completeness to understand the intended code result:
-   - every plan item is `done`;
-   - every `steps/*/step.md` is `aborted` or has `Status: done` and a
-     non-`not-created` `Source commit`;
-   - every acceptance criterion has evidence;
-   - final validation passes.
-   Do not over-verify routine workflow metadata such as commit existence,
-   hash-to-step mapping, or reachability. Investigate procedure details only
-   when doing so helps identify the cause or impact of a substantive code risk.
-4. Review the aggregate diff from the recorded base commit through the current
-   tip of the plan branch for substantive cross-step regressions, inconsistent
-   behavior, missing integration coverage, unrelated code changes, and
-   divergence from the goal or plan.
-5. Write or replace `review.md` according to the
-   [Final Review Contract](#final-review-contract).
-6. Do not change or commit workspace source files during the final review.
-7. Present the verdict, findings, and review path to the user.
-
-## Final Review Contract
-
-Follow the [final review template](../../protocol/template/final-review.md).
-
-Populate the `Commits` column from each done step's top-level `Source commit`
-field. Do not list `aborted` steps or their commits as delivering a plan
-item.
-
-Verdicts are `pass` and `concerns`. Use `concerns` for:
-- failed validation;
-- unmet acceptance criteria;
-- an invalid Git range;
-- material cross-step findings.
-
-When findings exist, use stable IDs (`FR-F1`, `FR-F2`, ...) and include
-severity, evidence, impact, and recommendation. Preserve source IDs in
-assessment and completion tables. Give every other report list or table item a
-stable `FR-<series><number>` ID.
-
-The user may explicitly ignore or waive a finding only by providing a reason.
-Keep the finding in `Findings` and record the user's rationale with it.
-Do not block the waiver because the rationale seems weak or incorrect. If the
-reviewer disagrees with the rationale, add a concise counter-opinion to the
-finding, but still exclude that ignored finding from the final verdict.
+2. Require an accepted `goal.md` and an accepted `plan.md`.
+3. Spawn a fresh subagent and ask it to use `dev-review` on the whole task.
+   Pass only REFs the user gave in place of its defaults, and no suggested
+   verdict or explanation. If subagents are unavailable, run `dev-review` in
+   the current session.
+4. Present the verdict, a summary of the findings, and the
+   `reviews/reviewN.md` path.
+5. Route a request to waive a finding to `dev-review`, with the record path,
+   the finding, and the user's reason.
 
 ## Guardrails
 
-- Report evidence and review exactly the recorded base commit through the
-  reviewed branch tip.
+- Do not change or commit workspace source files.
 - Do not hide failed validation or unmet acceptance criteria.
-- Treat procedure issues as context, not final-review findings, unless they
-  explain a substantive code, behavior, validation, or integration risk.
-- Use `concerns` when a material finding remains, even if individual step
-  reviews passed.
-- Do not let user-ignored findings affect the verdict, but keep them in the
-  review with the user's required reason and any reviewer counter-opinion.
-- Keep final-review findings separate from historical
-  `steps/*/review*.md` records.
 - Do not delete or retarget the local `current_task` pointer.
 
 ## Done When
 
-- `review.md` accounts for the goal, plan, steps, reviews, commits, and
-  validation.
-- Every review content item has a stable ID or preserves its source item ID.
-- The library's task dir contains the review.
-- The workspace remains unchanged by this skill.
+- A new `GOOD` task review record exists in the task's `reviews/` directory.
+- Its verdict, findings summary, and path are presented.

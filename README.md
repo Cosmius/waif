@@ -255,6 +255,9 @@ See [helper usage](protocol/waif-helper.md) for CLI commands.
 - `skills/dev-draft-goal/`: drafts or revises the task goal.
 - `skills/dev-draft-plan/`: drafts or revises the technical plan.
 - `skills/dev-plan-step/`: plans one implementation step.
-- `skills/dev-implement-step/`: implements, reviews, and commits one step.
-- `skills/dev-final-review/`: performs the task-wide final review.
+- `skills/dev-implement-step/`: implements and commits one step with a
+  `dev-review` record.
+- `skills/dev-review/`: reviews a step or the whole task and writes the review
+  record.
+- `skills/dev-final-review/`: runs the task-wide review.
 - `skills/dev-conclude-task/`: writes the optional teammate handoff.
