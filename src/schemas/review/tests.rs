@@ -178,3 +178,101 @@ fn rejects_empty_findings_and_mixed_review_prefixes() {
             .iter()
             .any(|diagnostic| diagnostic.message().contains("item identifier `S1-R2-RR1`")));
 }
+
+const TASK_CONCERNS: &str = concat!(
+    "# Task Review 2\n",
+    "\n",
+    "- Goal: ../goal.md\n",
+    "- Plan: ../plan.md\n",
+    "- Date: 2026-11-07T21:00:00+09:00\n",
+    "- Reviewer: independent subagent\n",
+    "- Verdict: concerns\n",
+    "- Reviewed: 0123456789abcdef0123456789abcdef01234567 (HEAD, waif/task)\n",
+    "- Reviewed against: 89abcdef0123456789abcdef0123456789abcdef (master)\n",
+    "\n",
+    "## Summary\n\nConcerns remain.\n\nThe task adds a checker.\n\n",
+    "## Findings\n\n",
+    "### R2-F1: Still open from R1-F1\n",
+    "- Severity: medium\n",
+    "- Location: `src/lib.rs:42`\n",
+    "- Problem: It is wrong.\n",
+    "- Impact: Checks fail.\n",
+    "- Recommendation: Fix it.\n\n",
+    "### R2-F3: New finding\n",
+    "- Severity: low\n",
+    "- Location: `src/lib.rs:57`\n",
+    "- Problem: It is unclear.\n",
+    "- Impact: Readers stumble.\n",
+    "- Recommendation: Clarify it.\n\n",
+    "## Goal Assessment\n\n",
+    "- G-AC1: met - tested\n",
+    "- G-AC2: unmet - see R2-F1\n\n",
+    "## Plan Completion\n\n",
+    "- P1: done - `steps/01-name` at `0123456789abcdef0123456789abcdef01234567`\n",
+    "- P2: done - `steps/02-name` at `0123456789abcdef0123456789abcdef01234567`, `steps/03-name`\n",
+    "      at `0123456789abcdef0123456789abcdef01234567`\n\n",
+    "## Integration\n\n",
+    "- R2-I1: the steps agree on the review format, as observed in the\n",
+    "         checker and docs\n\n",
+    "## Review History\n\n",
+    "- `review1.md`: concerns - R1-F2 fixed; R1-F1 still open as R2-F1\n\n",
+    "## Validation\n\n- R2-V1: `cargo test`: passed\n\n",
+    "## Deferred Work\n\n- R2-DW1: Migration, left for a later task.\n\n",
+    "## Residual Risks\n\n- R2-RR1: None.\n",
+);
+
+const TASK_PASS: &str = concat!(
+    "# Task Review 1\n",
+    "- Goal: ../goal.md\n",
+    "- Plan: ../plan.md\n",
+    "- Date: 2026-11-07T21:00:00+09:00\n",
+    "- Reviewer: current session\n",
+    "- Verdict: pass\n",
+    "- Reviewed: 0123456789abcdef0123456789abcdef01234567 (HEAD, waif/task)\n",
+    "- Reviewed against: 89abcdef0123456789abcdef0123456789abcdef\n",
+    "## Summary\nPasses.\n",
+    "## Findings\nNo findings.\n",
+    "## Goal Assessment\n",
+    "- G-AC1: met - tested\n",
+    "- The error names the file: met\n",
+    "## Plan Completion\n",
+    "- P1: done - `steps/01-name`\n",
+    "## Integration\n",
+    "- R1-I1: the steps agree\n",
+);
+
+#[test]
+fn accepts_a_concerns_task_review_shaped_like_the_template() {
+    let diagnostics = check_task(Path::new("reviews/review2.md"), TASK_CONCERNS);
+    assert!(diagnostics.is_empty(), "{}", messages(&diagnostics));
+}
+
+#[test]
+fn accepts_a_first_pass_task_review() {
+    let diagnostics = check_task(Path::new("reviews/review1.md"), TASK_PASS);
+    assert!(diagnostics.is_empty(), "{}", messages(&diagnostics));
+}
+
+#[test]
+fn reports_task_review_ids_that_disagree_with_the_filename() {
+    let source = TASK_PASS.replace("R1-", "R2-");
+    let reported = messages(&check_task(Path::new("reviews/review1.md"), &source));
+    assert!(reported.contains("review item review identity `2` does not match filename"), "{reported}");
+}
+
+#[test]
+fn rejects_a_task_review_without_plan_completion() {
+    let source = TASK_PASS.replace("## Plan Completion\n- P1: done - `steps/01-name`\n", "");
+    let diagnostics = check_task(Path::new("reviews/review1.md"), &source);
+    assert!(messages(&diagnostics).contains("missing required section `Plan Completion`"));
+}
+
+#[test]
+fn accepts_task_review_conventions_that_checking_does_not_enforce() {
+    let source = TASK_PASS
+        .replace("# Task Review 1", "# Final look")
+        .replace("- Goal: ../goal.md\n", "")
+        .replace("- Plan: ../plan.md", "- Plan: ./plan.md");
+    let diagnostics = check_task(Path::new("reviews/review1.md"), &source);
+    assert!(diagnostics.is_empty(), "{}", messages(&diagnostics));
+}

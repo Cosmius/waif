@@ -70,8 +70,12 @@ pub(crate) enum ArtifactPrefixRule {
 
 #[derive(Clone, Copy)]
 pub(crate) enum ArtifactPrefixShape {
+    /// `S<n>-`
     Step,
+    /// `S<n>-R<m>-`
     Review,
+    /// `R<n>-`
+    TaskReview,
 }
 
 #[derive(Clone, Copy)]
@@ -555,6 +559,7 @@ fn expected_identifier(
                 match shape {
                     ArtifactPrefixShape::Step => format!("S<number>-{family}"),
                     ArtifactPrefixShape::Review => format!("S<number>-R<number>-{family}"),
+                    ArtifactPrefixShape::TaskReview => format!("R<number>-{family}"),
                 }
             }
         }
@@ -615,12 +620,16 @@ fn parse_unknown_prefix(
     identifier: &str,
     shape: ArtifactPrefixShape,
 ) -> Result<(usize, Vec<(i64, Range<usize>)>), ()> {
-    if !identifier.starts_with('S') {
+    let letter = match shape {
+        ArtifactPrefixShape::Step | ArtifactPrefixShape::Review => 'S',
+        ArtifactPrefixShape::TaskReview => 'R',
+    };
+    if !identifier.starts_with(letter) {
         return Err(());
     }
-    let (step, step_range) = number_at(identifier, 1).ok_or(())?;
-    let mut end = step_range.end;
-    let mut components = vec![(step, step_range)];
+    let (first, first_range) = number_at(identifier, 1).ok_or(())?;
+    let mut end = first_range.end;
+    let mut components = vec![(first, first_range)];
     if matches!(shape, ArtifactPrefixShape::Review) {
         if !identifier[end..].starts_with("-R") {
             return Err(());

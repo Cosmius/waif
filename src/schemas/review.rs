@@ -14,6 +14,12 @@ const SCHEMA: Schema = Schema {
     sections: &SECTIONS,
 };
 
+const TASK_SCHEMA: Schema = Schema {
+    prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::TaskReview),
+    metadata: &METADATA,
+    sections: &TASK_SECTIONS,
+};
+
 const METADATA: [MetadataRule; 4] = [
     MetadataRule {
         name: "Date",
@@ -34,16 +40,44 @@ const METADATA: [MetadataRule; 4] = [
 ];
 
 const SECTIONS: [SectionRule; 6] = [
-    SectionRule::new("Summary"),
-    SectionRule::new("Findings").with_items(ItemRule::new("F").with_sentinel("No findings.")),
+    SUMMARY,
+    FINDINGS,
     SectionRule::new("Assessment"),
-    SectionRule::optional("Review History"),
-    SectionRule::optional("Validation").with_items(ItemRule::new("V")),
-    SectionRule::optional("Residual Risks").with_items(ItemRule::new("RR")),
+    REVIEW_HISTORY,
+    VALIDATION,
+    RESIDUAL_RISKS,
 ];
+
+const TASK_SECTIONS: [SectionRule; 9] = [
+    SUMMARY,
+    FINDINGS,
+    SectionRule::new("Goal Assessment"),
+    SectionRule::new("Plan Completion"),
+    SectionRule::new("Integration").with_items(ItemRule::new("I")),
+    REVIEW_HISTORY,
+    VALIDATION,
+    SectionRule::optional("Deferred Work").with_items(ItemRule::new("DW")),
+    RESIDUAL_RISKS,
+];
+
+const SUMMARY: SectionRule = SectionRule::new("Summary");
+
+const FINDINGS: SectionRule =
+    SectionRule::new("Findings").with_items(ItemRule::new("F").with_sentinel("No findings."));
+
+const REVIEW_HISTORY: SectionRule = SectionRule::optional("Review History");
+
+const VALIDATION: SectionRule = SectionRule::optional("Validation").with_items(ItemRule::new("V"));
+
+const RESIDUAL_RISKS: SectionRule =
+    SectionRule::optional("Residual Risks").with_items(ItemRule::new("RR"));
 
 pub(crate) fn parse(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {
     parser::parse_with_config(source, &SCHEMA.parser_config())
+}
+
+pub(crate) fn parse_task(source: &str) -> Result<Artifact<'_>, Vec<Diagnostic>> {
+    parser::parse_with_config(source, &TASK_SCHEMA.parser_config())
 }
 
 pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
@@ -51,14 +85,7 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
         parser::parse_with_diagnostics(source, &SCHEMA.parser_config());
     let (schema_diagnostics, prefix) = schema::validate_with_prefix(&artifact, &SCHEMA);
     diagnostics.extend(schema_diagnostics);
-
-    let filename_number = review_filename_number(path);
-    if filename_number.is_none() {
-        diagnostics.push(Diagnostic::error1(
-            1,
-            "review filename must use `reviewN.md` with a positive decimal number",
-        ));
-    }
+    let filename_number = validate_filename(&mut diagnostics, path);
 
     let path_step_number = step_directory_number(&mut diagnostics, path);
     if path_step_number.is_none() {
@@ -89,6 +116,39 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
         );
     }
     diagnostics
+}
+
+pub(crate) fn check_task(path: &Path, source: &str) -> Vec<Diagnostic> {
+    let (artifact, mut diagnostics) =
+        parser::parse_with_diagnostics(source, &TASK_SCHEMA.parser_config());
+    let (schema_diagnostics, prefix) = schema::validate_with_prefix(&artifact, &TASK_SCHEMA);
+    diagnostics.extend(schema_diagnostics);
+    let filename_number = validate_filename(&mut diagnostics, path);
+
+    if let Some(observed) = prefix {
+        let review = &observed.components()[0];
+        compare_identity(
+            "filename",
+            filename_number,
+            *review.value(),
+            *review.span().start(),
+            "review",
+            &mut diagnostics,
+        );
+    }
+    diagnostics
+}
+
+/// Report a filename that is not `reviewN.md` and return its review number.
+fn validate_filename(diagnostics: &mut Vec<Diagnostic>, path: &Path) -> Option<i64> {
+    let number = review_filename_number(path);
+    if number.is_none() {
+        diagnostics.push(Diagnostic::error1(
+            1,
+            "review filename must use `reviewN.md` with a positive decimal number",
+        ));
+    }
+    number
 }
 
 fn verdict(value: &str) -> Result<(), String> {

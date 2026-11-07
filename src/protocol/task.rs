@@ -153,6 +153,7 @@ pub fn discover_artifact_paths(path: &Path) -> Result<Vec<PathBuf>> {
         }
     }
     collect_step_artifact_paths(&path.join("steps"), &mut paths);
+    collect_task_review_paths(&path.join("reviews"), &mut paths);
     paths.sort();
     Ok(paths)
 }
@@ -181,6 +182,17 @@ fn collect_step_artifact_paths(steps_directory: &Path, paths: &mut Vec<PathBuf>)
     }
 }
 
+fn collect_task_review_paths(reviews_directory: &Path, paths: &mut Vec<PathBuf>) {
+    let Ok(entries) = sorted_directory_entries(reviews_directory) else {
+        return;
+    };
+    for entry in entries {
+        if is_numbered_review_name(&entry.file_name().to_string_lossy()) {
+            paths.push(entry.path());
+        }
+    }
+}
+
 fn sorted_directory_entries(directory: &Path) -> io::Result<Vec<fs::DirEntry>> {
     let mut entries = fs::read_dir(directory)?.collect::<io::Result<Vec<_>>>()?;
     entries.sort_by_key(|entry| entry.file_name());
@@ -188,7 +200,7 @@ fn sorted_directory_entries(directory: &Path) -> io::Result<Vec<fs::DirEntry>> {
 }
 
 fn is_task_artifact_name(name: &str) -> bool {
-    matches!(name, "goal.md" | "plan.md" | "review.md")
+    matches!(name, "goal.md" | "plan.md")
 }
 
 fn is_step_artifact_name(name: &str) -> bool {

@@ -247,6 +247,25 @@ fn unbound_step_diagnostic_includes_prefix_trailing_dash() {
 }
 
 #[test]
+fn unknown_task_review_prefix_observes_one_component_and_rejects_step_ids() {
+    const SCHEMA: Schema = Schema {
+        prefix: ArtifactPrefixRule::Unknown(ArtifactPrefixShape::TaskReview),
+        metadata: &[],
+        sections: &[SectionRule::new("Validation").with_items(ItemRule::new("V"))],
+    };
+    let config = SCHEMA.parser_config();
+    let source = "# Task Review\n## Validation\n- R3-V1: valid\n- S3-V2: step ID\n";
+    let artifact = parser::parse_with_config(source, &config).expect("parsed artifact");
+    let (diagnostics, prefix) = validate_with_prefix(&artifact, &SCHEMA);
+    let prefix = prefix.expect("observed prefix");
+
+    assert_eq!(diagnostics.len(), 1);
+    assert!(diagnostics[0].message().contains("item identifier `S3-V2` in section `Validation` must use `R3-V<number>`"));
+    assert_eq!(prefix.text(), "R3-");
+    assert_eq!(prefix.components().iter().map(|component| *component.value()).collect::<Vec<_>>(), [3]);
+}
+
+#[test]
 fn metadata_macro_skips_only_its_value_validator() {
     const SCHEMA: Schema = Schema {
         prefix: ArtifactPrefixRule::Known(""),

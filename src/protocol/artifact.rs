@@ -17,6 +17,7 @@ pub(crate) enum ArtifactKind {
     Plan,
     Step,
     Review,
+    TaskReview,
     Generic,
 }
 
@@ -114,6 +115,10 @@ impl ArtifactFile {
         self.parse_with(review::parse)
     }
 
+    pub fn parse_task_review(&self) -> Result<Artifact<'_>> {
+        self.parse_with(review::parse_task)
+    }
+
     pub fn parse_generic(&self) -> Result<Artifact<'_>> {
         self.parse_with(parser::parse)
     }
@@ -124,6 +129,7 @@ impl ArtifactFile {
             ArtifactKind::Plan => plan::check(&self.contents),
             ArtifactKind::Step => step::check(&self.path, &self.contents),
             ArtifactKind::Review => review::check(&self.path, &self.contents),
+            ArtifactKind::TaskReview => review::check_task(&self.path, &self.contents),
             ArtifactKind::Generic => parser::parse(&self.contents).err().unwrap_or_default(),
         }
     }
@@ -171,7 +177,18 @@ impl ArtifactKind {
         } else if name == OsStr::new("step.md") {
             Self::Step
         } else if name.to_str().is_some_and(is_numbered_review_name) {
-            Self::Review
+            // The absolute path supplies the parent of a bare file name.
+            let absolute = std::path::absolute(path).ok();
+            if absolute
+                .as_deref()
+                .and_then(Path::parent)
+                .and_then(Path::file_name)
+                .is_some_and(|parent| parent == OsStr::new("reviews"))
+            {
+                Self::TaskReview
+            } else {
+                Self::Review
+            }
         } else {
             Self::Generic
         }

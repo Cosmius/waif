@@ -275,20 +275,21 @@ and a compact item may share an expanded item's ID only as a
 Every item ID consists of an artifact item prefix, a section-specific family,
 and a final item number. The prefix owns its trailing dash; the family does
 not include a leading separator. Goal and plan prefixes are the known literals
-`G-` and `P-`. Step prefixes have the shape `S<n>-`, and review prefixes
-have the shape `S<n>-R<m>-`, where every numeric component is canonical and
-bounded as above. Plan items opt out of the artifact prefix: their IDs are
-`P<number>`, and they do not participate in artifact-prefix inference.
+`G-` and `P-`. Step prefixes have the shape `S<n>-`, review prefixes have
+the shape `S<n>-R<m>-`, and task review prefixes have the shape `R<n>-`,
+where every numeric component is canonical and bounded as above. Plan items
+opt out of the artifact prefix: their IDs are `P<number>`, and they do not
+participate in artifact-prefix inference.
 
 A checker uses a known prefix when the artifact identity is available before
-item validation. Known prefixes must match exactly. Otherwise a step or review
-checker uses an unknown prefix shape: the first valid item establishes the
-observed prefix, and every later item family in that artifact must use the same
-value. Unknown mode establishes internal consistency only. The shared schema
-retains each observed numeric component with its source span; artifact-specific
-checking compares those observations with titles, filenames, or nominal paths
-when that context is available. Prefix inference never crosses artifact
-boundaries or uses opaque prose or neighboring files.
+item validation. Known prefixes must match exactly. Otherwise a step, review,
+or task review checker uses an unknown prefix shape: the first valid item
+establishes the observed prefix, and every later item family in that artifact
+must use the same value. Unknown mode establishes internal consistency only.
+The shared schema retains each observed numeric component with its source span;
+artifact-specific checking compares those observations with titles, filenames,
+or nominal paths when that context is available. Prefix inference never crosses
+artifact boundaries or uses opaque prose or neighboring files.
 
 Convention: items are numbered in the order they are added, and the number of
 a removed item stays unused.
@@ -738,10 +739,11 @@ the common rules.
 
 ## Review Contract
 
-A checked file named `reviewN.md` receives this contract, where `N` is a
-positive decimal review number. The filename and the review-number component
-of every stable ID agree. The title is free text; conventionally it is
-`Review N`.
+A checked file named `reviewN.md` that is not directly in a `reviews`
+directory receives this contract, where `N` is a positive decimal review
+number; one directly in `reviews` is a [task review](#task-review-contract).
+The filename and the review-number component of every stable ID agree. The
+title is free text; conventionally it is `Review N`.
 
 When the containing directory supplies a step identity, it must agree with
 every stable ID. Otherwise checking warns and still requires one internally
@@ -839,6 +841,67 @@ the review request, is restated before its result.
 
 Every review itemised section follows the [items rules](#items). Review IDs,
 numeric bounds, and empty sections follow the common rules.
+
+## Task Review Contract
+
+A checked file named `reviewN.md` directly in a directory named `reviews`
+receives this contract; any other `reviewN.md` is a
+[review](#review-contract). Task discovery includes the task's
+`reviews/reviewN.md` files. Each task review run adds the next number,
+starting at 1, and never overwrites an earlier record; the latest task review
+has the greatest number.
+
+The filename and the review-number component of every stable ID agree. The
+title is free text; conventionally it is `Task Review N`. IDs use one `R<n>-`
+prefix, so `reviews/review2.md` uses `R2-F1`. There are no step identity
+checks.
+
+Required metadata is that of a [review](#review-contract): `Date`, `Verdict`,
+`Reviewed`, and `Reviewed against`, with the same value checks.
+
+Convention: the metadata order is `Goal` (`../goal.md`), `Plan`
+(`../plan.md`), `Date`, `Reviewer`, `Verdict`, `Reviewed`, and
+`Reviewed against`. `Goal`, `Plan`, and `Reviewer` are not checked. A task
+review normally reviews `<tip> (HEAD, <task branch>)` against the plan's
+base commit.
+
+Known sections have this relative order:
+
+| Section         | Type                                         | Presence |
+|-----------------|----------------------------------------------|----------|
+| Summary         | prose                                        | required |
+| Findings        | itemised; R<n>-F<k>; sentinel `No findings.` | required |
+| Goal Assessment | prose                                        | required |
+| Plan Completion | prose                                        | required |
+| Integration     | itemised; R<n>-I<k>                          | required |
+| Review History  | prose                                        | optional |
+| Validation      | itemised; R<n>-V<k>                          | optional |
+| Deferred Work   | itemised; R<n>-DW<k>                         | optional |
+| Residual Risks  | itemised; R<n>-RR<k>                         | optional |
+
+The `Summary`, `Review History`, verdict, and finding conventions are those
+of the [review](#review-contract). Here `Review History` lists the earlier
+`reviews/reviewN.md` files.
+
+Convention: `Goal Assessment` lists each goal acceptance criterion by its ID,
+`G-AC<k>`, followed by `met` or `unmet` and its evidence. `Plan Completion`
+lists each plan item by its ID, `P<k>`, followed by `done` or `not done` and
+the steps and commits that delivered it. A target without an ID of its own
+is restated before its result. `Integration` records cross-step behaviour,
+consistency, or out-of-plan changes checked, and `Deferred Work` the work
+consciously left for a later task.
+
+```markdown
+## Goal Assessment
+
+- G-AC1: met - `check_task` covers the task review shape
+
+## Plan Completion
+
+- P1: done - `steps/01-name` at `<full commit hash>`
+```
+
+Every task review itemised section follows the [items rules](#items).
 
 ## Source Preservation
 

@@ -404,11 +404,14 @@ fn task_singleton_accessor_reports_path_aware_parser_errors() {
 #[test]
 fn artifact_file_classifies_nominal_paths_and_retains_contents() {
     let workspace = TestDir::new("artifact-kinds");
+    fs::create_dir_all(workspace.path.join("reviews"))
+        .expect("reviews directory should be created");
     for (name, expected) in [
         ("goal.md", ArtifactKind::Goal),
         ("plan.md", ArtifactKind::Plan),
         ("step.md", ArtifactKind::Step),
         ("review12.md", ArtifactKind::Review),
+        ("reviews/review3.md", ArtifactKind::TaskReview),
         ("review.md", ArtifactKind::Generic),
         ("review-latest.md", ArtifactKind::Generic),
     ] {
@@ -445,8 +448,15 @@ fn artifact_file_parsers_use_each_schema_structure() {
             "# Review 1\n## Findings\nNo findings.\n",
             "Findings",
         ),
+        (
+            "reviews/review1.md",
+            "# Task Review 1\n## Findings\nNo findings.\n",
+            "Findings",
+        ),
     ];
 
+    fs::create_dir_all(workspace.path.join("reviews"))
+        .expect("reviews directory should be created");
     for (name, source, section_name) in cases {
         let path = workspace.path.join(name);
         fs::write(&path, source).expect("artifact should be written");
@@ -456,6 +466,7 @@ fn artifact_file_parsers_use_each_schema_structure() {
             ArtifactKind::Plan => file.parse_plan(),
             ArtifactKind::Step => file.parse_step(),
             ArtifactKind::Review => file.parse_review(),
+            ArtifactKind::TaskReview => file.parse_task_review(),
             ArtifactKind::Generic => unreachable!(),
         }
         .expect("artifact should parse");
@@ -466,7 +477,7 @@ fn artifact_file_parsers_use_each_schema_structure() {
             .find(|section| section.title() == section_name)
             .expect("configured section should exist");
         let configured = match file.kind() {
-            ArtifactKind::Review => section
+            ArtifactKind::Review | ArtifactKind::TaskReview => section
                 .as_itemised()
                 .is_some_and(|findings| findings.sentinel().is_some()),
             _ => section.as_itemised().is_some(),
@@ -520,11 +531,15 @@ fn artifact_check_classifies_macros_errors_and_warnings_by_precedence() {
 fn task_artifact_discovery_preserves_the_existing_layout() {
     let directory = TestDir::new("protocol-directory-discovery");
     let step_dir = directory.path.join("steps/01-example");
+    let reviews_dir = directory.path.join("reviews");
     let unrelated_dir = directory.path.join("other/deep");
     fs::create_dir_all(&step_dir).expect("step directory should be created");
+    fs::create_dir_all(&reviews_dir).expect("reviews directory should be created");
     fs::create_dir_all(&unrelated_dir).expect("unrelated directory should be created");
     for path in [
         directory.path.join("goal.md"),
+        directory.path.join("review.md"),
+        reviews_dir.join("review1.md"),
         directory.path.join("step.md"),
         directory.path.join("notes.md"),
         step_dir.join("step.md"),
@@ -540,12 +555,13 @@ fn task_artifact_discovery_preserves_the_existing_layout() {
     let task = Task::new(directory.path.clone());
 
     assert_eq!(task.artifact_paths().expect("task discovery should work"), paths);
-    assert_eq!(paths.len(), 3);
+    assert_eq!(paths.len(), 4);
     assert!(paths.iter().any(|path| path == &directory.path.join("goal.md")));
     assert!(paths.iter().any(|path| path == &step_dir.join("step.md")));
     assert!(paths
         .iter()
         .any(|path| path == &step_dir.join("review1.md")));
+    assert!(paths.iter().any(|path| path == &reviews_dir.join("review1.md")));
 }
 
 #[test]

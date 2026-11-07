@@ -62,6 +62,22 @@ const VALID_REVIEW: &str = concat!(
     "## Assessment\n- S1-DC1: met - Example.\n",
 );
 
+const VALID_TASK_REVIEW: &str = concat!(
+    "# Task Review 1\n",
+    "- Goal: ../goal.md\n",
+    "- Plan: ../plan.md\n",
+    "- Date: 2026-08-02T12:03:00+09:00\n",
+    "- Reviewer: independent subagent\n",
+    "- Verdict: pass\n",
+    "- Reviewed: 0123456789abcdef0123456789abcdef01234567 (HEAD, waif/example)\n",
+    "- Reviewed against: 89abcdef0123456789abcdef0123456789abcdef (main)\n",
+    "## Summary\nPasses.\n",
+    "## Findings\nNo findings.\n",
+    "## Goal Assessment\n- G-AC1: met - Example.\n",
+    "## Plan Completion\n- P1: done - Example.\n",
+    "## Integration\n- R1-I1: Example.\n",
+);
+
 #[test]
 fn check_reports_every_bad_artifact_before_exiting_one() {
     let directory = TestDir::new("all-errors");
@@ -248,6 +264,40 @@ fn check_aggregates_step_and_review_schema_errors() {
     assert!(stderr.contains("review1.md"));
     assert!(stderr.contains("metadata `Verdict` expected `pass` or `concerns`, but got `approve`"));
     assert!(stdout.contains("checked 2 artifact(s); 2 invalid"));
+}
+
+#[test]
+fn check_reports_an_invalid_task_review_with_its_path() {
+    let directory = TestDir::new("invalid-task-review");
+    let reviews = directory.path.join("reviews");
+    fs::create_dir_all(&reviews).expect("reviews directory should be created");
+    fs::write(
+        reviews.join("review1.md"),
+        VALID_TASK_REVIEW.replace("- Verdict: pass", "- Verdict: approve"),
+    )
+    .expect("task review should be written");
+
+    let output = run_check(&directory.path, &[directory.path.as_os_str()]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr.contains("reviews/review1.md"));
+    assert!(stderr.contains("metadata `Verdict` expected `pass` or `concerns`, but got `approve`"));
+    assert!(stdout.contains("checked 1 artifact(s); 1 invalid"));
+}
+
+#[test]
+fn check_accepts_a_bare_task_review_name_inside_its_reviews_directory() {
+    let directory = TestDir::new("bare-task-review");
+    let reviews = directory.path.join("reviews");
+    fs::create_dir_all(&reviews).expect("reviews directory should be created");
+    fs::write(reviews.join("review1.md"), VALID_TASK_REVIEW)
+        .expect("task review should be written");
+
+    let output = run_check(&reviews, &[std::ffi::OsStr::new("review1.md")]);
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "checked 1 artifact(s); 0 invalid; GOOD\n");
 }
 
 #[test]
