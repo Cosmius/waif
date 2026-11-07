@@ -23,11 +23,94 @@ fn inspect_reports_ready_drafting_goal_in_the_existing_layout() {
     assert!(stdout.contains("Library:            .waif/library"));
     assert!(stdout.contains("Current task:       20260728-1-example"));
     assert!(stdout.contains("Current task dir:   .waif/library/tasks/20260728-1-example"));
+    assert!(stdout.contains("Library schema:     0.3\nTask schema:        0.3\n"));
     assert!(stdout.contains(
         "Goal:\n  Path:             .waif/library/tasks/20260728-1-example/goal.md"
     ));
     assert!(stdout.contains("  Status:           drafting"));
     assert!(stdout.contains("  Ready to accept:  yes"));
+    assert!(stdout.contains("Next:               Revise or accept goal\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_fails_on_an_older_library_manifest_with_migration_notes() {
+    let workspace = current_task_workspace("older-library-manifest");
+    fs::write(
+        workspace.path.join(".waif/library/waif.toml"),
+        "schema_version = \"0.2\"\n",
+    )
+    .expect("library manifest should be written");
+    write_goal(&workspace, "drafting", "2026-08-17T12:00:00+09:00", "");
+
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout.contains("Library schema:     0.2\n"));
+    assert!(stdout.contains("Next:               Migrate schema\n"));
+    assert!(!stdout.contains("Goal:"));
+    assert!(stderr.contains(".waif/library/waif.toml: ERROR: schema version 0.2 is older than 0.3; migrate with migration/README.md and migration/v0.2.md\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_fails_on_a_newer_task_manifest() {
+    let workspace = current_task_workspace("newer-task-manifest");
+    fs::write(
+        current_task_path(&workspace).join("task.toml"),
+        "schema_version = \"0.10\"\n",
+    )
+    .expect("task manifest should be written");
+
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout.contains("Task schema:        0.10\n"));
+    assert!(stdout.contains("Next:               Update WAIF\n"));
+    assert!(!stdout.contains("Goal:"));
+    assert!(stderr.contains("task.toml: ERROR: schema version 0.10 is newer than 0.3; written by a newer WAIF\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_fails_on_an_invalid_task_manifest() {
+    let workspace = current_task_workspace("invalid-task-manifest");
+    fs::write(
+        current_task_path(&workspace).join("task.toml"),
+        "not toml\n",
+    )
+    .expect("task manifest should be written");
+
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout.contains("Task schema:        invalid\n"));
+    assert!(stdout.contains("Next:               Repair manifests\n"));
+    assert!(!stdout.contains("Goal:"));
+    assert!(stderr.contains("task.toml: ERROR: invalid manifest:"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_warns_about_a_missing_task_manifest() {
+    let workspace = current_task_workspace("missing-task-manifest");
+    fs::remove_file(current_task_path(&workspace).join("task.toml"))
+        .expect("task manifest should be removed");
+    write_goal(&workspace, "drafting", "2026-08-17T12:00:00+09:00", "");
+
+    let output = run_inspect(&workspace.path);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(output.status.success(), "{stderr}");
+    assert!(stdout.contains("Task schema:        none\n"));
+    assert!(stderr.contains("task.toml: WARNING: no schema version, older than 0.3; migrate with migration/README.md\n"));
     assert!(stdout.contains("Next:               Revise or accept goal\n"));
 }
 
@@ -190,7 +273,7 @@ fn inspect_preserves_pointer_read_errors_without_changing_the_entry() {
 #[test]
 fn inspect_preserves_a_dangling_selected_task_and_reports_its_path() {
     let workspace = current_task_workspace("dangling-selection");
-    fs::remove_dir(current_task_path(&workspace)).unwrap();
+    fs::remove_dir_all(current_task_path(&workspace)).unwrap();
     let pointer = workspace.path.join(".waif/current_task");
     let before = fs::read_link(&pointer).unwrap();
     let native_error = fs::read_dir(current_task_path(&workspace)).unwrap_err();
@@ -700,6 +783,13 @@ fn current_task_workspace(name: &str) -> TestDir {
     let workspace = TestDir::new(name);
     let tasks = workspace.path.join(".waif/library/tasks");
     fs::create_dir_all(tasks.join("20260728-1-example")).expect("task should be created");
+    fs::write(
+        workspace.path.join(".waif/library/waif.toml"),
+        CURRENT_MANIFEST,
+    )
+    .expect("library manifest should be written");
+    fs::write(tasks.join("20260728-1-example/task.toml"), CURRENT_MANIFEST)
+        .expect("task manifest should be written");
     symlink(
         "library/tasks/20260728-1-example",
         workspace.path.join(".waif/current_task"),
@@ -737,5 +827,7 @@ fn run_inspect(current_dir: &Path) -> Output {
         .output()
         .expect("waif inspect should run")
 }
+
+const CURRENT_MANIFEST: &str = "schema_version = \"0.3\"\n";
 
 const QUESTIONS: &str = "\n## Open Questions\n\n- G-Q1: A question\n";

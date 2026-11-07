@@ -6,8 +6,10 @@ use std::path::Path;
 
 use clap::Args;
 
-use super::{print_tabular_row, relative_path};
-use crate::protocol::{ArtifactClassification, Task, WorkflowDir};
+use super::{print_tabular_row, relative_path, severity_label};
+use crate::protocol::{
+    library_manifest, read_manifest, task_manifest, ArtifactClassification, Task, WorkflowDir,
+};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -63,11 +65,11 @@ impl InspectCommand {
                 .into());
             }
         };
-        print_current_task(&workspace_dir, task)
+        print_current_task(&workspace_dir, &workflow_dir.library_dir(), task)
     }
 }
 
-fn print_current_task(workspace_dir: &Path, task: Task) -> Result<()> {
+fn print_current_task(workspace_dir: &Path, library_dir: &Path, task: Task) -> Result<()> {
     let task_name = task.name().map_err(|_| UnusableInspection)?;
     print_tabular_row("Current task:", task_name);
     print_tabular_row(
@@ -77,6 +79,28 @@ fn print_current_task(workspace_dir: &Path, task: Task) -> Result<()> {
     if let Err(error) = fs::read_dir(&task.path) {
         print_tabular_row("Next:", "Repair or select task");
         return Err(format!("{}: {error}", relative_path(workspace_dir, &task.path)).into());
+    }
+    let manifests = [
+        ("Library schema:", library_manifest(library_dir)),
+        ("Task schema:", task_manifest(&task.path)),
+    ]
+    .map(|(label, path)| (label, read_manifest(&path), path));
+    for (label, state, path) in &manifests {
+        print_tabular_row(label, state.label());
+        for (severity, message) in state.findings() {
+            eprintln!(
+                "{}: {}: {message}",
+                relative_path(workspace_dir, path),
+                severity_label(severity)
+            );
+        }
+    }
+    if let Some(next) = manifests
+        .iter()
+        .find_map(|(_, state, _)| state.next_action())
+    {
+        print_tabular_row("Next:", next);
+        return unusable();
     }
     println!("Goal:");
 

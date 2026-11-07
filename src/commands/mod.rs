@@ -4,6 +4,8 @@ use std::path::Path;
 
 use clap::Subcommand;
 
+use crate::parser::Severity;
+
 mod check;
 mod fill;
 mod goal;
@@ -111,6 +113,13 @@ fn relative_path(workspace_dir: &Path, path: &Path) -> String {
         .unwrap_or(path)
         .display()
         .to_string()
+}
+
+fn severity_label(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Error => "ERROR",
+        Severity::Warning => "WARNING",
+    }
 }
 
 fn print_tabular_row(label: &str, value: impl Display) {

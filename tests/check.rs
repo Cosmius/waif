@@ -508,6 +508,97 @@ fn check_without_path_uses_the_current_task() {
     assert!(stdout.contains("checked 2 artifact(s); 1 invalid"));
 }
 
+#[test]
+fn check_fails_on_an_older_library_manifest_without_checking_artifacts() {
+    let directory = TestDir::new("older-library-manifest");
+    let task = task_with_manifests(&directory, "0.2", "0.3");
+    fs::write(task.join("goal.md"), "not a title\n").expect("goal should be written");
+
+    let output = run_check(&directory.path, &[task.as_os_str()]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "checked 0 artifact(s); 0 invalid; BAD\n");
+    assert!(stderr.contains("library/waif.toml: ERROR: schema version 0.2 is older than 0.3; migrate with migration/README.md and migration/v0.2.md\n"));
+    assert!(!stderr.contains("goal.md"));
+}
+
+#[test]
+fn check_fails_on_a_newer_task_manifest() {
+    let directory = TestDir::new("newer-task-manifest");
+    let task = task_with_manifests(&directory, "0.3", "0.10");
+
+    let output = run_check(&directory.path, &[task.as_os_str()]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr.contains("task.toml: ERROR: schema version 0.10 is newer than 0.3; written by a newer WAIF\n"));
+}
+
+#[test]
+fn check_warns_about_missing_manifests_and_keeps_classification() {
+    let directory = TestDir::new("missing-manifests");
+    let task = directory.path.join("library/tasks/20260710-1-example");
+    fs::create_dir_all(&task).expect("task should be created");
+    fs::write(task.join("goal.md"), VALID_GOAL).expect("goal should be written");
+
+    let output = run_check(&directory.path, &[task.as_os_str()]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(output.status.success(), "{stderr}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "checked 1 artifact(s); 0 invalid; GOOD\n");
+    assert!(stderr.contains("library/waif.toml: WARNING: no schema version, older than 0.3; migrate with migration/README.md\n"));
+    assert!(stderr.contains("task.toml: WARNING: no schema version, older than 0.3; migrate with migration/README.md\n"));
+}
+
+#[test]
+fn check_rejects_a_manifest_with_an_unreadable_version() {
+    let directory = TestDir::new("unreadable-version");
+    let task = task_with_manifests(&directory, "0.3", "0.3.0");
+
+    let output = run_check(&directory.path, &[task.as_os_str()]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr.contains("task.toml: ERROR: schema_version `0.3.0` is not a MAJOR.MINOR version\n"));
+}
+
+#[test]
+fn check_warns_about_an_unknown_manifest_key() {
+    let directory = TestDir::new("unknown-manifest-key");
+    let task = task_with_manifests(&directory, "0.3", "0.3");
+    fs::write(
+        task.join("task.toml"),
+        "schema_version = \"0.3\"\nextra = 1\n",
+    )
+    .expect("task manifest should be written");
+    fs::write(task.join("goal.md"), VALID_GOAL).expect("goal should be written");
+
+    let output = run_check(&directory.path, &[task.as_os_str()]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(output.status.success(), "{stderr}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "checked 1 artifact(s); 0 invalid; GOOD\n");
+    assert!(stderr.contains("task.toml: WARNING: unknown key `extra` ignored\n"));
+}
+
+fn task_with_manifests(directory: &TestDir, library: &str, task: &str) -> std::path::PathBuf {
+    let library_dir = directory.path.join("library");
+    let task_dir = library_dir.join("tasks/20260710-1-example");
+    fs::create_dir_all(&task_dir).expect("task should be created");
+    fs::write(
+        library_dir.join("waif.toml"),
+        format!("schema_version = \"{library}\"\n"),
+    )
+    .expect("library manifest should be written");
+    fs::write(
+        task_dir.join("task.toml"),
+        format!("schema_version = \"{task}\"\n"),
+    )
+    .expect("task manifest should be written");
+    task_dir
+}
+
 fn run_check(current_dir: &std::path::Path, arguments: &[&std::ffi::OsStr]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_waif"))
         .arg("check")
