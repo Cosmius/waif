@@ -25,15 +25,19 @@ Implement one accepted step through a review-and-acceptance loop.
    the user explicitly identifies existing changes as part of this step.
 4. Implement only the accepted step, following workspace instructions and
    existing code patterns. Add or update tests proportionate to the change.
+   A step that changes no source, such as one that only runs tests, leaves
+   the workspace unchanged.
 5. Run every validation command in `step.md`, plus relevant repository checks.
    Fix failures caused by the step.
 6. Spawn a fresh subagent and ask it to use `dev-review` on the current
    step. Pass the validation results and any REF or record path other than
    its defaults, but no suggested verdict or explanation of the changes. If
-   subagents are unavailable, run `dev-review` in the current session.
+   subagents are unavailable, run `dev-review` in the current session. Skip
+   this for a step that changed no source.
 7. Present the implementation with the record's verdict, findings, and path,
    only when nothing changed after the latest record was written; any later
-   change needs a new record first.
+   change needs a new record first. Present a step that changed no source
+   with its validation results instead.
 8. Interpret the response:
    - On requested changes, revise the implementation, rerun validation, and
      obtain a new review record as in step 6.
@@ -44,8 +48,11 @@ Implement one accepted step through a review-and-acceptance loop.
    - Rerun required validation when the staged content differs from the content
      last validated, then run `waif step commit -F -` with the commit message
      on standard input. It commits exactly the staged changes.
+   - When the step changed no source, accept it only on the human's explicit
+     acceptance with a clean working tree, then run
+     `waif step commit --no-commit`.
 9. Read the `waif step commit` output. On success the helper has already
-   recorded the full commit hash in `Source commit`, set the step
+   recorded the full commit hash, or `none`, in `Source commit`, set the step
    `Status: done`, refreshed `Updated`, and marked plan items with `complete`
    coverage `done`; plan items with only `partial` coverage stay `pending`.
 10. Report completion and provide the workflow guide:
@@ -56,7 +63,8 @@ Implement one accepted step through a review-and-acceptance loop.
 ## Guardrails
 
 - Never commit before human staging.
-- Treat staging as the only source-change acceptance signal.
+- Treat staging as the only source-change acceptance signal. Close a step
+  without a commit only when it changed no source.
 - Never run staging-related commands, including `git add`, `git reset`,
   `git restore --staged`, or equivalents. The human exclusively selects staged
   paths and content.
@@ -68,9 +76,10 @@ Implement one accepted step through a review-and-acceptance loop.
 
 ## Done When
 
-- Accepted source changes are committed on the recorded branch.
-- `step.md` has `Status: done` and `Source commit: <full commit hash>`.
+- Accepted source changes, if any, are committed on the recorded branch.
+- `step.md` has `Status: done` and `Source commit: <full commit hash>`, or
+  `Source commit: none` for a step that changed no source.
 - Plan items with `complete` coverage are `done`.
 - Plan items with only `partial` coverage remain `pending`.
 - Every review record written by `dev-review` remains in the step
-  directory.
+  directory; a step that changed no source may have none.

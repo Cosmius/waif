@@ -29,7 +29,9 @@ Consume one coherent part of the general plan and produce an executable
 5. Inspect relevant code deeply enough to name key decisions, affected files,
    and validation. Estimate changed non-test/doc lines. Keep the step suitable for
    one source commit and roughly 200 such lines or fewer. If not practical,
-   explain why in `Size and Coherence`. Do not modify source code.
+   explain why in `Size and Coherence`. A step that changes no source, such as
+   one that only runs end-to-end tests, makes no commit and lists no
+   `Changes`. Do not modify source code.
 6. Create or revise the initial step only while `Status: drafting`. An accepted
    step may enter `amending` and be revised under the amendment-cycle rules.
    Do not revise a done step unless the human has reopened it under the
@@ -60,15 +62,16 @@ Follow the [`step.md` template](../../protocol/template/step.md).
 Statuses are `drafting`, `accepted`, `amending`, `done`, and `aborted`.
 `Source commit` remains `not-created` through drafting, acceptance, and
 amendment; in the normal lifecycle, only a successfully committed
-implementation changes it to a full commit hash. An `aborted` step keeps
-whatever `Source commit` it had.
+implementation changes it to a full commit hash, or `none` for an accepted
+step that changed no source. An `aborted` step keeps whatever
+`Source commit` it had.
 - `Plan items` is a comma-separated exact-ID list, for example
   `Plan items: P2, P3`.
 - `Goal criteria` is the union advanced through those plan items.
 - `Source commit` must be `not-created` while the step is `drafting`,
   `accepted`, or `amending`. In the normal lifecycle, `waif step commit`, run
   by `dev-implement-step`, replaces it with the full commit hash after the
-  workspace commit succeeds.
+  workspace commit succeeds, or with `none` when the step makes no commit.
 - `Plan Item Coverage` must contain one entry for every listed plan ID and no
   others, naming it in `Plan item` and setting `Coverage` to `partial` or
   `complete`. Use `complete` instead of `partial` when this step is expected
@@ -77,8 +80,8 @@ whatever `Source commit` it had.
 Omit empty optional sections. While a step is `amending`, use expanded
 `Revisions` records and the shared amendment-cycle rules. In the normal
 lifecycle, a step becomes `done` only after implementation is accepted and the
-workspace commit succeeds; a human-requested close follows the shared status
-rules.
+workspace commit succeeds, or without a commit when it changed no source; a
+human-requested close follows the shared status rules.
 Plan items may remain `pending` across completed steps. Prefix item IDs with
 the unpadded step number, such as `S1-C1` for step directory `01-short-name`;
 preserve them while drafting and never reuse them. Follow the shared item-ID
@@ -94,8 +97,9 @@ and ambiguity rules.
 
 ## Done When
 
-- The step is one commit, roughly 200 changed non-test/doc lines or fewer, or
-  explains why a smaller coherent scope is impractical.
+- The step is one commit, or no commit when it changes no source, with
+  roughly 200 changed non-test/doc lines or fewer, or explains why a smaller
+  coherent scope is impractical.
 - Files, behavior, edge cases, validation, and coverage are concrete and exact.
 - Every step content item has a stable, step-qualified ID.
 - Acceptance is reflected in `step.md`; `goal.md` and `plan.md` remain

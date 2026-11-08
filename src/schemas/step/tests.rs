@@ -44,6 +44,21 @@ fn accepts_aborted_step_without_source_commit() {
 }
 
 #[test]
+fn accepts_done_step_without_source_commit() {
+    let source = VALID
+        .replace("Status: accepted", "Status: done")
+        .replace("not-created", "none");
+    assert_eq!(messages("steps/03-check/step.md", &source), []);
+}
+
+#[test]
+fn rejects_none_source_commit_for_accepted_step() {
+    let source = VALID.replace("not-created", "none");
+    let found = messages("steps/03-check/step.md", &source);
+    assert!(found.iter().any(|entry| entry.2.contains("incompatible")), "{found:?}");
+}
+
+#[test]
 fn aggregates_lifecycle_coverage_order_and_identity_errors() {
     let source = VALID
         .replace("- Status: accepted", "- Updated: invalid\n- Status: done")

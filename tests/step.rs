@@ -197,6 +197,40 @@ fn commit_with_unreadable_message_file_is_rejected() {
     assert_eq!(fs::read(step_path(&workspace)).unwrap(), before);
 }
 
+#[test]
+fn no_commit_reports_none_and_marks_plan_item_done() {
+    let workspace = commit_fixture("no-commit");
+    GitRepo::new(&workspace.path)
+        .exec(&["rm", "--cached", "-q", "a.txt"])
+        .unwrap();
+    fs::remove_file(workspace.path.join("a.txt")).unwrap();
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+
+    let output = run(&workspace.path, &["step", "commit", "--no-commit"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(stdout.contains("Commit:             none\n"), "{stdout}");
+    assert!(stdout.contains("Status:             done\n"));
+    assert!(stdout.contains("Plan items done:    P1\n"));
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert!(fs::read_to_string(step_path(&workspace)).unwrap().contains("- Source commit: none\n"));
+}
+
+#[test]
+fn no_commit_with_message_is_a_usage_error() {
+    let workspace = commit_fixture("no-commit-message");
+    let before = fs::read(step_path(&workspace)).unwrap();
+
+    let output = run(
+        &workspace.path,
+        &["step", "commit", "--no-commit", "-m", "Add a"],
+    );
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(fs::read(step_path(&workspace)).unwrap(), before);
+}
+
 /// An accepted step with complete coverage and one staged file.
 fn commit_fixture(name: &str) -> TestDir {
     let workspace = fixture(name);

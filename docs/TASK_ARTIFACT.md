@@ -661,16 +661,17 @@ Structurally required metadata is:
 
 ```text
 Status         drafting | accepted | amending | done | aborted
-Source commit  not-created | full 40-character hexadecimal Git commit hash
+Source commit  not-created | none | full 40-character hexadecimal Git commit hash
 Created        RFC 3339 timestamp with Z or a numeric UTC offset
 Updated        RFC 3339 timestamp with Z or a numeric UTC offset
 ```
 
 `Source commit` is `not-created` for `drafting`, `accepted`, and `amending`
-steps. A `done` step requires a full commit hash. An `aborted` step accepts
-either value. Authoring metadata such as `Plan items`, `Goal criteria`, and
-`Estimated non-test/doc changes` follows the validated metadata. It remains
-structured metadata, but its values are not checked.
+steps. A `done` step requires a full commit hash, or `none` when the step
+made no commit. An `aborted` step accepts any value. Authoring metadata such
+as `Plan items`, `Goal criteria`, and `Estimated non-test/doc changes` follows
+the validated metadata. It remains structured metadata, but its values are not
+checked.
 
 Known sections have this relative order:
 

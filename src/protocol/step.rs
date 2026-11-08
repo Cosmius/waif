@@ -14,7 +14,8 @@ use crate::schemas::step::{coverage_entries, step_directory_number};
 /// The outcome of a successful step commit.
 #[derive(Debug)]
 pub(crate) struct StepCommit {
-    pub(crate) hash: String,
+    /// The new commit, or `None` for a step closed without a commit.
+    pub(crate) hash: Option<String>,
     pub(crate) done_items: Vec<String>,
 }
 
@@ -37,8 +38,14 @@ impl Task {
     }
 
     /// Commit the staged index for the accepted current step, then record the
-    /// commit in the step and mark completely covered plan items done.
-    pub(crate) fn commit_step(&self, workspace: &Path, message: &str) -> Result<StepCommit> {
+    /// commit in the step and mark completely covered plan items done. With
+    /// no message, close the step without a commit, requiring a clean working
+    /// tree, and record `Source commit: none`.
+    pub(crate) fn commit_step(
+        &self,
+        workspace: &Path,
+        message: Option<&str>,
+    ) -> Result<StepCommit> {
         let path = self.current_step_path()?;
         let file = read_good_step(&path)?;
         let mut step = file.parse_step()?;
@@ -47,16 +54,29 @@ impl Task {
             "done" => vec!["step is already done".to_owned()],
             _ => vec!["step is not accepted".to_owned()],
         };
-        if message.trim().is_empty() {
+        if message.is_some_and(|message| message.trim().is_empty()) {
             blockers.push("commit message is empty".to_owned());
         }
         self.step_blockers(workspace, &step, &mut blockers)?;
         let repo = GitRepo::new(workspace);
-        if !repo.has_staged_changes()? {
-            blockers.push("no staged changes to commit".to_owned());
-        }
-        if repo.has_unmerged_entries()? {
-            blockers.push("the index has unmerged entries".to_owned());
+        match message {
+            Some(_) => {
+                if !repo.has_staged_changes()? {
+                    blockers.push("no staged changes to commit".to_owned());
+                }
+                if repo.has_unmerged_entries()? {
+                    blockers.push("the index has unmerged entries".to_owned());
+                }
+            }
+            None => {
+                if !repo.working_tree_clean()? {
+                    blockers.push(
+                        "the working tree is not clean; a step closed without a commit \
+                         changes no files"
+                            .to_owned(),
+                    );
+                }
+            }
         }
         reject(&path, blockers)?;
 
@@ -77,17 +97,32 @@ impl Task {
             set_metadata(&mut plan, "Updated", &updated)?;
         }
 
-        repo.commit(message)?;
-        let hash = repo
-            .last_commit()
-            .map_err(|error| format!("commit created but its hash is unreadable: {error}"))?;
+        let hash = match message {
+            Some(message) => {
+                repo.commit(message)?;
+                let hash = repo.last_commit().map_err(|error| {
+                    format!("commit created but its hash is unreadable: {error}")
+                })?;
+                Some(hash)
+            }
+            None => None,
+        };
         let unwritten = |artifact: &Path, error: Box<dyn std::error::Error>| {
             let artifact = artifact.display();
-            format!("commit {hash} created but {artifact} was not updated: {error}")
+            match &hash {
+                Some(hash) => {
+                    format!("commit {hash} created but {artifact} was not updated: {error}")
+                }
+                None => format!("{artifact} was not updated: {error}"),
+            }
         };
-        set_metadata(&mut step, "Source commit", &hash)
-            .and_then(|()| replace_artifact(&path, &serialize(&step)))
-            .map_err(|error| unwritten(&path, error))?;
+        set_metadata(
+            &mut step,
+            "Source commit",
+            hash.as_deref().unwrap_or("none"),
+        )
+        .and_then(|()| replace_artifact(&path, &serialize(&step)))
+        .map_err(|error| unwritten(&path, error))?;
         if !done_items.is_empty() {
             replace_artifact(&plan_path, &serialize(&plan))
                 .map_err(|error| unwritten(&plan_path, error))?;

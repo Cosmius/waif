@@ -18,7 +18,7 @@ dev-draft-plan
 dev-plan-step
   -> accepted detailed step
 dev-implement-step
-  -> reviewed and accepted source commit
+  -> reviewed and accepted source commit, or validated step without commit
   -> human decides: more steps or requests final review
      -> more steps: return to dev-plan-step
      -> final review: continue to dev-final-review
@@ -33,7 +33,7 @@ dev-final-review
 | Goal                | `dev-draft-goal`     | User request               | Accepted `goal.md` in a new or current task dir           |
 | General plan        | `dev-draft-plan`     | Accepted goal              | Accepted `plan.md` and checked-out workspace task branch  |
 | Step plan           | `dev-plan-step`      | Accepted goal and plan     | One accepted `steps/NN-name/step.md` mapped to plan items |
-| Step implementation | `dev-implement-step` | One accepted step          | Validated, reviewed, human-accepted source commit         |
+| Step implementation | `dev-implement-step` | One accepted step          | Validated, human-accepted commit (reviewed) or no commit  |
 | Final review        | `dev-final-review`   | User requests final review | A new `reviews/reviewN.md` covering the whole task        |
 
 ### Human Gates and Loops
@@ -78,8 +78,9 @@ and command sequences to step planning. It is persisted in `plan.md`.
 ### Step
 
 A `step` is one coherent implementation unit suitable for one source commit.
-It may consume all or part of one or more general plan items; plan items and
-steps do not map one to one.
+A step that changes no source, such as one that only runs end-to-end tests,
+makes no commit and needs no review record. It may consume all or part of
+one or more general plan items; plan items and steps do not map one to one.
 
 ### Step Plan
 
@@ -292,8 +293,9 @@ on the human's explicit request.
 
 A step plan normally becomes `done` through `waif step commit`, as described
 below. A step set to `done` on request also needs its full commit hash in
-`Source commit`; when no commit exists, ask the human for the hash or whether
-to record `aborted` instead. An `aborted` step keeps its `Source commit`.
+`Source commit`, or `none` when the step made no commit; when the commit is
+unclear, ask the human for the hash or whether to record `none` or `aborted`
+instead. An `aborted` step keeps its `Source commit`.
 When a step moves from `done` or `aborted` back to `drafting`, `accepted`, or
 `amending`, reset `Source commit` to `not-created`.
 
@@ -301,8 +303,9 @@ In the normal lifecycle, do not reset an accepted or amending goal or general
 plan to `drafting`. An accepted step plan changes only through an amendment
 cycle until it is `done`, and a `done` step plan is not revised.
 `waif step commit` writes the step's `Status`, `Updated`, and
-`Source commit` when the step's source commit succeeds, and marks plan items
-with `complete` coverage `done`.
+`Source commit` when the step's source commit succeeds, or with
+`--no-commit` when the human accepts a step without a commit, and marks plan
+items with `complete` coverage `done`.
 Marking a plan item `done` this way is not a plan amendment: the plan's
 `Status` stays `accepted` and no revision is added.
 

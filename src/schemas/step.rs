@@ -156,15 +156,18 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
 }
 
 fn source_commit(value: &str) -> Result<(), String> {
-    if value == "not-created"
-        || (value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
-    {
+    if matches!(value, "not-created" | "none") || is_commit_hash(value) {
         Ok(())
     } else {
         Err(format!(
-            "expected `not-created` or a full 40-character Git commit hash, but got `{value}`"
+            "expected `not-created`, `none`, or a full 40-character Git commit hash, but got \
+             `{value}`"
         ))
     }
+}
+
+fn is_commit_hash(value: &str) -> bool {
+    value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn validate_title(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) -> Option<i64> {
@@ -190,7 +193,7 @@ fn validate_lifecycle(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) {
         return;
     };
     let valid = if status.value() == "done" {
-        commit.value().len() == 40 && commit.value().bytes().all(|byte| byte.is_ascii_hexdigit())
+        commit.value() == "none" || is_commit_hash(commit.value())
     } else if matches!(status.value(), "drafting" | "accepted" | "amending") {
         commit.value() == "not-created"
     } else {

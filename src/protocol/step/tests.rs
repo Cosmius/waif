@@ -473,12 +473,12 @@ fn committing_complete_step_records_commit_and_marks_plan_item_done() {
     fs::write(workspace.path.join("a.txt"), "unstaged\n").unwrap();
     let plan = fs::read_to_string(task.path.join("plan.md")).unwrap();
 
-    let commit = task.commit_step(&workspace.path, "Add a").unwrap();
+    let commit = task.commit_step(&workspace.path, Some("Add a")).unwrap();
     let step = read_step(&task);
     let plan_after = fs::read_to_string(task.path.join("plan.md")).unwrap();
     let expected_step = source
         .replace("- Status: accepted", "- Status: done")
-        .replace("not-created", &commit.hash)
+        .replace("not-created", commit.hash.as_deref().unwrap())
         .replace(
             &format!("- Updated: {TIMESTAMP}"),
             &format!("- Updated: {}", updated(&step)),
@@ -493,7 +493,7 @@ fn committing_complete_step_records_commit_and_marks_plan_item_done() {
             &format!("- Updated: {}", updated(&plan_after)),
         );
 
-    assert_eq!(commit.hash, repo.last_commit().unwrap());
+    assert_eq!(commit.hash, Some(repo.last_commit().unwrap()));
     assert_eq!(commit.done_items, ["P1"]);
     assert_eq!(git(&workspace, &["rev-parse", "HEAD~1"]), base);
     assert_eq!(git(&workspace, &["log", "-1", "--format=%s"]), "Add a");
@@ -509,10 +509,10 @@ fn committing_partial_step_leaves_plan_unchanged() {
     stage(&workspace, "a.txt", "staged\n");
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
-    let commit = task.commit_step(&workspace.path, "Add a").unwrap();
+    let commit = task.commit_step(&workspace.path, Some("Add a")).unwrap();
 
     assert!(commit.done_items.is_empty());
-    assert!(read_step(&task).contains(&format!("- Source commit: {}\n", commit.hash)));
+    assert!(read_step(&task).contains(&format!("- Source commit: {}\n", commit.hash.unwrap())));
     assert!(read_step(&task).contains("- Status: done\n"));
     assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
 }
@@ -526,7 +526,7 @@ fn committing_drafting_step_is_rejected() {
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
     let error = task
-        .commit_step(&workspace.path, "Add a")
+        .commit_step(&workspace.path, Some("Add a"))
         .unwrap_err()
         .to_string();
 
@@ -549,7 +549,7 @@ fn committing_done_step_is_rejected() {
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
     let error = task
-        .commit_step(&workspace.path, "Add a")
+        .commit_step(&workspace.path, Some("Add a"))
         .unwrap_err()
         .to_string();
 
@@ -570,7 +570,7 @@ fn committing_on_wrong_branch_is_rejected() {
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
     let error = task
-        .commit_step(&workspace.path, "Add a")
+        .commit_step(&workspace.path, Some("Add a"))
         .unwrap_err()
         .to_string();
 
@@ -589,7 +589,7 @@ fn blank_commit_message_is_rejected() {
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
     let error = task
-        .commit_step(&workspace.path, " \n\t")
+        .commit_step(&workspace.path, Some(" \n\t"))
         .unwrap_err()
         .to_string();
 
@@ -608,7 +608,7 @@ fn commit_without_staged_changes_is_rejected() {
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
     let error = task
-        .commit_step(&workspace.path, "Add a")
+        .commit_step(&workspace.path, Some("Add a"))
         .unwrap_err()
         .to_string();
 
@@ -634,7 +634,7 @@ fn commit_with_unmerged_entries_is_rejected() {
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
     let error = task
-        .commit_step(&workspace.path, "Merge")
+        .commit_step(&workspace.path, Some("Merge"))
         .unwrap_err()
         .to_string();
 
@@ -654,7 +654,7 @@ fn commit_refused_by_hook_is_rejected() {
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
     let error = task
-        .commit_step(&workspace.path, "Add a")
+        .commit_step(&workspace.path, Some("Add a"))
         .unwrap_err()
         .to_string();
 
@@ -676,7 +676,7 @@ fn step_write_failure_after_commit_reports_hash_and_step() {
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
     let error = task
-        .commit_step(&workspace.path, "Add a")
+        .commit_step(&workspace.path, Some("Add a"))
         .unwrap_err()
         .to_string();
     fs::set_permissions(&step_dir, fs::Permissions::from_mode(0o755)).unwrap();
@@ -699,7 +699,7 @@ fn plan_write_failure_after_commit_reports_hash_and_plan() {
     let plan = fs::read(task.path.join("plan.md")).unwrap();
 
     let error = task
-        .commit_step(&workspace.path, "Add a")
+        .commit_step(&workspace.path, Some("Add a"))
         .unwrap_err()
         .to_string();
     fs::set_permissions(&task.path, fs::Permissions::from_mode(0o755)).unwrap();
@@ -709,6 +709,75 @@ fn plan_write_failure_after_commit_reports_hash_and_plan() {
     assert!(read_step(&task).contains(&format!("- Source commit: {hash}\n")));
     assert!(read_step(&task).contains("- Status: done\n"));
     assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+}
+
+#[test]
+fn closing_step_without_commit_records_none_and_marks_plan_item_done() {
+    let (workspace, task) = fixture("no-commit-complete", "accepted");
+    let source = read_step(&task).replace("- Coverage: partial", "- Coverage: complete");
+    write_step(&task, "01-test", &source);
+    let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+
+    let commit = task.commit_step(&workspace.path, None).unwrap();
+    let step = read_step(&task);
+    let plan = fs::read_to_string(task.path.join("plan.md")).unwrap();
+
+    assert_eq!(commit.hash, None);
+    assert_eq!(commit.done_items, ["P1"]);
+    assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+    assert!(step.contains("- Status: done\n- Source commit: none\n"), "{step}");
+    assert!(plan.contains("### P1: First\n\n- Status: done"), "{plan}");
+}
+
+#[test]
+fn closing_step_without_commit_rejects_unclean_working_tree() {
+    type Dirty = fn(&TestDir);
+    let cases: [(&str, Dirty); 3] = [
+        ("no-commit-staged", |workspace| {
+            stage(workspace, "a.txt", "staged\n")
+        }),
+        ("no-commit-modified", |workspace| {
+            stage(workspace, "a.txt", "committed\n");
+            GitRepo::new(&workspace.path)
+                .exec(&["commit", "-m", "Add a"])
+                .unwrap();
+            fs::write(workspace.path.join("a.txt"), "modified\n").unwrap();
+        }),
+        ("no-commit-untracked", |workspace| {
+            fs::write(workspace.path.join("a.txt"), "untracked\n").unwrap();
+        }),
+    ];
+    for (name, dirty) in cases {
+        let (workspace, task) = fixture(name, "accepted");
+        dirty(&workspace);
+        let head = GitRepo::new(&workspace.path).last_commit().unwrap();
+        let before = read_step(&task);
+        let plan = fs::read(task.path.join("plan.md")).unwrap();
+
+        let error = task
+            .commit_step(&workspace.path, None)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("the working tree is not clean"), "{name}: {error}");
+        assert_eq!(GitRepo::new(&workspace.path).last_commit().unwrap(), head);
+        assert_eq!(read_step(&task), before);
+        assert_eq!(fs::read(task.path.join("plan.md")).unwrap(), plan);
+    }
+}
+
+#[test]
+fn closing_drafting_step_without_commit_is_rejected() {
+    let (workspace, task) = fixture("no-commit-drafting", "drafting");
+    let before = read_step(&task);
+
+    let error = task
+        .commit_step(&workspace.path, None)
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("step is not accepted"), "{error}");
+    assert_eq!(read_step(&task), before);
 }
 
 fn fixture(name: &str, status: &str) -> (TestDir, Task) {

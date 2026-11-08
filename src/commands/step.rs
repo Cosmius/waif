@@ -20,6 +20,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
           waif step accept
           waif step commit -m \"Add session timeout\"
           waif step commit -F -
+          waif step commit --no-commit
 
         Acceptance acts on the step directory with the greatest number. It
         requires explicit human approval, an accepted goal and plan, a GOOD
@@ -29,7 +30,8 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
         Commit requires the same preconditions on an accepted step, commits
         exactly the staged changes, then marks the step done with the commit
-        hash and marks plan items with complete coverage done."
+        hash and marks plan items with complete coverage done. With
+        --no-commit it requires a clean working tree and records no commit."
     }
 )]
 pub enum StepCommand {
@@ -44,7 +46,8 @@ pub enum StepCommand {
         preconditions leave every file unchanged."
     })]
     Accept(AcceptCommand),
-    /// Commit the staged changes of the current accepted step.
+    /// Commit the staged changes of the current accepted step, or close it
+    /// without a commit.
     #[command(long_about = indoc::indoc! {"
         Commit exactly the staged changes for the current accepted step,
         taking the message from -m MESSAGE or -F FILE, where FILE - reads
@@ -53,7 +56,12 @@ pub enum StepCommand {
         failed preconditions leave every file and the repository unchanged.
         After the commit, the step records the commit hash and becomes done,
         and plan items with complete coverage become done. A failure after
-        the commit reports the hash and the artifact that was not updated."
+        the commit reports the hash and the artifact that was not updated.
+
+        --no-commit closes a step that changes no source, such as one that
+        only runs tests, after explicit human approval. It requires the step
+        acceptance preconditions and a clean working tree, then records
+        Source commit: none and updates the step and plan as above."
     })]
     Commit(CommitCommand),
 }
@@ -92,7 +100,8 @@ impl AcceptCommand {
     Examples:
       waif step commit -m \"Add session timeout\"
       waif step commit -F message.txt
-      waif step commit -F -"
+      waif step commit -F -
+      waif step commit --no-commit"
 })]
 pub struct CommitCommand {
     /// Use MESSAGE as the commit message.
@@ -101,22 +110,29 @@ pub struct CommitCommand {
     /// Read the commit message from FILE; `-` reads standard input.
     #[arg(short = 'F', long, value_name = "FILE")]
     file: Option<PathBuf>,
+    /// Close the step without a commit; the working tree must be clean.
+    #[arg(long)]
+    no_commit: bool,
 }
 
 impl CommitCommand {
     fn run(self) -> Result<()> {
-        let message = match (self.message, self.file) {
-            (Some(message), _) => message,
-            (None, Some(file)) => read_message(&file)?,
-            (None, None) => unreachable!("clap requires -m or -F"),
+        let message = match (self.message, self.file, self.no_commit) {
+            (Some(message), _, _) => Some(message),
+            (None, Some(file), _) => Some(read_message(&file)?),
+            (None, None, true) => None,
+            (None, None, false) => unreachable!("clap requires -m, -F, or --no-commit"),
         };
         let context = StepContext::resolve()?;
-        let commit = match context.task.commit_step(&context.workspace_dir, &message) {
+        let result = context
+            .task
+            .commit_step(&context.workspace_dir, message.as_deref());
+        let commit = match result {
             Ok(commit) => commit,
             Err(error) => return Err(context.rejected(error)),
         };
         context.print();
-        print_tabular_row("Commit:", &commit.hash);
+        print_tabular_row("Commit:", commit.hash.as_deref().unwrap_or("none"));
         print_tabular_row("Status:", "done");
         let done = if commit.done_items.is_empty() {
             "none".to_owned()

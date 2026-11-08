@@ -77,11 +77,14 @@ supports completion.
 
 **Explicit acceptance gates.** The agent stops for human acceptance at the
 goal, plan, and step-plan stages. During implementation, the human manually
-stages the source changes they accept before the agent commits them.
+stages the source changes they accept before the agent commits them. A step
+that changes no source, such as one that only runs tests, closes without a
+commit once the human accepts it.
 
 **Step-sized implementation.** A task is implemented as one or more coherent
 steps. Each step should be small enough to review as a focused unit and commit
-as a meaningful source change.
+as a meaningful source change, or, when it changes no source, to verify as one
+unit.
 
 **Task-wide final review.** The workflow ends with a final review of the whole
 branch against the accepted goal, accepted plan, completed steps, prior
@@ -99,7 +102,7 @@ dev-draft-plan
 dev-plan-step
   -> accepted step plan
 dev-implement-step
-  -> reviewed, human-staged, committed step
+  -> reviewed, human-staged, committed step, or validated step without commit
   -> repeat step planning and implementation as needed
 dev-final-review
   -> final task review
@@ -197,7 +200,9 @@ Use dev-implement-step to implement the accepted step.
 ```
 
 After implementation review, manually stage the source changes you accept. The
-agent verifies the staged diff and commits that step.
+agent verifies the staged diff and commits that step. A step that changes no
+source skips the review and closes without a commit when you accept its
+validation results.
 
 Repeat step planning and implementation until the task is complete:
 

@@ -39,8 +39,8 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
     one `Blocker:` row per `waif step accept` precondition that fails. An
     `accepted` step also reports whether changes are staged.
   - The next action is to fill, revise, or accept the step, implement and
-    review it, commit it, plan the next step, or request the final review
-    once every plan item is `done`.
+    review it, commit or close it, plan the next step, or request the final
+    review once every plan item is `done`.
   - A BAD current step, several step directories sharing the greatest
     number, or a missing `step.md` fails with `Next: Check step`.
 - `waif new <TASK_SLUG>` creates and selects the next date-sequenced task.
@@ -99,6 +99,10 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
   Failed preconditions leave the repository and every file unchanged. A
   failure after the commit reports the commit hash and the artifact that was
   not updated.
+- `waif step commit --no-commit` closes the current `accepted` step without
+  a commit, after explicit human approval. It requires the `step accept`
+  preconditions and no staged changes, then sets `Source commit: none`,
+  `Status: done`, and `Updated`, and marks plan items as above.
 
 Ordinary task access preserves nominal library and task paths and reports
 native filesystem failures. A low-level mutation failure may leave partial

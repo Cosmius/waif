@@ -61,6 +61,12 @@ impl GitRepo {
             .is_empty())
     }
 
+    /// Whether the index, tracked files, and untracked unignored files all
+    /// match `HEAD`.
+    pub(crate) fn working_tree_clean(&self) -> Result<bool, String> {
+        Ok(self.run_text_output(&["status", "--porcelain"])?.is_empty())
+    }
+
     pub(crate) fn branch_states(&self, branches: &[&str]) -> Result<Vec<BranchState>, String> {
         let refs: Vec<_> = branches
             .iter()

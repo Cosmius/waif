@@ -67,7 +67,7 @@
 
 ## Size and Coherence
 
-{{ Why this scope is coherent as one commit. If the estimate exceeds roughly
+{{ Why this scope is coherent as one step. If the estimate exceeds roughly
 200 changed non-test and non-documentation lines, explain why splitting it
 further would make the step impractical or incoherent. }}
 
