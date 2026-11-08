@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::artifact::{Artifact, Item, Located, Metadata};
+use crate::artifact::Artifact;
 use crate::parser::{self, Diagnostic, Position};
 use crate::schema::{
     self, metadata_validators, unpadded_decimal, ArtifactPrefixRule, ArtifactPrefixShape, ItemRule,
@@ -14,32 +14,30 @@ const SCHEMA: Schema = Schema {
     sections: &SECTIONS,
 };
 
-const METADATA: [MetadataRule; 5] = [
-    MetadataRule {
-        name: "Step",
-        validator: step_path,
-    },
-    MetadataRule {
-        name: "Decision",
-        validator: decision,
-    },
+const METADATA: [MetadataRule; 4] = [
     MetadataRule {
         name: "Date",
         validator: metadata_validators::rfc3339_timestamp,
     },
     MetadataRule {
-        name: "Reviewer",
-        validator: reviewer,
+        name: "Verdict",
+        validator: verdict,
     },
     MetadataRule {
-        name: "Workspace state",
-        validator: workspace_state,
+        name: "Reviewed",
+        validator: reference,
+    },
+    MetadataRule {
+        name: "Reviewed against",
+        validator: reference,
     },
 ];
 
-const SECTIONS: [SectionRule; 4] = [
+const SECTIONS: [SectionRule; 6] = [
+    SectionRule::new("Summary"),
     SectionRule::new("Findings").with_items(ItemRule::new("F").with_sentinel("No findings.")),
-    SectionRule::optional("Scope").with_items(ItemRule::new("SC")),
+    SectionRule::new("Assessment"),
+    SectionRule::optional("Review History"),
     SectionRule::optional("Validation").with_items(ItemRule::new("V")),
     SectionRule::optional("Residual Risks").with_items(ItemRule::new("RR")),
 ];
@@ -54,7 +52,6 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
     let (schema_diagnostics, prefix) = schema::validate_with_prefix(&artifact, &SCHEMA);
     diagnostics.extend(schema_diagnostics);
 
-    let title_number = validate_title(&mut diagnostics, &artifact);
     let filename_number = review_filename_number(path);
     if filename_number.is_none() {
         diagnostics.push(Diagnostic::error1(
@@ -62,7 +59,6 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
             "review filename must use `reviewN.md` with a positive decimal number",
         ));
     }
-    validate_decision_findings(&mut diagnostics, &artifact);
 
     let path_step_number = step_directory_number(&mut diagnostics, path);
     if path_step_number.is_none() {
@@ -84,14 +80,6 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
             &mut diagnostics,
         );
         compare_identity(
-            "title",
-            title_number,
-            *review.value(),
-            *review.span().start(),
-            "review",
-            &mut diagnostics,
-        );
-        compare_identity(
             "filename",
             filename_number,
             *review.value(),
@@ -100,105 +88,34 @@ pub(crate) fn check(path: &Path, source: &str) -> Vec<Diagnostic> {
             &mut diagnostics,
         );
     }
-    if let (Some(left), Some(right)) = (title_number, filename_number) {
-        if left != right {
-            diagnostics.push(Diagnostic::error_p(
-                Position::ZERO,
-                format!("review title number `{left}` does not match filename `{right}`"),
-            ));
-        }
-    }
     diagnostics
 }
 
-fn step_path(value: &str) -> Result<(), String> {
-    exact(value, "./step.md")
+fn verdict(value: &str) -> Result<(), String> {
+    match value {
+        "pass" | "concerns" => Ok(()),
+        _ => Err(format!("expected `pass` or `concerns`, but got `{value}`")),
+    }
 }
 
-fn decision(value: &str) -> Result<(), String> {
-    choices(value, &["pass", "changes-requested"])
-}
-
-fn reviewer(value: &str) -> Result<(), String> {
-    choices(
-        value,
-        &[
-            "independent subagent",
-            "current session - subagent unavailable",
-        ],
-    )
-}
-
-fn workspace_state(value: &str) -> Result<(), String> {
-    exact(value, "uncommitted")
-}
-
-fn exact(value: &str, expected: &str) -> Result<(), String> {
-    if value == expected {
+/// Accept a REF: a full commit hash, optionally followed by `-STAGING` or
+/// `-WORKING`. Text after the first space, such as `(HEAD, main)`, is not
+/// checked.
+fn reference(value: &str) -> Result<(), String> {
+    let revision = value
+        .split_once(' ')
+        .map_or(value, |(revision, _)| revision);
+    let hash = revision
+        .strip_suffix("-STAGING")
+        .or_else(|| revision.strip_suffix("-WORKING"))
+        .unwrap_or(revision);
+    if hash.len() == 40 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         Ok(())
     } else {
-        Err(format!("expected `{expected}`, but got `{value}`"))
-    }
-}
-
-fn choices(value: &str, expected: &[&str]) -> Result<(), String> {
-    if expected.contains(&value) {
-        Ok(())
-    } else {
-        let expected = expected
-            .iter()
-            .map(|choice| format!("`{choice}`"))
-            .collect::<Vec<_>>()
-            .join(" or ");
-        Err(format!("expected {expected}, but got `{value}`"))
-    }
-}
-
-fn validate_title(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) -> Option<i64> {
-    let number = artifact
-        .title()
-        .strip_prefix("Implementation Review ")
-        .and_then(unpadded_decimal);
-    if number.is_none() {
-        diagnostics.push(Diagnostic::error_p(
-            *artifact.located_title().span().start(),
-            "review title must use `Implementation Review N` with a positive decimal number",
-        ));
-    }
-    number
-}
-
-fn validate_decision_findings(diagnostics: &mut Vec<Diagnostic>, artifact: &Artifact) {
-    let decision = artifact.get_metadata("Decision").map(Metadata::value);
-    let Some(section) = artifact
-        .sections()
-        .iter()
-        .find(|section| section.title() == "Findings")
-    else {
-        return;
-    };
-    let Some(findings) = section.as_itemised() else {
-        return;
-    };
-    let sentinel = findings.sentinel().is_some();
-    let position = *findings
-        .sentinel()
-        .map(Located::span)
-        .or_else(|| findings.items().first().map(Item::span))
-        .unwrap_or(section.body_span())
-        .start();
-    match decision {
-        Some("pass") if !sentinel => diagnostics.push(Diagnostic::error_p(
-            position,
-            "decision `pass` requires the exact `No findings.` sentinel",
-        )),
-        Some("changes-requested") if findings.items().is_empty() => {
-            diagnostics.push(Diagnostic::error_p(
-                position,
-                "decision `changes-requested` requires at least one finding",
-            ));
-        }
-        _ => {}
+        Err(format!(
+            "expected a full 40-character Git commit hash, optionally followed by \
+             `-STAGING` or `-WORKING`, but got `{value}`"
+        ))
     }
 }
 

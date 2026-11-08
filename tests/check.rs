@@ -50,14 +50,16 @@ const VALID_STEP: &str = concat!(
 );
 
 const VALID_REVIEW: &str = concat!(
-    "# Implementation Review 1\n",
+    "# Review 1\n",
     "- Step: ./step.md\n",
-    "- Decision: pass\n",
     "- Date: 2026-08-02T12:02:00+09:00\n",
     "- Reviewer: independent subagent\n",
-    "- Workspace state: uncommitted\n",
+    "- Verdict: pass\n",
+    "- Reviewed: 0123456789abcdef0123456789abcdef01234567-WORKING\n",
+    "- Reviewed against: 0123456789abcdef0123456789abcdef01234567 (HEAD, waif/example)\n",
+    "## Summary\nPasses.\n",
     "## Findings\nNo findings.\n",
-    "## Scope\n- S1-R1-SC1: Example.\n",
+    "## Assessment\n- S1-DC1: met - Example.\n",
 );
 
 #[test]
@@ -234,7 +236,7 @@ fn check_aggregates_step_and_review_schema_errors() {
         .expect("step should be written");
     fs::write(
         step.join("review1.md"),
-        VALID_REVIEW.replace("- Decision: pass", "- Decision: changes-requested"),
+        VALID_REVIEW.replace("- Verdict: pass", "- Verdict: approve"),
     )
     .expect("review should be written");
 
@@ -244,7 +246,7 @@ fn check_aggregates_step_and_review_schema_errors() {
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr.contains("step.md"));
     assert!(stderr.contains("review1.md"));
-    assert!(stderr.contains("changes-requested` requires at least one finding"));
+    assert!(stderr.contains("metadata `Verdict` expected `pass` or `concerns`, but got `approve`"));
     assert!(stdout.contains("checked 2 artifact(s); 2 invalid"));
 }
 

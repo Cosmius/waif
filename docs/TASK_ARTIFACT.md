@@ -275,11 +275,10 @@ and a compact item may share an expanded item's ID only as a
 Every item ID consists of an artifact item prefix, a section-specific family,
 and a final item number. The prefix owns its trailing dash; the family does
 not include a leading separator. Goal and plan prefixes are the known literals
-`G-` and `P-`. Step prefixes have the shape `S<n>-`, and implementation-review
-prefixes have the shape `S<n>-R<m>-`, where every numeric component is
-canonical and bounded as above. Plan items opt out of the artifact prefix:
-their IDs are `P<number>`, and they do not participate in artifact-prefix
-inference.
+`G-` and `P-`. Step prefixes have the shape `S<n>-`, and review prefixes
+have the shape `S<n>-R<m>-`, where every numeric component is canonical and
+bounded as above. Plan items opt out of the artifact prefix: their IDs are
+`P<number>`, and they do not participate in artifact-prefix inference.
 
 A checker uses a known prefix when the artifact identity is available before
 item validation. Known prefixes must match exactly. Otherwise a step or review
@@ -383,7 +382,7 @@ body when the section has no items. The body is the sentinel when it holds
 only that text, ignoring blank lines around it and spaces or tabs on its line.
 The sentinel together with any item is an error, and in a section without a
 declared sentinel the same text is ordinary content outside an item. Only the
-implementation review's `Findings` declares a sentinel, `No findings.`.
+review's `Findings` declares a sentinel, `No findings.`.
 
 Convention: the sentinel stands alone on its line, without surrounding spaces.
 
@@ -394,7 +393,7 @@ Checked example: the sentinel together with a finding is an error.
 
 No findings.
 
-### S1-R1-F1: High - Missing regression test
+### S1-R1-F1: Missing regression test
 ```
 
 Conventional example:
@@ -737,11 +736,12 @@ Item content and prose are opaque. Numeric bounds, complete identifier
 consumption, uniqueness, ordering, section order, and empty sections follow
 the common rules.
 
-## Implementation Review Contract
+## Review Contract
 
 A checked file named `reviewN.md` receives this contract, where `N` is a
-positive decimal review number. Its title is `Implementation Review N`. The
-filename, title, and review-number component of every stable ID agree.
+positive decimal review number. The filename and the review-number component
+of every stable ID agree. The title is free text; conventionally it is
+`Review N`.
 
 When the containing directory supplies a step identity, it must agree with
 every stable ID. Otherwise checking warns and still requires one internally
@@ -751,56 +751,90 @@ padding is omitted from IDs: `steps/04-check/review1.md` uses `S4-R1-F1`.
 Required metadata is:
 
 ```text
-Step             ./step.md
-Decision         pass | changes-requested
-Date             RFC 3339 timestamp with Z or a numeric UTC offset
-Reviewer         independent subagent |
-                 current session - subagent unavailable
-Workspace state  uncommitted
+Date               RFC 3339 timestamp with Z or a numeric UTC offset
+Verdict            pass | concerns
+Reviewed           REF
+Reviewed against   REF
 ```
 
-Implementation reviews do not have lifecycle `Status` metadata. Known sections
-have this relative order:
+Convention: the metadata order is `Step` (`./step.md`), `Date`, `Reviewer`
+(`independent subagent` or `current session`), `Verdict`, `Reviewed`, and
+`Reviewed against`. `Step` and `Reviewer` are not checked.
+
+A REF is a full 40-character hexadecimal Git commit hash, alone or followed
+by `-STAGING` (the index on top of that commit) or `-WORKING` (the working
+tree on top of it). Text after the first space is not checked. Convention:
+that text is a parenthesised list of names pointing at the commit,
+separated by `, `, such as `HEAD`, tags, and branches. A step's review
+normally reviews `<HEAD>-WORKING` or `<HEAD>-STAGING` against
+`<HEAD> (HEAD, <task branch>)`.
+
+Reviews do not have lifecycle `Status` metadata. Known sections have this
+relative order:
 
 | Section        | Type                                              | Presence |
 |----------------|---------------------------------------------------|----------|
+| Summary        | prose                                             | required |
 | Findings       | itemised; S<n>-R<m>-F<k>; sentinel `No findings.` | required |
-| Scope          | itemised; S<n>-R<m>-SC<k>                         | optional |
+| Assessment     | prose                                             | required |
+| Review History | prose                                             | optional |
 | Validation     | itemised; S<n>-R<m>-V<k>                          | optional |
 | Residual Risks | itemised; S<n>-R<m>-RR<k>                         | optional |
+
+Convention: `Summary` opens with a very concise paragraph delivering the
+result, followed by what the reviewed changes do in more detail.
+
+Convention: `Review History` is omitted from review 1 and present in every
+later review. It lists the earlier reviews of the same step, one entry per
+review path, each with its verdict and what became of its findings. A
+finding still open from the previous review keeps its number under the new
+review prefix (`S1-R1-F1` becomes `S1-R2-F1`), a new finding takes the next
+number never used for that step, and the number of a fixed finding is never
+reused.
 
 `Findings` contains either its [sentinel](#sentinels), `No findings.`, or one
 or more findings with IDs `S<n>-R<m>-F<k>`.
 
-Checked rule: a `pass` decision requires the sentinel and a
-`changes-requested` decision requires at least one finding. Finding content,
-metadata values, and bodies are opaque; deterministic checking does not
-interpret severity, title, location, or recommendations.
+Convention: a `pass` verdict comes with the sentinel and a `concerns` verdict
+with at least one finding.
 
-Convention: each finding is an expanded item titled with its severity and a
-short description, with `Location`, `Problem`, `Impact`, and `Recommendation`
-metadata directly below its heading.
+Finding metadata is not checked. Convention: each finding is an expanded
+item titled with a short description, with `Severity` (`critical`, `high`,
+`medium`, or `low`), `Location`, `Problem`, `Impact`, and `Recommendation`
+directly below its heading. A human may later append `Waived` with the
+reason and the reviewer a `Counter-opinion`, last, without any other edit to
+the record. A waiver does not change the recorded verdict.
 
-Checked example: with `Decision: pass`, the finding is an error, because
-`pass` requires the sentinel.
-
-```markdown
-## Findings
-
-### S1-R1-F1: Low - Missing sentinel test
-```
-
-Conventional example: a `changes-requested` review lists its findings in this
-form.
+Conventional example: a `concerns` review lists its findings in this form.
 
 ```markdown
 ## Findings
 
-### S1-R1-F1: Medium - Missing sentinel test
+### S1-R1-F1: Missing sentinel test
+- Severity: medium
 - Location: `src/parser/tests.rs`
 - Problem: No test covers a sentinel followed by a finding.
 - Impact: A regression could drop later sections unnoticed.
 - Recommendation: Add a parser test for that case.
+```
+
+Convention: `Assessment` lists each assessed target. A done condition of the
+reviewed step is named by its ID, `S<n>-DC<k>`, followed by `met` or `unmet`
+and its evidence. A target without an ID of its own, such as one given by
+the review request, is restated before its result.
+
+```markdown
+## Assessment
+
+- S1-DC1: met - `parses_sentinel` covers the case
+- S1-DC2: unmet - see S1-R2-F1
+- The error names the file: met
+```
+
+```markdown
+## Review History
+
+- `review1.md`: concerns - S1-R1-F2 fixed; S1-R1-F1 still open as S1-R2-F1
 ```
 
 Every review itemised section follows the [items rules](#items). Review IDs,

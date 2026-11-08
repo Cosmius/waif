@@ -114,7 +114,7 @@ impl Task {
         file: &ArtifactFile,
         k: impl for<'a> FnOnce(&Artifact<'a>) -> A,
     ) -> Result<A> {
-        self.ensure_file(file, ArtifactKind::ImplementationReview)?;
+        self.ensure_file(file, ArtifactKind::Review)?;
         let artifact = file.parse_review()?;
         Ok(k(&artifact))
     }

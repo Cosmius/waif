@@ -408,7 +408,7 @@ fn artifact_file_classifies_nominal_paths_and_retains_contents() {
         ("goal.md", ArtifactKind::Goal),
         ("plan.md", ArtifactKind::Plan),
         ("step.md", ArtifactKind::Step),
-        ("review12.md", ArtifactKind::ImplementationReview),
+        ("review12.md", ArtifactKind::Review),
         ("review.md", ArtifactKind::Generic),
         ("review-latest.md", ArtifactKind::Generic),
     ] {
@@ -442,7 +442,7 @@ fn artifact_file_parsers_use_each_schema_structure() {
         ),
         (
             "review1.md",
-            "# Implementation Review 1\n## Findings\nNo findings.\n",
+            "# Review 1\n## Findings\nNo findings.\n",
             "Findings",
         ),
     ];
@@ -455,7 +455,7 @@ fn artifact_file_parsers_use_each_schema_structure() {
             ArtifactKind::Goal => file.parse_goal(),
             ArtifactKind::Plan => file.parse_plan(),
             ArtifactKind::Step => file.parse_step(),
-            ArtifactKind::ImplementationReview => file.parse_review(),
+            ArtifactKind::Review => file.parse_review(),
             ArtifactKind::Generic => unreachable!(),
         }
         .expect("artifact should parse");
@@ -466,7 +466,7 @@ fn artifact_file_parsers_use_each_schema_structure() {
             .find(|section| section.title() == section_name)
             .expect("configured section should exist");
         let configured = match file.kind() {
-            ArtifactKind::ImplementationReview => section
+            ArtifactKind::Review => section
                 .as_itemised()
                 .is_some_and(|findings| findings.sentinel().is_some()),
             _ => section.as_itemised().is_some(),
@@ -570,7 +570,7 @@ fn task_step_and_review_accessors_reject_wrong_or_outside_files() {
     fs::create_dir_all(outside_path.parent().expect("outside parent"))
         .expect("outside directory should be created");
     fs::write(&step_path, "# Step 1\n").expect("step should be written");
-    fs::write(&review_path, "# Implementation Review 1\n").expect("review should be written");
+    fs::write(&review_path, "# Review 1\n").expect("review should be written");
     fs::write(&outside_path, "# Step 1\n").expect("outside step should be written");
     let step = ArtifactFile::read(step_path).expect("step should load");
     let review = ArtifactFile::read(review_path).expect("review should load");
@@ -584,7 +584,7 @@ fn task_step_and_review_accessors_reject_wrong_or_outside_files() {
     assert_eq!(
         task.with_review(&review, |artifact| artifact.title().to_owned())
             .expect("review should parse"),
-        "Implementation Review 1"
+        "Review 1"
     );
     assert_eq!(
         task.with_step(&review, |_| ())

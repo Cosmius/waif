@@ -16,7 +16,7 @@ pub(crate) enum ArtifactKind {
     Goal,
     Plan,
     Step,
-    ImplementationReview,
+    Review,
     Generic,
 }
 
@@ -123,7 +123,7 @@ impl ArtifactFile {
             ArtifactKind::Goal => goal::check(&self.contents),
             ArtifactKind::Plan => plan::check(&self.contents),
             ArtifactKind::Step => step::check(&self.path, &self.contents),
-            ArtifactKind::ImplementationReview => review::check(&self.path, &self.contents),
+            ArtifactKind::Review => review::check(&self.path, &self.contents),
             ArtifactKind::Generic => parser::parse(&self.contents).err().unwrap_or_default(),
         }
     }
@@ -171,7 +171,7 @@ impl ArtifactKind {
         } else if name == OsStr::new("step.md") {
             Self::Step
         } else if name.to_str().is_some_and(is_numbered_review_name) {
-            Self::ImplementationReview
+            Self::Review
         } else {
             Self::Generic
         }
