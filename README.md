@@ -227,11 +227,37 @@ the document:
 Use dev-conclude-task to document the completed task for other contributors.
 ```
 
+## Autonomous Mode
+
+Autonomous mode is an optional way to run an accepted plan, outside the
+normal workflow. You accept the goal and the plan as usual; the agent then
+works through every step with subagents, commits each step itself, and you
+review the task as a whole. It trades your step-by-step approval for your
+attention, and costs more than the normal workflow.
+
+The agent acts as your Commissioner within a mandate, a file you write with
+it at first use. The mandate records which model runs each role, what the
+agent may decide for you, what it must bring back, and its limits. It
+outranks the charter and applies only in this mode, so read it carefully
+before accepting it.
+
+The mode never starts by itself: no other skill leads to it, and the agent
+cannot pick it on its own judgement. Start it explicitly, for each session:
+
+```text
+Use dev-break-ground to start autonomous mode for the current task.
+```
+
+The agent commits without waiting for you in this mode. Run it in an
+isolated environment, such as a container or a separate account, if you can.
+
 ## Workflow Directory
 
 Each source workspace has a local `.waif/`:
 
 - `library/charter.md`: optional project rules read by every skill.
+- `library/commissioner-mandate.md`: your grant of authority for autonomous
+  mode, read only in that mode.
 - `library/waif.toml`: the library manifest, holding its schema version.
 - `library/tasks/`: task records, shared when `library` is a symlink. Each
   task dir holds a `task.toml` manifest with its schema version.
@@ -266,3 +292,4 @@ See [helper usage](protocol/waif-helper.md) for CLI commands.
   record.
 - `skills/dev-final-review/`: runs the task-wide review.
 - `skills/dev-conclude-task/`: writes the optional teammate handoff.
+- `skills/dev-break-ground/`: runs an accepted plan in autonomous mode.

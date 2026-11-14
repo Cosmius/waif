@@ -1,0 +1,4 @@
+interface:
+  display_name: "Break Ground"
+  short_description: "Run an accepted plan in autonomous mode"
+  default_prompt: "Use $dev-break-ground to start autonomous mode for the current task."

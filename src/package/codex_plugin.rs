@@ -8,6 +8,7 @@ const PACKAGE_FILES: &[&str] = &[
     "migration/README.md",
     "migration/v0.1.md",
     "migration/v0.2.md",
+    "migration/v0.3.md",
     "protocol/workflow.md",
     "protocol/waif-helper.md",
     "protocol/template/goal.md",
@@ -32,6 +33,9 @@ const PACKAGE_FILES: &[&str] = &[
     "skills/dev-final-review/agents/openai.yaml",
     "skills/dev-conclude-task/SKILL.md",
     "skills/dev-conclude-task/agents/openai.yaml",
+    "skills/dev-break-ground/SKILL.md",
+    "skills/dev-break-ground/mandate-setup.md",
+    "skills/dev-break-ground/agents/openai.yaml",
 ];
 
 pub(crate) struct CodexPlugin;

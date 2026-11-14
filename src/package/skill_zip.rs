@@ -11,6 +11,7 @@ const PACKAGE_FILES: &[&str] = &[
     "migration/README.md",
     "migration/v0.1.md",
     "migration/v0.2.md",
+    "migration/v0.3.md",
     "protocol/workflow.md",
     "protocol/waif-helper.md",
     "protocol/template/goal.md",
@@ -27,6 +28,8 @@ const PACKAGE_FILES: &[&str] = &[
     "skills/dev-review/SKILL.md",
     "skills/dev-final-review/SKILL.md",
     "skills/dev-conclude-task/SKILL.md",
+    "skills/dev-break-ground/SKILL.md",
+    "skills/dev-break-ground/mandate-setup.md",
 ];
 
 pub(crate) struct SkillZip;
