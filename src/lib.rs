@@ -20,6 +20,8 @@ mod schemas {
 #[cfg(test)]
 mod test_support;
 
+pub use protocol::SCHEMA_VERSION;
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 /// The `--version` text: crate version, schema version, and Git commit.

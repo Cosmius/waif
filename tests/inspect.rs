@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use test_support::git_repo::GitRepo;
 
+use waif::SCHEMA_VERSION;
+
 mod test_support;
 
 use test_support::TestDir;
@@ -23,7 +25,7 @@ fn inspect_reports_ready_drafting_goal_in_the_existing_layout() {
     assert!(stdout.contains("Library:            .waif/library"));
     assert!(stdout.contains("Current task:       20260728-1-example"));
     assert!(stdout.contains("Current task dir:   .waif/current_task"));
-    assert!(stdout.contains("Library schema:     0.3\nTask schema:        0.3\n"));
+    assert!(stdout.contains(&format!("Library schema:     {SCHEMA_VERSION}\nTask schema:        {SCHEMA_VERSION}\n")));
     assert!(stdout.contains(
         "Goal:\n  Path:             .waif/current_task/goal.md"
     ));
@@ -51,7 +53,7 @@ fn inspect_fails_on_an_older_library_manifest_with_migration_notes() {
     assert!(stdout.contains("Library schema:     0.2\n"));
     assert!(stdout.contains("Next:               Migrate schema\n"));
     assert!(!stdout.contains("Goal:"));
-    assert!(stderr.contains(".waif/library/waif.toml: ERROR: schema version 0.2 is older than 0.3; migrate with migration/README.md and migration/v0.2.md\n"));
+    assert!(stderr.contains(&format!(".waif/library/waif.toml: ERROR: schema version 0.2 is older than {SCHEMA_VERSION}; migrate with migration/README.md and migration/v0.2.md\n")));
 }
 
 #[cfg(unix)]
@@ -72,7 +74,7 @@ fn inspect_fails_on_a_newer_task_manifest() {
     assert!(stdout.contains("Task schema:        0.10\n"));
     assert!(stdout.contains("Next:               Update WAIF\n"));
     assert!(!stdout.contains("Goal:"));
-    assert!(stderr.contains("task.toml: ERROR: schema version 0.10 is newer than 0.3; written by a newer WAIF\n"));
+    assert!(stderr.contains(&format!("task.toml: ERROR: schema version 0.10 is newer than {SCHEMA_VERSION}; written by a newer WAIF\n")));
 }
 
 #[cfg(unix)]
@@ -110,7 +112,7 @@ fn inspect_warns_about_a_missing_task_manifest() {
 
     assert!(output.status.success(), "{stderr}");
     assert!(stdout.contains("Task schema:        none\n"));
-    assert!(stderr.contains("task.toml: WARNING: no schema version, older than 0.3; migrate with migration/README.md\n"));
+    assert!(stderr.contains(&format!("task.toml: WARNING: no schema version, older than {SCHEMA_VERSION}; migrate with migration/README.md\n")));
     assert!(stdout.contains("Next:               Revise or accept goal\n"));
 }
 
@@ -785,11 +787,14 @@ fn current_task_workspace(name: &str) -> TestDir {
     fs::create_dir_all(tasks.join("20260728-1-example")).expect("task should be created");
     fs::write(
         workspace.path.join(".waif/library/waif.toml"),
-        CURRENT_MANIFEST,
+        current_manifest(),
     )
     .expect("library manifest should be written");
-    fs::write(tasks.join("20260728-1-example/task.toml"), CURRENT_MANIFEST)
-        .expect("task manifest should be written");
+    fs::write(
+        tasks.join("20260728-1-example/task.toml"),
+        current_manifest(),
+    )
+    .expect("task manifest should be written");
     symlink(
         "library/tasks/20260728-1-example",
         workspace.path.join(".waif/current_task"),
@@ -809,6 +814,7 @@ fn write_goal(workspace: &TestDir, status: &str, updated: &str, questions: &str)
         current_task_path(workspace).join("goal.md"),
         format!(
             "# Goal: Example\n\n\
+             - Task name: 20260728-1-example\n\
              - Status: {status}\n\
              - Created: 2026-08-17T12:00:00+09:00\n\
              - Updated: {updated}\n\n\
@@ -828,6 +834,8 @@ fn run_inspect(current_dir: &Path) -> Output {
         .expect("waif inspect should run")
 }
 
-const CURRENT_MANIFEST: &str = "schema_version = \"0.3\"\n";
+fn current_manifest() -> String {
+    format!("schema_version = \"{SCHEMA_VERSION}\"\n")
+}
 
 const QUESTIONS: &str = "\n## Questions\n\n### G-Q1: A question\n- Status: open\n";

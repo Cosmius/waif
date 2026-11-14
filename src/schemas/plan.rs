@@ -21,11 +21,11 @@ const METADATA: [MetadataRule; 7] = [
     },
     MetadataRule {
         name: "Branch",
-        validator: nonempty,
+        validator: metadata_validators::nonempty,
     },
     MetadataRule {
         name: "Base branch",
-        validator: nonempty,
+        validator: metadata_validators::nonempty,
     },
     MetadataRule {
         name: "Base commit",
@@ -74,12 +74,6 @@ fn exact_goal(value: &str) -> Result<(), String> {
     (value == "./goal.md")
         .then_some(())
         .ok_or_else(|| format!("expected `./goal.md`, but got `{value}`"))
-}
-
-fn nonempty(value: &str) -> Result<(), String> {
-    (!value.trim().is_empty())
-        .then_some(())
-        .ok_or_else(|| "must not be empty".to_owned())
 }
 
 fn full_commit(value: &str) -> Result<(), String> {

@@ -516,9 +516,10 @@ A checked file named exactly `goal.md` receives this contract.
 Required metadata is:
 
 ```text
-Status    drafting | accepted | amending | done | aborted
-Created   RFC 3339 timestamp with Z or a numeric UTC offset
-Updated   RFC 3339 timestamp with Z or a numeric UTC offset
+Task name  non-empty task name
+Status     drafting | accepted | amending | done | aborted
+Created    RFC 3339 timestamp with Z or a numeric UTC offset
+Updated    RFC 3339 timestamp with Z or a numeric UTC offset
 ```
 
 Known sections have this relative order:

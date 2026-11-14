@@ -3,6 +3,7 @@ use crate::parser::Severity;
 
 const VALID: &str = concat!(
     "# Any title\n",
+    "- Task name: 20260731-1-task\n",
     "- Status: accepted\n",
     "- Created: 2026-07-31T12:00:00Z\n",
     "- Updated: 2026-07-31T21:00:00+09:00\n",
@@ -45,7 +46,7 @@ fn accepts_valid_metadata_variants_and_trailing_opaque_prose() {
         ),
     ] {
         let source = format!(
-            "# Goal\n- Updated: {updated}\n\
+            "# Goal\n- Task name: 20260731-1-task\n- Updated: {updated}\n\
                  - Status: drafting\n- Created: {created}\n- Extra: opaque\n\
                  ## Outcome\ntext\n\
                  ## Acceptance Criteria\n### G-AC1: expanded\n"
@@ -58,6 +59,7 @@ fn accepts_valid_metadata_variants_and_trailing_opaque_prose() {
 fn reports_invalid_and_duplicate_metadata_at_source_lines() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: unknown\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00\n",
@@ -69,22 +71,22 @@ fn reports_invalid_and_duplicate_metadata_at_source_lines() {
     let diagnostics = messages(source);
 
     assert!(diagnostics.iter().any(|entry| {
-            entry.1 == 2
+            entry.1 == 3
                 && entry.2
                     == "metadata `Status` expected `drafting`, `accepted`, `amending`, \
                                    `done`, or `aborted`, but got `unknown`"
         }));
     assert!(diagnostics
             .iter()
-            .any(|entry| { entry.1 == 3 && entry.2 == "duplicate metadata key `Status`" }));
+            .any(|entry| { entry.1 == 4 && entry.2 == "duplicate metadata key `Status`" }));
     assert!(diagnostics.iter().any(|entry| {
-            entry.1 == 4
+            entry.1 == 5
                 && entry.2
                     == "metadata `Created` expected an RFC 3339 timestamp with a \
                                    timezone, but got `2026-07-31T12:00:00`"
         }));
     assert!(diagnostics.iter().any(|entry| {
-            entry.1 == 6
+            entry.1 == 7
                 && entry.2
                     == "metadata `Updated` expected an RFC 3339 timestamp with a \
                                    timezone, but got `hidden in prose`"
@@ -96,6 +98,7 @@ fn reports_invalid_and_duplicate_metadata_at_source_lines() {
 fn accepts_optional_direct_scope_and_unknown_prose_sections() {
     let source = concat!(
         "# Different title\n",
+        "- Task name: 20260731-1-task\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Status: amending\n",
@@ -112,6 +115,7 @@ fn accepts_optional_direct_scope_and_unknown_prose_sections() {
 fn schema_enforces_known_section_order_and_ignores_unknown_sections() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
@@ -145,6 +149,7 @@ fn schema_enforces_known_section_order_and_ignores_unknown_sections() {
 fn schema_enforces_increasing_ids_with_signed_64_bit_boundaries() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
@@ -194,6 +199,7 @@ fn schema_enforces_increasing_ids_with_signed_64_bit_boundaries() {
 fn reports_missing_and_duplicate_known_or_unknown_sections() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
@@ -206,10 +212,10 @@ fn reports_missing_and_duplicate_known_or_unknown_sections() {
 
     assert!(diagnostics
             .iter()
-            .any(|entry| { entry.1 == 9 && entry.2 == "duplicate section `Outcome`" }));
+            .any(|entry| { entry.1 == 10 && entry.2 == "duplicate section `Outcome`" }));
     assert!(diagnostics
             .iter()
-            .any(|entry| { entry.1 == 11 && entry.2 == "duplicate section `Custom`" }));
+            .any(|entry| { entry.1 == 12 && entry.2 == "duplicate section `Custom`" }));
     assert!(diagnostics.iter().any(|entry| {
             entry.1 == 1 && entry.2 == "missing required section `Acceptance Criteria`"
         }));
@@ -219,6 +225,7 @@ fn reports_missing_and_duplicate_known_or_unknown_sections() {
 fn accepts_every_item_namespace_and_opaque_content() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
@@ -241,6 +248,7 @@ fn accepts_every_item_namespace_and_opaque_content() {
 fn reports_malformed_item_syntax_errors() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
@@ -262,7 +270,7 @@ fn reports_malformed_item_syntax_errors() {
     assert_eq!(diagnostics.len(), 10);
     assert_eq!(
             diagnostics.iter().map(|entry| entry.1).collect::<Vec<_>>(),
-            [8, 9, 10, 11, 12, 13, 14, 15, 16, 18]
+            [9, 10, 11, 12, 13, 14, 15, 16, 17, 19]
         );
     assert!(diagnostics.iter().all(|entry| entry.0 == Severity::Error));
 }
@@ -271,6 +279,7 @@ fn reports_malformed_item_syntax_errors() {
 fn enforces_the_exact_family_for_every_itemised_section() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
@@ -303,6 +312,7 @@ fn enforces_the_exact_family_for_every_itemised_section() {
 fn reports_checkbox_items_as_invalid_identifiers() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
@@ -324,7 +334,7 @@ fn reports_checkbox_items_as_invalid_identifiers() {
     assert_eq!(diagnostics.len(), 3);
     assert_eq!(
             diagnostics.iter().map(|entry| entry.1).collect::<Vec<_>>(),
-            [8, 9, 10]
+            [9, 10, 11]
         );
     assert_eq!(
             diagnostics
@@ -348,7 +358,7 @@ fn accumulates_section_and_namespace_duplicates() {
             diagnostics[0],
             (
                 Severity::Error,
-                9,
+                10,
                 "duplicate section `Acceptance Criteria`".into(),
             )
         );
@@ -356,7 +366,7 @@ fn accumulates_section_and_namespace_duplicates() {
             diagnostics[1],
             (
                 Severity::Error,
-                10,
+                11,
                 "duplicate item identifier `G-AC1` in section \
                  `Acceptance Criteria`"
                     .into(),
@@ -368,6 +378,7 @@ fn accumulates_section_and_namespace_duplicates() {
 fn reports_empty_sections_as_non_failing_warnings() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T12:00:00Z\n",
@@ -380,11 +391,11 @@ fn reports_empty_sections_as_non_failing_warnings() {
     assert_eq!(diagnostics.len(), 2);
     assert_eq!(
             diagnostics[0],
-            (Severity::Warning, 5, "section `Outcome` is empty".into(),)
+            (Severity::Warning, 6, "section `Outcome` is empty".into(),)
         );
     assert_eq!(
             diagnostics[1],
-            (Severity::Warning, 9, "section `Custom` is empty".into(),)
+            (Severity::Warning, 10, "section `Custom` is empty".into(),)
         );
 }
 
@@ -392,6 +403,7 @@ fn reports_empty_sections_as_non_failing_warnings() {
 fn accumulates_independent_metadata_and_topology_errors() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: invalid\n",
         "- Created: no-timezone\n",
         "## Outcome\ntext\n",
@@ -413,6 +425,7 @@ fn accumulates_independent_metadata_and_topology_errors() {
 fn accumulates_metadata_topology_item_errors_and_warnings() {
     let source = concat!(
         "# Goal\n",
+        "- Task name: 20260731-1-task\n",
         "- Status: invalid\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "## Outcome\n\n",
@@ -461,7 +474,7 @@ fn questions_require_a_valid_status_and_assumptions_are_unchecked() {
             .iter()
             .map(|entry| (entry.0, entry.1))
             .collect::<Vec<_>>(),
-        [(Severity::Error, 10), (Severity::Error, 15), (Severity::Error, 16)],
+        [(Severity::Error, 11), (Severity::Error, 16), (Severity::Error, 17)],
         "{diagnostics:?}"
     );
     assert!(diagnostics[1].2.contains("expected `open` or `settled`"));

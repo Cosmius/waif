@@ -3,6 +3,7 @@ use crate::test_support::TestDir;
 
 const VALID_GOAL: &str = concat!(
     "# Goal\n",
+    "- Task name: example\n",
     "- Status: accepted\n",
     "- Created: 2026-08-14T12:00:00+09:00\n",
     "- Updated: __NOW__\n",

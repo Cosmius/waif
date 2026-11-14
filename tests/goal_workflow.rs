@@ -8,6 +8,7 @@ use test_support::TestDir;
 const DRAFT_GOAL: &str = concat!(
     "# Goal: Test workflow\n",
     "\n",
+    "- Task name: example\n",
     "- Status: drafting\n",
     "- Created: 2026-09-16T12:00:00+09:00\n",
     "- Updated: __NOW__\n",

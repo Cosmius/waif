@@ -519,6 +519,12 @@ pub(crate) mod metadata_validators {
         }
     }
 
+    pub(crate) fn nonempty(value: &str) -> Result<(), String> {
+        (!value.trim().is_empty())
+            .then_some(())
+            .ok_or_else(|| "must not be empty".to_owned())
+    }
+
     pub(crate) fn rfc3339_timestamp(value: &str) -> Result<(), String> {
         DateTime::parse_from_rfc3339(value)
             .map(|_| ())

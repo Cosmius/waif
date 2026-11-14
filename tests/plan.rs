@@ -338,7 +338,7 @@ fn fixture(name: &str, status: &str) -> TestDir {
     fs::write(
         path.with_file_name("goal.md"),
         format!(
-            "# Goal: Test\n\n- Status: accepted\n- Created: {TIMESTAMP}\n\
+            "# Goal: Test\n\n- Task name: 20261026-1-test\n- Status: accepted\n- Created: {TIMESTAMP}\n\
                  - Updated: {TIMESTAMP}\n\n## Outcome\n\nTest\n\n\
                  ## Acceptance Criteria\n\n- G-AC1: Test\n"
         ),

@@ -97,6 +97,7 @@ fn rejected_goal(
 fn valid_goal(status: &str, outcome: &str) -> String {
     format!(
         "# Goal: Example\n\n\
+             - Task name: 20260818-1-task\n\
              - Status: {status}\n\
              - Created: 2026-08-17T12:00:00+09:00\n\
              - Updated: 2026-08-17T12:00:00+09:00\n\n\

@@ -323,6 +323,7 @@ fn task_singleton_accessors_use_configured_schema_parsers() {
         "\
 # Goal: Test the workflow
 - Status: drafting
+- Task name: example-task
 - Created: 2026-07-04T09:00:00+09:00
 ## Outcome
 Create tests.

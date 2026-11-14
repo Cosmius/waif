@@ -1,5 +1,6 @@
 # Goal: {{ short title }}
 
+- Task name: {{ task dir name }}
 - Status: drafting
 - Created: YYYY-MM-DDTHH:MM:SS+HH:MM
 - Updated: YYYY-MM-DDTHH:MM:SS+HH:MM

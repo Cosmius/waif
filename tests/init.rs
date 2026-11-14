@@ -7,6 +7,8 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use waif::SCHEMA_VERSION;
+
 mod test_support;
 
 use test_support::TestDir;
@@ -25,7 +27,7 @@ fn init_creates_an_independent_library_and_workflow_repository() {
     assert_eq!(fs::read_to_string(workflow.join(".gitignore")).unwrap(), "/current_task\n");
     assert!(!workflow.join("current_task").exists());
     assert!(!workflow.join("library/charter.md").exists());
-    assert_eq!(fs::read_to_string(workflow.join("library/waif.toml")).unwrap(), "schema_version = \"0.3\"\n");
+    assert_eq!(fs::read_to_string(workflow.join("library/waif.toml")).unwrap(), format!("schema_version = \"{SCHEMA_VERSION}\"\n"));
     assert_eq!(fs::read_dir(workflow.join("library/tasks")).unwrap().count(), 0);
     assert!(GitRepo::new(&workflow).is_ignored("current_task").unwrap());
 }

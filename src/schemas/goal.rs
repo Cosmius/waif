@@ -10,7 +10,11 @@ pub(crate) const SCHEMA: Schema = Schema {
     sections: &SECTIONS,
 };
 
-const METADATA: [MetadataRule; 3] = [
+const METADATA: [MetadataRule; 4] = [
+    MetadataRule {
+        name: "Task name",
+        validator: metadata_validators::nonempty,
+    },
     MetadataRule {
         name: "Status",
         validator: metadata_validators::artifact_status,

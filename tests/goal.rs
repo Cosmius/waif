@@ -238,6 +238,7 @@ fn run_rejected_goal(workspace: &TestDir, source: &str) -> (Output, String) {
 fn valid_goal(status: &str, updated: &str, outcome: &str) -> String {
     format!(
         "# Goal: Example\n\n\
+         - Task name: 20260728-1-example\n\
          - Status: {status}\n\
          - Created: 2026-08-17T12:00:00+09:00\n\
          - Updated: {updated}\n\n\

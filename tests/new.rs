@@ -2,6 +2,7 @@ use std::fs;
 use std::process::{Command, Output};
 
 use chrono::Local;
+use waif::SCHEMA_VERSION;
 
 mod test_support;
 
@@ -56,7 +57,7 @@ fn new_sequences_tasks_without_touching_existing_repository_metadata() {
     assert_eq!(
         fs::read_to_string(tasks.join(task_name.as_ref()).join("task.toml"))
             .expect("task manifest should be readable"),
-        "schema_version = \"0.3\"\n"
+        format!("schema_version = \"{SCHEMA_VERSION}\"\n")
     );
     assert_eq!(metadata_after, metadata_before);
     assert_eq!(

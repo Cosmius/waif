@@ -142,8 +142,8 @@ Name a task dir `YYYYMMDD-N-short-name`, for example
 ### Manifests
 
 The library and each task dir have a manifest, `library/waif.toml` and
-`task.toml`, holding the `MAJOR.MINOR` version of the WAIF release that
-introduced their schema:
+`task.toml`, holding the version of the WAIF release that introduced their
+schema, such as `0.4`, or `0.4-dev` while that release is in development:
 
 ```toml
 schema_version = "0.3"

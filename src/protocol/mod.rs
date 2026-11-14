@@ -16,7 +16,8 @@ mod task;
 mod workflow;
 
 pub(crate) use artifact::{ArtifactCheck, ArtifactClassification, ArtifactFile, ArtifactKind};
-pub(crate) use manifest::{library_manifest, read_manifest, task_manifest, SCHEMA_VERSION};
+pub use manifest::SCHEMA_VERSION;
+pub(crate) use manifest::{library_manifest, read_manifest, task_manifest};
 pub(crate) use task::{discover_artifact_paths, Task};
 pub(crate) use workflow::{Initialisation, WorkflowDir};
 

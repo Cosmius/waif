@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use serde_json::Value;
+use waif::SCHEMA_VERSION;
 
 mod test_support;
 
@@ -133,7 +134,7 @@ fn package_appends_binary_hash_to_helper_guide() {
             Packaged by this `waif` binary:
 
             - Version: `{version}`
-            - Schema version: `0.3`
+            - Schema version: `{SCHEMA_VERSION}`
             - Git commit: `{commit}`
             - SHA-1: `{hash}`
         ",

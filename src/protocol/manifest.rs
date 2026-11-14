@@ -2,13 +2,15 @@ use std::cmp::Ordering;
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
+use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 
 use super::Result;
 use crate::parser::Severity;
 
-pub(crate) const SCHEMA_VERSION: &str = "0.3";
+pub const SCHEMA_VERSION: &str = "0.4-dev";
 
 #[derive(Serialize, Deserialize)]
 struct Manifest {
@@ -134,12 +136,13 @@ pub(crate) fn read_manifest(path: &Path) -> ManifestCheck {
         Err(error) => return invalid(format!("invalid manifest: {}", error.message())),
     };
     let version = manifest.schema_version;
-    let Some(parsed) = parse_version(&version) else {
+    let Some(parsed) = SchemaVersion::parse(&version) else {
         return invalid(format!(
-            "schema_version `{version}` is not a MAJOR.MINOR version"
+            "schema_version `{version}` is not a version such as `0.4` or `0.4-dev`"
         ));
     };
-    let current = parse_version(SCHEMA_VERSION).expect("current schema version should parse");
+    let current =
+        SchemaVersion::parse(SCHEMA_VERSION).expect("current schema version should parse");
     let state = match parsed.cmp(&current) {
         Ordering::Less => ManifestState::Older(version),
         Ordering::Equal => ManifestState::Current,
@@ -151,19 +154,55 @@ pub(crate) fn read_manifest(path: &Path) -> ManifestCheck {
     }
 }
 
-/// Parse exactly two `.`-separated decimal components.
-fn parse_version(version: &str) -> Option<[u64; 2]> {
-    let components = version
-        .split('.')
-        .map(|component| {
-            if component.bytes().all(|byte| byte.is_ascii_digit()) {
-                component.parse().ok()
-            } else {
-                None
-            }
+static SCHEMA_VERSION_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)(-[a-z]+)?$").expect("pattern should compile")
+});
+
+/// A schema version: `MAJOR.MINOR` with an optional lowercase suffix, such
+/// as `0.4` or `0.4-dev`. A suffixed version precedes the plain one:
+/// `0.4-dev` < `0.4`. Suffixes compare alphabetically.
+#[derive(PartialEq, Eq)]
+struct SchemaVersion {
+    major: u64,
+    minor: u64,
+    suffix: Option<String>,
+}
+
+impl SchemaVersion {
+    fn parse(version: &str) -> Option<Self> {
+        if !SCHEMA_VERSION_PATTERN.is_match(version) {
+            return None;
+        }
+        let (numbers, suffix) = match version.split_once('-') {
+            Some((numbers, suffix)) => (numbers, Some(suffix)),
+            None => (version, None),
+        };
+        let (major, minor) = numbers.split_once('.')?;
+        Some(Self {
+            major: major.parse().ok()?,
+            minor: minor.parse().ok()?,
+            suffix: suffix.map(str::to_owned),
         })
-        .collect::<Option<Vec<u64>>>()?;
-    components.try_into().ok()
+    }
+}
+
+impl Ord for SchemaVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.major, self.minor)
+            .cmp(&(other.major, other.minor))
+            .then_with(|| match (&self.suffix, &other.suffix) {
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Greater,
+                (Some(_), None) => Ordering::Less,
+                (Some(own), Some(other)) => own.cmp(other),
+            })
+    }
+}
+
+impl PartialOrd for SchemaVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// Create the library manifest; fail rather than overwrite an existing one.
@@ -189,3 +228,6 @@ fn write_manifest(path: &Path) -> Result<()> {
         .write_all(contents.as_bytes())?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

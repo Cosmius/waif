@@ -3,12 +3,15 @@ use std::fs;
 use std::os::unix::fs::symlink;
 use std::process::{Command, Output};
 
+use waif::SCHEMA_VERSION;
+
 mod test_support;
 
 use test_support::TestDir;
 
 const VALID_GOAL: &str = concat!(
     "# Goal\n",
+    "- Task name: example\n",
     "- Status: accepted\n",
     "- Created: 2026-07-31T12:00:00Z\n",
     "- Updated: 2026-07-31T21:00:00+09:00\n",
@@ -188,6 +191,7 @@ fn check_accepts_an_explicit_valid_goal_with_optional_sections() {
     let artifact = directory.path.join("goal.md");
     let source = concat!(
         "# Different title\n",
+        "- Task name: example\n",
         "- Updated: 2026-07-31T21:00:00+09:00\n",
         "- Status: drafting\n",
         "- Created: 2026-07-31T12:00:00Z\n",
@@ -396,6 +400,7 @@ fn check_reports_warning_only_goals_as_valid() {
     let artifact = directory.path.join("goal.md");
     let source = concat!(
         "# Goal\n",
+        "- Task name: example\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T21:00:00+09:00\n",
@@ -410,7 +415,7 @@ fn check_reports_warning_only_goals_as_valid() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(output.status.success());
-    assert!(stderr.contains("goal.md:5: WARNING: section `Outcome` is empty"));
+    assert!(stderr.contains("goal.md:6: WARNING: section `Outcome` is empty"));
     assert!(stdout.contains("checked 1 artifact(s); 0 invalid"));
 }
 
@@ -419,6 +424,7 @@ fn check_continues_through_mixed_errors_and_warnings() {
     let directory = TestDir::new("mixed-findings");
     let warning_goal = concat!(
         "# Goal\n",
+        "- Task name: example\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T21:00:00+09:00\n",
@@ -434,7 +440,7 @@ fn check_continues_through_mixed_errors_and_warnings() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr.contains("goal.md:5: WARNING:"));
+    assert!(stderr.contains("goal.md:6: WARNING:"));
     assert!(stderr.contains("plan.md:1: ERROR:"));
     assert!(stdout.contains("checked 2 artifact(s); 1 invalid"));
 }
@@ -540,6 +546,7 @@ fn check_without_path_uses_the_current_task() {
     .expect("current task link should be created");
     let warning_goal = concat!(
         "# Goal\n",
+        "- Task name: example\n",
         "- Status: accepted\n",
         "- Created: 2026-07-31T12:00:00Z\n",
         "- Updated: 2026-07-31T21:00:00+09:00\n",
@@ -555,7 +562,7 @@ fn check_without_path_uses_the_current_task() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr.contains("goal.md:5: WARNING: section `Outcome` is empty"));
+    assert!(stderr.contains("goal.md:6: WARNING: section `Outcome` is empty"));
     assert!(stderr.contains("steps/01-example/review1.md:1: ERROR:"));
     assert!(stdout.contains("checked 2 artifact(s); 1 invalid"));
 }
@@ -563,13 +570,13 @@ fn check_without_path_uses_the_current_task() {
 #[test]
 fn check_fails_on_a_newer_task_manifest() {
     let directory = TestDir::new("newer-task-manifest");
-    let task = task_with_manifests(&directory, "0.3", "0.10");
+    let task = task_with_manifests(&directory, SCHEMA_VERSION, "0.10");
 
     let output = run_check(&directory.path, &[task.as_os_str()]);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr.contains("task.toml: ERROR: schema version 0.10 is newer than 0.3; written by a newer WAIF\n"));
+    assert!(stderr.contains(&format!("task.toml: ERROR: schema version 0.10 is newer than {SCHEMA_VERSION}; written by a newer WAIF\n")));
 }
 
 #[test]
@@ -584,28 +591,28 @@ fn check_warns_about_missing_manifests_and_keeps_classification() {
 
     assert!(output.status.success(), "{stderr}");
     assert_eq!(String::from_utf8_lossy(&output.stdout), "checked 1 artifact(s); 0 invalid; GOOD\n");
-    assert!(stderr.contains("task.toml: WARNING: no schema version, older than 0.3; migrate with migration/README.md\n"));
+    assert!(stderr.contains(&format!("task.toml: WARNING: no schema version, older than {SCHEMA_VERSION}; migrate with migration/README.md\n")));
 }
 
 #[test]
 fn check_rejects_a_manifest_with_an_unreadable_version() {
     let directory = TestDir::new("unreadable-version");
-    let task = task_with_manifests(&directory, "0.3", "0.3.0");
+    let task = task_with_manifests(&directory, SCHEMA_VERSION, "0.3.0");
 
     let output = run_check(&directory.path, &[task.as_os_str()]);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr.contains("task.toml: ERROR: schema_version `0.3.0` is not a MAJOR.MINOR version\n"));
+    assert!(stderr.contains("task.toml: ERROR: schema_version `0.3.0` is not a version such as `0.4` or `0.4-dev`\n"));
 }
 
 #[test]
 fn check_warns_about_an_unknown_manifest_key() {
     let directory = TestDir::new("unknown-manifest-key");
-    let task = task_with_manifests(&directory, "0.3", "0.3");
+    let task = task_with_manifests(&directory, SCHEMA_VERSION, SCHEMA_VERSION);
     fs::write(
         task.join("task.toml"),
-        "schema_version = \"0.3\"\nextra = 1\n",
+        format!("schema_version = \"{SCHEMA_VERSION}\"\nextra = 1\n"),
     )
     .expect("task manifest should be written");
     fs::write(task.join("goal.md"), VALID_GOAL).expect("goal should be written");

@@ -12,6 +12,7 @@ mod test_support;
 use test_support::TestDir;
 
 const DRAFT_GOAL: &str = "# Goal: Worktree task\n\
+    - Task name: example\n\
     - Status: drafting\n\
     - Created: 2026-10-25T12:00:00+09:00\n\
     - Updated: 2026-10-25T12:00:00+09:00\n\n\

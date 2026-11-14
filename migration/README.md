@@ -19,8 +19,8 @@ WAIF instead of migrating.
   manifest. Migrate each as a whole, applying the note for its version and
   each later note in version order.
 - Afterwards, set `schema_version = "<current>"` in the migrated manifest,
-  using the current schema version from the
-  [protocol](../protocol/workflow.md#manifests). Create the manifest when it
+  using the `Schema version` in the Debug Information of the packaged
+  [helper guide](../protocol/waif-helper.md). Create the manifest when it
   was missing; keep any other keys it holds.
 - Keep the meaning of every artifact: IDs, statuses, and history stay as they
   were unless a note says otherwise.

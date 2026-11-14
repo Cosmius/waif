@@ -597,6 +597,7 @@ fn goal_task(name: &str) -> (TestDir, Task) {
 fn valid_goal(status: &str, updated: &str, questions: &str) -> String {
     format!(
         "# Goal: Example\n\n\
+             - Task name: example\n\
              - Status: {status}\n\
              - Created: 2026-08-17T12:00:00+09:00\n\
              - Updated: {updated}\n\n\
