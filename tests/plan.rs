@@ -27,7 +27,7 @@ fn initial_acceptance_creates_branch_and_changes_only_lifecycle_metadata() {
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stdout.contains("Workflow dir:       .waif\n"));
     assert!(stdout.contains("Current task:       20261026-1-test\n"));
-    assert!(stdout.contains("Plan:               .waif/library/tasks/20261026-1-test/plan.md\n"));
+    assert!(stdout.contains("Plan:               .waif/current_task/plan.md\n"));
     assert!(stdout.contains("Status:             accepted\n"));
     assert_eq!(after, expected_accepted(&before, &after));
     assert_ne!(after, before);
@@ -153,7 +153,7 @@ fn dirty_drafting_rejection_preserves_plan_branch_and_refs() {
     let error = stderr(&output);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(error.contains("Workflow dir: .waif\nCurrent task: 20261026-1-test\nPlan: .waif/library/tasks/20261026-1-test/plan.md\n"));
+    assert!(error.contains("Workflow dir: .waif\nCurrent task: 20261026-1-test\nPlan: .waif/current_task/plan.md\n"));
     assert!(error.contains("staged or modified tracked files"));
     assert!(output.stdout.is_empty());
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
@@ -176,7 +176,7 @@ fn task_branch_drift_rejection_preserves_plan_branch_and_refs() {
     let error = stderr(&output);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(error.contains("Workflow dir: .waif\nCurrent task: 20261026-1-test\nPlan: .waif/library/tasks/20261026-1-test/plan.md\n"));
+    assert!(error.contains("Workflow dir: .waif\nCurrent task: 20261026-1-test\nPlan: .waif/current_task/plan.md\n"));
     assert!(error.contains("existing task branch differs from Base commit"));
     assert_eq!(fs::read(plan_path(&workspace)).unwrap(), before);
     assert_eq!(GitRepo::new(&workspace.path).references().unwrap(), refs);

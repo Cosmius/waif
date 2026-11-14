@@ -24,7 +24,7 @@ impl SwitchCommand {
         let task = workflow_dir.task(&self.task_name)?;
         workflow_dir.switch_task(&task)?;
 
-        print_tabular_row("Current task:", task.name()?);
+        print_tabular_row("Current task:", task.name());
         print_tabular_row(
             "Current task dir:",
             relative_path(&workspace_dir, &task.path),
@@ -34,7 +34,7 @@ impl SwitchCommand {
             format!(
                 "{} -> library/tasks/{}",
                 relative_path(&workspace_dir, &workflow_dir.current_link()),
-                task.name()?
+                task.name()
             ),
         );
         Ok(())

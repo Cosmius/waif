@@ -27,20 +27,13 @@ pub struct CheckCommand {
 impl CheckCommand {
     pub fn run(self) -> Result<()> {
         let workspace_dir = std::env::current_dir()?;
-        let (paths, manifest_dirs) = match self.path {
-            Some(path) if path.is_dir() => {
-                let task_dir = std::path::absolute(&path)?;
-                let library_dir = task_dir
-                    .ancestors()
-                    .nth(2)
-                    .unwrap_or(Path::new("/"))
-                    .to_owned();
-                (
-                    discover_artifact_paths(&path)?,
-                    Some((library_dir, task_dir)),
-                )
-            }
-            Some(path) => (discover_artifact_paths(&path)?, None),
+        let (paths, library_manifest, task_manifest) = match self.path {
+            Some(path) if path.is_dir() => (
+                discover_artifact_paths(&path)?,
+                None,
+                Some(task_manifest(&path)),
+            ),
+            Some(path) => (vec![path], None, None),
             None => {
                 let workflow_dir = WorkflowDir::for_workspace(workspace_dir.clone());
                 let task = workflow_dir
@@ -48,25 +41,22 @@ impl CheckCommand {
                     .ok_or("no current workflow task")?;
                 (
                     task.artifact_paths()?,
-                    Some((workflow_dir.library_dir(), task.path)),
+                    Some(library_manifest(&workflow_dir.library_dir())),
+                    Some(task_manifest(&task.path)),
                 )
             }
         };
 
         let mut bad_artifacts = 0;
         let mut classification = ArtifactClassification::Good;
-        if let Some((library_dir, task_dir)) = manifest_dirs {
-            for manifest in [library_manifest(&library_dir), task_manifest(&task_dir)] {
-                for (severity, message) in read_manifest(&manifest).findings() {
-                    if severity == Severity::Error {
-                        classification = ArtifactClassification::Bad;
-                    }
-                    eprintln!(
-                        "{}: {}: {message}",
-                        relative_path(&workspace_dir, &manifest),
-                        severity_label(severity)
-                    );
-                }
+        if let Some(manifest) = &library_manifest {
+            if manifest_has_error(&workspace_dir, manifest) {
+                classification = ArtifactClassification::Bad;
+            }
+        }
+        if let Some(manifest) = &task_manifest {
+            if manifest_has_error(&workspace_dir, manifest) {
+                classification = ArtifactClassification::Bad;
             }
         }
         let paths = if classification == ArtifactClassification::Bad {
@@ -117,6 +107,22 @@ impl CheckCommand {
             Err(Box::new(CheckFailed))
         }
     }
+}
+
+/// Reports a manifest's findings and returns whether any is an error.
+fn manifest_has_error(workspace_dir: &Path, manifest: &Path) -> bool {
+    let mut has_error = false;
+    for (severity, message) in read_manifest(manifest).findings() {
+        if severity == Severity::Error {
+            has_error = true;
+        }
+        eprintln!(
+            "{}: {}: {message}",
+            relative_path(workspace_dir, manifest),
+            severity_label(severity)
+        );
+    }
+    has_error
 }
 
 #[derive(Debug)]

@@ -63,7 +63,7 @@ fn accept_goal_for_test(name: &str, source: String) -> (String, String) {
     let tasks_dir = workspace.path.join(".waif/library/tasks");
     let task_path = tasks_dir.join("20260818-1-task");
     fs::create_dir_all(&task_path).expect("task should be created");
-    let task = Task::new(task_path.clone());
+    let task = Task::new(task_path.clone(), "20260818-1-task".to_owned());
     fs::write(task_path.join("goal.md"), &source).expect("goal should be written");
 
     task.accept_goal().expect("goal should be accepted");
@@ -80,7 +80,7 @@ fn rejected_goal(
     let tasks_dir = workspace.path.join(".waif/library/tasks");
     let task_path = tasks_dir.join("20260818-1-task");
     fs::create_dir_all(&task_path).expect("task should be created");
-    let task = Task::new(task_path.clone());
+    let task = Task::new(task_path.clone(), "20260818-1-task".to_owned());
     let goal_path = task_path.join("goal.md");
     fs::write(&goal_path, &source).expect("goal should be written");
     let before = fs::read(&goal_path).expect("goal should load");

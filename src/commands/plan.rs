@@ -71,7 +71,7 @@ impl AcceptCommand {
                 }));
             }
         };
-        let task_name = task.name()?.to_owned();
+        let task_name = task.name().to_owned();
         let plan_path = task.path.join("plan.md");
         let workflow_path = relative_path(&workspace_dir, &workflow_dir.path);
         let plan_path_display = relative_path(&workspace_dir, &plan_path);

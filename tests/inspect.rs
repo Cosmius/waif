@@ -22,10 +22,10 @@ fn inspect_reports_ready_drafting_goal_in_the_existing_layout() {
     assert!(stdout.contains("Workflow dir:       .waif"));
     assert!(stdout.contains("Library:            .waif/library"));
     assert!(stdout.contains("Current task:       20260728-1-example"));
-    assert!(stdout.contains("Current task dir:   .waif/library/tasks/20260728-1-example"));
+    assert!(stdout.contains("Current task dir:   .waif/current_task"));
     assert!(stdout.contains("Library schema:     0.3\nTask schema:        0.3\n"));
     assert!(stdout.contains(
-        "Goal:\n  Path:             .waif/library/tasks/20260728-1-example/goal.md"
+        "Goal:\n  Path:             .waif/current_task/goal.md"
     ));
     assert!(stdout.contains("  Status:           drafting"));
     assert!(stdout.contains("  Ready to accept:  yes"));
@@ -281,7 +281,7 @@ fn inspect_preserves_a_dangling_selected_task_and_reports_its_path() {
     let output = run_inspect(&workspace.path);
 
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(".waif/library/tasks/20260728-1-example: {native_error}")));
+    assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(".waif/current_task: {native_error}")));
     assert!(String::from_utf8_lossy(&output.stdout).contains("Current task:       20260728-1-example"));
     assert_eq!(fs::read_link(&pointer).unwrap(), before);
     assert!(!current_task_path(&workspace).exists());
@@ -336,7 +336,7 @@ fn inspect_reports_ready_plan_and_preserves_artifacts_and_git() {
     assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
     assert!(second.status.success());
     assert_eq!(first.stdout, second.stdout);
-    assert!(stdout.contains("Plan:\n  Path:             .waif/library/tasks/20260728-1-example/plan.md"));
+    assert!(stdout.contains("Plan:\n  Path:             .waif/current_task/plan.md"));
     assert!(stdout.contains("  Classification:   GOOD"));
     assert!(stdout.contains("  Status:           drafting"));
     assert!(stdout.contains("  Ready to accept:  yes"));
@@ -537,7 +537,7 @@ fn inspect_preserves_plan_read_error_with_path_context() {
 
     assert!(!output.status.success());
     assert!(stdout.contains("Next:               Check plan\n"));
-    assert!(stderr.contains(&format!(".waif/library/tasks/20260728-1-example/plan.md: {cause}")));
+    assert!(stderr.contains(&format!(".waif/current_task/plan.md: {cause}")));
 }
 
 #[cfg(unix)]
@@ -552,7 +552,7 @@ fn inspect_preserves_git_error_with_plan_path_context() {
 
     assert!(!output.status.success());
     assert!(stdout.contains("Next:               Check plan\n"));
-    assert!(stderr.contains(".waif/library/tasks/20260728-1-example/plan.md:"));
+    assert!(stderr.contains(".waif/current_task/plan.md:"));
     assert!(stderr.contains("git cat-file"));
     assert!(stderr.contains("not a git repository"));
 }
@@ -582,7 +582,7 @@ fn inspect_reports_ready_drafting_step() {
     let step = stdout.split("Step:\n").nth(1).unwrap();
 
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert!(step.contains("  Path:             .waif/library/tasks/20260728-1-example/steps/01-first/step.md"));
+    assert!(step.contains("  Path:             .waif/current_task/steps/01-first/step.md"));
     assert!(step.contains("  Classification:   GOOD"));
     assert!(step.contains("  Status:           drafting"));
     assert!(step.contains("  Source commit:    not-created"));

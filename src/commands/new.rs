@@ -28,7 +28,7 @@ impl NewCommand {
             "Workflow dir:",
             relative_path(&workspace_dir, &workflow_dir.path),
         );
-        print_tabular_row("Current task:", task.name()?);
+        print_tabular_row("Current task:", task.name());
         print_tabular_row(
             "Current task dir:",
             relative_path(&workspace_dir, &task.path),

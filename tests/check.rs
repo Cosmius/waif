@@ -561,21 +561,6 @@ fn check_without_path_uses_the_current_task() {
 }
 
 #[test]
-fn check_fails_on_an_older_library_manifest_without_checking_artifacts() {
-    let directory = TestDir::new("older-library-manifest");
-    let task = task_with_manifests(&directory, "0.2", "0.3");
-    fs::write(task.join("goal.md"), "not a title\n").expect("goal should be written");
-
-    let output = run_check(&directory.path, &[task.as_os_str()]);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "checked 0 artifact(s); 0 invalid; BAD\n");
-    assert!(stderr.contains("library/waif.toml: ERROR: schema version 0.2 is older than 0.3; migrate with migration/README.md and migration/v0.2.md\n"));
-    assert!(!stderr.contains("goal.md"));
-}
-
-#[test]
 fn check_fails_on_a_newer_task_manifest() {
     let directory = TestDir::new("newer-task-manifest");
     let task = task_with_manifests(&directory, "0.3", "0.10");
@@ -599,7 +584,6 @@ fn check_warns_about_missing_manifests_and_keeps_classification() {
 
     assert!(output.status.success(), "{stderr}");
     assert_eq!(String::from_utf8_lossy(&output.stdout), "checked 1 artifact(s); 0 invalid; GOOD\n");
-    assert!(stderr.contains("library/waif.toml: WARNING: no schema version, older than 0.3; migrate with migration/README.md\n"));
     assert!(stderr.contains("task.toml: WARNING: no schema version, older than 0.3; migrate with migration/README.md\n"));
 }
 

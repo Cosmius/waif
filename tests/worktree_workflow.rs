@@ -56,8 +56,8 @@ fn linked_commands_isolate_goal_acceptance_and_resume_shared_tasks() {
     assert!(linked_created.status.success());
     assert!(root_inspect.status.success(), "{}", String::from_utf8_lossy(&root_inspect.stderr));
     assert!(linked_inspect.status.success(), "{}", String::from_utf8_lossy(&linked_inspect.stderr));
-    assert!(String::from_utf8_lossy(&root_inspect.stdout).contains(root_pointer.to_str().unwrap()));
-    assert!(String::from_utf8_lossy(&linked_inspect.stdout).contains(linked_pointer.to_str().unwrap()));
+    assert!(String::from_utf8_lossy(&root_inspect.stdout).contains(root_pointer.file_name().unwrap().to_str().unwrap()));
+    assert!(String::from_utf8_lossy(&linked_inspect.stdout).contains(linked_pointer.file_name().unwrap().to_str().unwrap()));
     assert!(root_check.status.success());
     assert!(linked_check.status.success());
     assert!(accepted.status.success(), "{}", String::from_utf8_lossy(&accepted.stderr));

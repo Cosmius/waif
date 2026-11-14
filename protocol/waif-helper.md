@@ -20,11 +20,8 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
 
 - `waif init` creates an independent `.waif/library/tasks` directory.
 - `waif init --link <ROOT_LIBRARY_PATH>` creates a local library symlink to
-  the supplied library's resolved absolute path, requiring accessible `tasks/`.
-  Missing or broken supplied libraries fail with root initialization/repair
-  guidance. Either init form skips any existing local library entry, even a
-  broken link, without checking mode or target. Setup does not select a task
-  or change source branches; partial I/O failures are not rolled back.
+  the supplied library, which must exist. Either init form keeps an existing
+  local library. Setup does not select a task or change source branches.
 - `waif inspect` reports current goal, plan, and step context, mechanical
   readiness, observed Git facts, and the next action without mutation,
   including local workflow and library paths. Readiness does not establish
@@ -55,9 +52,9 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
 - `waif check [PATH]` checks one artifact, a task directory, or the current
   task. It reports all findings, then `GOOD`, `INCOMPLETE`, or `BAD`. The first
   two exit 0; `BAD` exits 1. Warnings do not affect classification. A macro in
-  metadata skips only that value's format check. With no PATH it uses the
-  local instance's current task; explicit PATH is caller-relative and needs
-  no configured instance or selection.
+  metadata skips only that value's format check. With no PATH it checks the
+  library manifest and the local instance's current task; explicit PATH is
+  caller-relative and needs no configured instance or selection.
 - `waif fill <PATH>` expands known plain-text macros.
   - `__NOW__`: one local RFC 3339 timestamp per invocation.
   - `__CURRENT_BRANCH__`: the invoking workspace's Git branch name, or
@@ -104,7 +101,6 @@ Discover commands with `waif --help` or `waif <COMMAND> --help`.
   preconditions and no staged changes, then sets `Source commit: none`,
   `Status: done`, and `Updated`, and marks plan items as above.
 
-Ordinary task access preserves nominal library and task paths and reports
-native filesystem failures. A low-level mutation failure may leave partial
-state and is not rolled back. Task selection is local; edits to shared tasks
-are visible through every linked instance.
+The current task's path is `.waif/current_task`. A failed mutation may leave
+partial state and is not rolled back. Task selection is local; edits to
+shared tasks are visible through every linked instance.

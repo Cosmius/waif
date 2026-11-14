@@ -796,7 +796,7 @@ fn fixture(name: &str, status: &str) -> (TestDir, Task) {
 
     let path = workspace.path.join(".waif/library/tasks/20261031-1-test");
     fs::create_dir_all(&path).unwrap();
-    let task = Task::new(path);
+    let task = Task::new(path, "20261031-1-test".to_owned());
     fs::write(
         task.path.join("goal.md"),
         format!(

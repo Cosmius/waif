@@ -182,7 +182,7 @@ impl StepContext {
                 }));
             }
         };
-        let task_name = task.name()?.to_owned();
+        let task_name = task.name().to_owned();
         let step_path = match task.current_step_path() {
             Ok(path) => path,
             Err(error) => {

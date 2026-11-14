@@ -64,7 +64,7 @@ impl AcceptCommand {
                 }));
             }
         };
-        let task_name = task.name()?.to_owned();
+        let task_name = task.name().to_owned();
         let goal_path = task.path.join("goal.md");
         let workflow_path = relative_path(&workspace_dir, &workflow_dir.path);
         let goal_path_display = relative_path(&workspace_dir, &goal_path);

@@ -2,7 +2,7 @@ use std::fs;
 use std::io::ErrorKind;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use chrono::Local;
 
@@ -50,7 +50,7 @@ impl WorkflowDir {
     }
 
     pub fn initialise(&self, link: Option<&Path>) -> Result<Initialisation> {
-        match fs::symlink_metadata(self.library_dir()) {
+        match fs::metadata(self.library_dir()) {
             Ok(_) => return Ok(Initialisation::Skipped),
             Err(error) if error.kind() == ErrorKind::NotFound => (),
             Err(error) => return Err(error.into()),
@@ -58,8 +58,8 @@ impl WorkflowDir {
         fs::create_dir_all(&self.path)?;
         match link {
             Some(path) => {
-                let target = fs::canonicalize(path).and_then(|target| {
-                    fs::read_dir(target.join("tasks")).map(|_| target)
+                let target = std::path::absolute(path).and_then(|target| {
+                    fs::metadata(&target).map(|_| target)
                 }).map_err(|error| {
                     std::io::Error::new(
                         error.kind(),
@@ -96,7 +96,7 @@ impl WorkflowDir {
             Err(error) if error.kind() == ErrorKind::AlreadyExists => (),
             Err(error) => return Err(error.into()),
         }
-        match fs::symlink_metadata(self.path.join(".git")) {
+        match fs::metadata(self.path.join(".git")) {
             Ok(_) => return Ok(Initialisation::Created(None)),
             Err(error) if error.kind() == ErrorKind::NotFound => (),
             Err(error) => return Err(error.into()),
@@ -107,18 +107,16 @@ impl WorkflowDir {
 
     pub fn current_task(&self) -> Result<Option<Task>> {
         let current_link = self.current_link();
-        let target = match fs::read_link(current_link) {
+        // SYMLINK: read one layer of current_task to learn the task name
+        let target = match fs::read_link(&current_link) {
             Ok(target) => target,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
-        if target
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-        {
+        let Some(name) = target.file_name().and_then(|name| name.to_str()) else {
             return Err(Box::new(ProtocolError::InvalidCurrentTask));
-        }
-        Ok(Some(Task::new(self.path.join(target))))
+        };
+        Ok(Some(Task::new(current_link, name.to_owned())))
     }
 
     pub fn create_task(&self, slug: &str) -> Result<Task> {
@@ -132,7 +130,7 @@ impl WorkflowDir {
         let task_dir = self.tasks_dir().join(&task_name);
         fs::create_dir(&task_dir)?;
         manifest::write_task_manifest(&task_dir)?;
-        Ok(Task::new(task_dir))
+        Ok(Task::new(task_dir, task_name))
     }
 
     pub fn task(&self, task_name: &str) -> Result<Task> {
@@ -142,11 +140,11 @@ impl WorkflowDir {
         if !fs::metadata(&task_dir)?.is_dir() {
             return Err(Box::new(ProtocolError::TaskDoesNotExist));
         }
-        Ok(Task::new(task_dir))
+        Ok(Task::new(task_dir, task_name.to_owned()))
     }
 
     pub fn switch_task(&self, task: &Task) -> Result<()> {
-        let task_name = task.name()?;
+        let task_name = task.name();
         let selected = self.task(task_name)?;
         if task.path != selected.path {
             return Err(Box::new(ProtocolError::TaskOutsideLibrary));

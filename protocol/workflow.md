@@ -158,9 +158,8 @@ for example:
 current_task -> library/tasks/20260613-2-add-session-timeout
 ```
 
-Resolve one layer of this symlink relative to the local workflow dir,
-retaining nominal paths. Stages requiring a current task stop if it is missing
-or unusable.
+Use `<workflow-dir>/current_task` as the current task's path. Stages
+requiring a current task stop if it is missing or unusable.
 
 ## Directory Structure
 

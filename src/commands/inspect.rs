@@ -70,8 +70,7 @@ impl InspectCommand {
 }
 
 fn print_current_task(workspace_dir: &Path, library_dir: &Path, task: Task) -> Result<()> {
-    let task_name = task.name().map_err(|_| UnusableInspection)?;
-    print_tabular_row("Current task:", task_name);
+    print_tabular_row("Current task:", task.name());
     print_tabular_row(
         "Current task dir:",
         relative_path(workspace_dir, &task.path),

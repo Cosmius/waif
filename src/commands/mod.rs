@@ -45,7 +45,7 @@ pub enum Command {
     /// Set up an independent workflow or link to a supplied library.
     #[command(long_about = indoc::indoc! {"
         Create an independent library and workflow repository, or use --link
-        TARGET to link to a supplied library's canonical path. An existing
+        TARGET to link to a supplied library's absolute path. An existing
         library entry is left unchanged; report skipped setup and succeed
         without validating it."
     })]

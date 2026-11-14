@@ -591,7 +591,7 @@ fn goal_task(name: &str) -> (TestDir, Task) {
     let workspace = TestDir::new(name);
     let path = workspace.path.join(".waif/library/tasks/example");
     fs::create_dir_all(&path).expect("task should be created");
-    (workspace, Task::new(path))
+    (workspace, Task::new(path, "example".to_owned()))
 }
 
 fn valid_goal(status: &str, updated: &str, questions: &str) -> String {

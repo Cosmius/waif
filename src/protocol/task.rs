@@ -13,19 +13,23 @@ use super::{ArtifactFile, ArtifactKind, ProtocolError, Result};
 
 pub struct Task {
     pub path: PathBuf,
+    /// The task dir name. The current task's path is the `current_task`
+    /// link, so its name does not come from its path.
+    name: String,
     _private: (),
 }
 
 impl Task {
-    pub(super) fn new(path: PathBuf) -> Self {
-        Self { path, _private: () }
+    pub(super) fn new(path: PathBuf, name: String) -> Self {
+        Self {
+            path,
+            name,
+            _private: (),
+        }
     }
 
-    pub fn name(&self) -> Result<&str> {
-        self.path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| Box::new(ProtocolError::InvalidTaskName) as Box<dyn std::error::Error>)
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn artifact_paths(&self) -> Result<Vec<PathBuf>> {

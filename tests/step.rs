@@ -26,7 +26,7 @@ fn acceptance_reports_step_and_changes_only_lifecycle_metadata() {
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     assert!(stdout.contains("Workflow dir:       .waif\n"));
     assert!(stdout.contains("Current task:       20261031-1-test\n"));
-    assert!(stdout.contains("Step:               .waif/library/tasks/20261031-1-test/steps/01-test/step.md\n"));
+    assert!(stdout.contains("Step:               .waif/current_task/steps/01-test/step.md\n"));
     assert!(stdout.contains("Status:             accepted\n"));
     assert_eq!(after, expected_accepted(&before, &after));
 }
@@ -44,7 +44,7 @@ fn rejection_reports_context_and_leaves_step_unchanged() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(!output.status.success());
-    assert!(stderr.contains("Workflow dir: .waif\nCurrent task: 20261031-1-test\nStep: .waif/library/tasks/20261031-1-test/steps/01-test/step.md\n"), "{stderr}");
+    assert!(stderr.contains("Workflow dir: .waif\nCurrent task: 20261031-1-test\nStep: .waif/current_task/steps/01-test/step.md\n"), "{stderr}");
     assert!(stderr.contains("step is already accepted"), "{stderr}");
     assert_eq!(fs::read_to_string(&path).unwrap(), source);
 }
@@ -114,7 +114,7 @@ fn commit_with_message_reports_commit_and_marks_plan_item_done() {
     let hash = GitRepo::new(&workspace.path).last_commit().unwrap();
 
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert!(stdout.contains("Step:               .waif/library/tasks/20261031-1-test/steps/01-test/step.md\n"));
+    assert!(stdout.contains("Step:               .waif/current_task/steps/01-test/step.md\n"));
     assert!(stdout.contains(&format!("Commit:             {hash}\n")));
     assert!(stdout.contains("Status:             done\n"));
     assert!(stdout.contains("Plan items done:    P1\n"));

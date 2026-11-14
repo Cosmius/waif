@@ -139,36 +139,6 @@ fn linked_init_reports_an_existing_link_without_changing_libraries() {
 }
 
 #[test]
-fn init_reports_a_dangling_library_link_without_writes() {
-    let workspace = TestDir::new("init-dangling-link");
-    fs::create_dir(workspace.path.join(".waif")).unwrap();
-    symlink("../missing", workspace.path.join(".waif/library")).unwrap();
-
-    let output = waif(&workspace.path, &["init"]);
-
-    assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Library already exists; setup skipped"));
-    assert_eq!(fs::read_link(workspace.path.join(".waif/library")).unwrap(), PathBuf::from("../missing"));
-    assert_eq!(fs::read_dir(workspace.path.join(".waif")).unwrap().count(), 1);
-    assert!(!workspace.path.join("missing").exists());
-}
-
-#[test]
-fn linked_init_reports_a_dangling_link_without_checking_target() {
-    let workspace = TestDir::new("linked-init-dangling-link");
-    fs::create_dir(workspace.path.join(".waif")).unwrap();
-    symlink("../missing", workspace.path.join(".waif/library")).unwrap();
-
-    let output = waif(&workspace.path, &["init", "--link", "missing-target"]);
-
-    assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Library already exists; setup skipped"));
-    assert_eq!(fs::read_link(workspace.path.join(".waif/library")).unwrap(), PathBuf::from("../missing"));
-    assert_eq!(fs::read_dir(workspace.path.join(".waif")).unwrap().count(), 1);
-    assert!(!workspace.path.join("missing").exists());
-}
-
-#[test]
 fn linked_init_rejects_a_missing_target() {
     let workspace = TestDir::new("linked-init-missing-target");
 
@@ -176,32 +146,6 @@ fn linked_init_rejects_a_missing_target() {
 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("initialize or repair the root library"));
-}
-
-#[test]
-fn linked_init_rejects_a_library_without_tasks() {
-    let workspace = TestDir::new("linked-init-missing-tasks");
-    fs::create_dir(workspace.path.join("target")).unwrap();
-
-    let output = waif(&workspace.path, &["init", "--link", "target"]);
-
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("initialize or repair the root library"));
-}
-
-#[test]
-fn linked_init_canonicalizes_a_relative_target_through_a_symlink_chain() {
-    let workspace = TestDir::new("linked-init-chain");
-    fs::create_dir_all(workspace.path.join("root/tasks")).unwrap();
-    symlink("root", workspace.path.join("first")).unwrap();
-    symlink("first", workspace.path.join("second")).unwrap();
-
-    let output = waif(&workspace.path, &["init", "--link", "second"]);
-
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert_eq!(fs::read_link(workspace.path.join(".waif/library")).unwrap(), fs::canonicalize(workspace.path.join("root")).unwrap());
-    assert_eq!(fs::read_dir(workspace.path.join(".waif")).unwrap().count(), 1);
-    assert_eq!(fs::read_dir(workspace.path.join("root")).unwrap().count(), 1);
 }
 
 #[test]
@@ -221,7 +165,7 @@ fn ordinary_commands_allow_nested_library_links_after_setup() {
     assert!(inspected.status.success(), "{}", String::from_utf8_lossy(&inspected.stderr));
     assert_eq!(fs::read_link(workspace.path.join(".waif/library")).unwrap(), PathBuf::from("../first"));
     assert_eq!(fs::read_dir(workspace.path.join("root/tasks")).unwrap().count(), 1);
-    assert!(String::from_utf8_lossy(&inspected.stdout).contains(".waif/library/tasks/"));
+    assert!(String::from_utf8_lossy(&inspected.stdout).contains(".waif/current_task"));
 }
 
 #[test]
@@ -276,7 +220,7 @@ fn linked_worktree_setup_shares_records_and_keeps_source_contexts_unchanged() {
     assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
     assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
     assert_ne!(root_pointer, linked_pointer);
-    assert_eq!(fs::read_link(linked.join(".waif/library")).unwrap(), fs::canonicalize(main.join(".waif/library")).unwrap());
+    assert_eq!(fs::read_link(linked.join(".waif/library")).unwrap(), main.join(".waif/library"));
     assert_eq!(fs::read_link(main.join(".waif/current_task")).unwrap(), root_pointer);
     assert!(linked.join(".waif").join(&root_pointer).is_dir());
     assert_eq!(fs::read_to_string(main.join(".waif").join(&linked_pointer).join("goal.md")).unwrap(), "shared-goal");

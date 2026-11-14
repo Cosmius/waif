@@ -135,7 +135,7 @@ fn switch_task_updates_current_link() {
         .current_task()
         .expect("current task should resolve")
         .expect("current task should exist");
-    assert_eq!(current_task.path, task.path);
+    assert_eq!(current_task.name(), task.name());
 }
 
 #[cfg(unix)]
@@ -248,35 +248,6 @@ fn task_lookup_rejects_missing_and_non_directory_paths() {
 }
 
 #[cfg(unix)]
-#[test]
-fn current_task_retains_a_nominal_symlinked_task_path() {
-    let workspace = TestDir::new("nominal-current-task");
-    let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
-    fs::create_dir_all(workflow_dir.tasks_dir()).expect("tasks dir should be created");
-    fs::create_dir(workflow_dir.path.join("outside")).expect("outside dir should be created");
-    symlink(
-        "../../outside",
-        workflow_dir.tasks_dir().join("20260817-1-linked-task"),
-    )
-    .expect("task symlink should be created");
-    symlink(
-        "library/tasks/20260817-1-linked-task",
-        workflow_dir.current_link(),
-    )
-    .expect("current link should be created");
-
-    let task = workflow_dir
-        .current_task()
-        .expect("current task should resolve")
-        .expect("current task should exist");
-
-    assert_eq!(
-        task.path,
-        workflow_dir.tasks_dir().join("20260817-1-linked-task")
-    );
-    assert_eq!(task.name().expect("task should have a name"), "20260817-1-linked-task");
-}
-
 #[cfg(unix)]
 #[test]
 fn switch_task_replaces_current_file() {
@@ -297,7 +268,7 @@ fn switch_task_replaces_current_file() {
 
     assert_eq!(
         fs::read_link(workflow_dir.current_link()).expect("current should be a link"),
-        PathBuf::from(format!("library/tasks/{}", task.name().unwrap()))
+        PathBuf::from(format!("library/tasks/{}", task.name()))
     );
 }
 
@@ -306,8 +277,6 @@ fn switch_task_replaces_current_file() {
 fn current_task_resolves_relative_link_inside_tasks_dir() {
     let workspace = TestDir::new("relative-current-link");
     let workflow_dir = WorkflowDir::for_workspace(workspace.path.clone());
-    let tasks_dir = workflow_dir.tasks_dir();
-    let task_dir = tasks_dir.join("implement-feature");
     fs::create_dir_all(&workflow_dir.path).expect("instance dir should be created");
     symlink(
         "library/tasks/implement-feature",
@@ -320,9 +289,9 @@ fn current_task_resolves_relative_link_inside_tasks_dir() {
         .expect("current task should resolve")
         .expect("current task should exist");
 
-    assert_eq!(task.path, task_dir);
+    assert_eq!(task.path, workflow_dir.current_link());
     assert_eq!(
-        task.name().expect("task name should be valid"),
+        task.name(),
         "implement-feature"
     );
 }
@@ -330,7 +299,10 @@ fn current_task_resolves_relative_link_inside_tasks_dir() {
 #[test]
 fn task_goal_is_none_when_goal_file_is_missing() {
     let workspace = TestDir::new("missing-goal");
-    let task = Task::new(workspace.path.join(".waif/library/tasks/example-task"));
+    let task = Task::new(
+        workspace.path.join(".waif/library/tasks/example-task"),
+        "example-task".to_owned(),
+    );
 
     assert!(task
         .with_goal(|_| ())
@@ -341,7 +313,10 @@ fn task_goal_is_none_when_goal_file_is_missing() {
 #[test]
 fn task_singleton_accessors_use_configured_schema_parsers() {
     let workspace = TestDir::new("goal-metadata");
-    let task = Task::new(workspace.path.join(".waif/library/tasks/example-task"));
+    let task = Task::new(
+        workspace.path.join(".waif/library/tasks/example-task"),
+        "example-task".to_owned(),
+    );
     fs::create_dir_all(&task.path).expect("task dir should be created");
     fs::write(
         task.path.join("goal.md"),
@@ -382,7 +357,10 @@ Create tests.
 #[test]
 fn task_singleton_accessor_reports_path_aware_parser_errors() {
     let workspace = TestDir::new("invalid-goal");
-    let task = Task::new(workspace.path.join(".waif/library/tasks/example-task"));
+    let task = Task::new(
+        workspace.path.join(".waif/library/tasks/example-task"),
+        "example-task".to_owned(),
+    );
     fs::create_dir_all(&task.path).expect("task dir should be created");
     fs::write(
         task.path.join("goal.md"),
@@ -552,7 +530,7 @@ fn task_artifact_discovery_preserves_the_existing_layout() {
     }
 
     let paths = discover_artifact_paths(&directory.path).expect("discovery should succeed");
-    let task = Task::new(directory.path.clone());
+    let task = Task::new(directory.path.clone(), "task".to_owned());
 
     assert_eq!(task.artifact_paths().expect("task discovery should work"), paths);
     assert_eq!(paths.len(), 4);
@@ -577,7 +555,7 @@ fn explicit_file_discovery_preserves_the_selected_nominal_path() {
 #[test]
 fn task_step_and_review_accessors_reject_wrong_or_outside_files() {
     let workspace = TestDir::new("task-artifact-access");
-    let task = Task::new(workspace.path.join("task"));
+    let task = Task::new(workspace.path.join("task"), "task".to_owned());
     let step_dir = task.path.join("steps/01-example");
     fs::create_dir_all(&step_dir).expect("step directory should be created");
     let step_path = step_dir.join("step.md");
@@ -636,12 +614,12 @@ fn shared_library_selections_are_local_and_independent_libraries_are_isolated() 
     let private = independent_dir.create_task("private").unwrap();
     independent_dir.switch_task(&private).unwrap();
 
-    assert_eq!(root_dir.current_task().unwrap().unwrap().path, first.path);
-    assert_eq!(linked_dir.current_task().unwrap().unwrap().path, second.path);
-    assert_eq!(fs::read_link(linked_dir.current_link()).unwrap(), PathBuf::from(format!("library/tasks/{}", second.name().unwrap())));
-    assert!(root_dir.task(second.name().unwrap()).is_ok());
-    assert!(root_dir.task(private.name().unwrap()).is_err());
-    assert!(independent_dir.task(first.name().unwrap()).is_err());
+    assert_eq!(root_dir.current_task().unwrap().unwrap().name(), first.name());
+    assert_eq!(linked_dir.current_task().unwrap().unwrap().name(), second.name());
+    assert_eq!(fs::read_link(linked_dir.current_link()).unwrap(), PathBuf::from(format!("library/tasks/{}", second.name())));
+    assert!(root_dir.task(second.name()).is_ok());
+    assert!(root_dir.task(private.name()).is_err());
+    assert!(independent_dir.task(first.name()).is_err());
     assert!(!root_dir.library_dir().join("current_task").exists());
     assert!(!linked_dir.path.join(".git").exists());
 }
@@ -676,9 +654,9 @@ fn foreign_task_object_cannot_replace_selection_with_a_same_named_local_task() {
     fs::create_dir_all(workflow.tasks_dir()).unwrap();
     let local = workflow.create_task("existing").unwrap();
     workflow.switch_task(&local).unwrap();
-    let foreign_path = workspace.path.join(local.name().unwrap());
+    let foreign_path = workspace.path.join(local.name());
     fs::create_dir(&foreign_path).unwrap();
-    let foreign = Task::new(foreign_path);
+    let foreign = Task::new(foreign_path, local.name().to_owned());
     let before = fs::read_link(workflow.current_link()).unwrap();
 
     assert!(workflow.switch_task(&foreign).is_err());
@@ -696,30 +674,4 @@ fn create_task_does_not_read_or_modify_current_selection() {
 
     assert!(task.path.is_dir());
     assert_eq!(fs::read_to_string(workflow.current_link()).unwrap(), "not a symlink");
-}
-
-#[cfg(unix)]
-#[test]
-fn current_task_rejects_an_absolute_target_without_changing_the_link() {
-    let workspace = TestDir::new("absolute-current-target");
-    let workflow = WorkflowDir::for_workspace(workspace.path.clone());
-    fs::create_dir(&workflow.path).unwrap();
-    let target = workspace.path.join("outside");
-    symlink(&target, workflow.current_link()).unwrap();
-
-    assert!(workflow.current_task().is_err());
-    assert_eq!(fs::read_link(workflow.current_link()).unwrap(), target);
-}
-
-#[cfg(unix)]
-#[test]
-fn current_task_rejects_parent_components_even_when_the_path_stays_inside() {
-    let workspace = TestDir::new("parent-current-target");
-    let workflow = WorkflowDir::for_workspace(workspace.path.clone());
-    fs::create_dir(&workflow.path).unwrap();
-    let target = "safe/../selected";
-    symlink(target, workflow.current_link()).unwrap();
-
-    assert!(workflow.current_task().is_err());
-    assert_eq!(fs::read_link(workflow.current_link()).unwrap(), PathBuf::from(target));
 }

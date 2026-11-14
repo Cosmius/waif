@@ -34,7 +34,6 @@ enum ProtocolError {
     GoalPreconditions(Vec<String>),
     InvalidCurrentTask,
     InvalidTaskSlug,
-    InvalidTaskName,
     MalformedTaskName,
     TaskDoesNotExist,
     TaskOutsideLibrary,
@@ -83,7 +82,6 @@ impl fmt::Display for ProtocolError {
                 formatter,
                 "task slug must be lowercase letters, numbers, and hyphens"
             ),
-            Self::InvalidTaskName => write!(formatter, "current task name is invalid"),
             Self::MalformedTaskName => write!(
                 formatter,
                 "task name must use YYYYMMDD-N-lowercase-hyphenated-slug"
