@@ -1,0 +1,33 @@
+(version 1)
+(deny default)
+
+(allow process-fork)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+
+; The system and the tool store: read and execute only.
+(define (system-tree)
+  (require-any
+    (subpath "/usr") (subpath "/bin") (subpath "/sbin")
+    (subpath "/System") (subpath "/Library") (subpath "/nix/store")
+    (subpath "/private/etc") (subpath "/private/var/db/timezone")
+    (literal "/") (literal "/private") (literal "/private/var")
+    (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random")))
+(allow file-read* (system-tree))
+(allow process-exec* (system-tree))
+
+; Path lookup needs metadata everywhere; contents stay closed.
+(allow file-read-metadata)
+
+; The two directories of the run: everything.
+(define (own-tree)
+  (require-any (subpath (param "WORK")) (subpath (param "HOME"))))
+(allow file-read* file-write* (own-tree))
+(allow process-exec* (own-tree))
+
+(allow file-write-data (literal "/dev/null"))
+(allow file-ioctl (literal "/dev/null"))
+
+; The network: the proxy only.
+(allow network-outbound
+  (remote tcp (string-append "localhost:" (param "PROXY_PORT"))))

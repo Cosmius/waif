@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Runs a command in a macOS sandbox.
+
+    run --work DIR --home DIR [--allow-host HOST]... [--env NAME[=VALUE]]...
+        [--path DIR]... [--tool DIR]... [--network-log FILE] -- COMMAND...
+
+The command writes only in the two directories; reads and executes only
+them, the system trees and the --tool directories; and reaches only the
+allowed hosts, on port 443, through tinyproxy. `--env NAME` without a
+value passes the caller's own, keeping a secret off this command line.
+"""
+import argparse
+import os
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+SYSTEM_TREES = ("/usr", "/bin", "/sbin", "/System", "/Library", "/nix/store")
+
+
+def stop(message, status=1):
+    print(f"run: {message}", file=sys.stderr)
+    sys.exit(status)
+
+
+def parse_arguments(argv):
+    """The options, and the command after `--`."""
+    if "--" not in argv or argv.index("--") == len(argv) - 1:
+        stop("--work, --home and a command after -- are required", 2)
+    split = argv.index("--")
+    parser = argparse.ArgumentParser(prog="run")
+    parser.add_argument("--work", type=Path, required=True)
+    parser.add_argument("--home", type=Path, required=True)
+    parser.add_argument("--allow-host", dest="hosts", action="append", default=[])
+    parser.add_argument("--env", dest="variables", action="append", default=[])
+    parser.add_argument("--path", dest="paths", type=Path, action="append", default=[])
+    parser.add_argument("--tool", dest="tools", type=Path, action="append", default=[])
+    parser.add_argument("--network-log", type=Path, default=Path("/dev/null"))
+    args = parser.parse_args(argv[:split])
+    args.command = argv[split + 1:]
+    return args
+
+
+def find_tinyproxy():
+    tinyproxy = os.environ.get("TINYPROXY") or shutil.which("tinyproxy")
+    if not tinyproxy or not os.access(tinyproxy, os.X_OK):
+        stop("tinyproxy not found; install it, or set TINYPROXY to its path")
+    return tinyproxy
+
+
+def variables(given):
+    """NAME=VALUE as given; a bare NAME takes the caller's value."""
+    result = {}
+    for item in given:
+        name, has_value, value = item.partition("=")
+        if not has_value:
+            if name not in os.environ:
+                stop(f"--env {name}: {name} is not set")
+            value = os.environ[name]
+        result[name] = value
+    return result
+
+
+def write_profile(state, tools):
+    """The profile, with one rule added per tool directory."""
+    rules = [(HERE / "profile.sb").read_text()]
+    for tool in tools:
+        quoted = str(tool).replace("\\", "\\\\").replace('"', '\\"')
+        rules.append(f'(allow file-read* process-exec* (subpath "{quoted}"))\n')
+    profile = state / "profile.sb"
+    profile.write_text("".join(rules))
+    return profile
+
+
+def search_path(paths, tools):
+    """The --path directories, then the caller's that the profile lets be read."""
+    readable = [*SYSTEM_TREES, *map(str, tools)]
+    result = [str(path) for path in paths]
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if not entry or not os.path.isdir(entry):
+            continue
+        directory = os.path.realpath(entry)
+        if any(f"{directory}/".startswith(f"{tree}/") for tree in readable):
+            result.append(directory)
+    return os.pathsep.join(result)
+
+
+def free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def write_proxy_config(state, port, hosts):
+    """A tinyproxy that tunnels to port 443 of the allowed hosts only."""
+    patterns = [f"^{host.replace('.', '[.]')}:443$\n" for host in hosts]
+    (state / "filter").write_text("".join(patterns))
+    config = state / "tinyproxy.conf"
+    config.write_text(
+        f"Port {port}\nListen 127.0.0.1\nAllow 127.0.0.1\nTimeout 600\nMaxClients 20\n"
+        f'ConnectPort 443\nFilter "{state / "filter"}"\nFilterDefaultDeny Yes\n'
+        "FilterType ere\nFilterURLs On\nLogLevel Info\nDisableViaHeader Yes\n"
+    )
+    return config
+
+
+def start_proxy(tinyproxy, config, port, network_log):
+    with open(network_log, "ab") as log:
+        proxy = subprocess.Popen([tinyproxy, "-d", "-c", config], stdout=log, stderr=log)
+    while True:
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=1).close()
+        except OSError:
+            if proxy.poll() is not None:
+                stop("tinyproxy did not start")
+            time.sleep(0.05)
+            continue
+        listener = ["/usr/sbin/lsof", "-t", "-a", "-p", str(proxy.pid),
+                    f"-iTCP:{port}", "-sTCP:LISTEN"]
+        if subprocess.run(listener, capture_output=True).returncode != 0:
+            proxy.terminate()
+            stop(f"port {port} is held by another process")
+        return proxy
+
+
+def run_sandboxed(args, state, port):
+    profile = write_profile(state, args.tools)
+    proxy_url = f"http://127.0.0.1:{port}"
+    env = {
+        "HOME": str(args.home),
+        "TMPDIR": str(args.home / "tmp"),
+        "PATH": search_path(args.paths, args.tools),
+        "HTTPS_PROXY": proxy_url,
+        "https_proxy": proxy_url,
+        **variables(args.variables),
+    }
+    command = ["/usr/bin/sandbox-exec", "-D", f"WORK={args.work}", "-D", f"HOME={args.home}"]
+    command += ["-D", f"PROXY_PORT={port}", "-f", profile, *args.command]
+    status = subprocess.run(command, cwd=args.work, env=env).returncode
+    return status if status >= 0 else 128 - status
+
+
+def main():
+    signal.signal(signal.SIGTERM, lambda *_: None)
+    args = parse_arguments(sys.argv[1:])
+    tinyproxy = find_tinyproxy()
+    args.work, args.home = args.work.resolve(), args.home.resolve()
+    args.paths = [path.resolve() for path in args.paths]
+    args.tools = [tool.resolve() for tool in args.tools]
+    (args.home / "tmp").mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory() as state:
+        port = free_port()
+        config = write_proxy_config(Path(state), port, args.hosts)
+        proxy = start_proxy(tinyproxy, config, port, args.network_log)
+        try:
+            status = run_sandboxed(args, Path(state), port)
+        finally:
+            proxy.terminate()
+            proxy.wait()
+    sys.exit(status)
+
+
+if __name__ == "__main__":
+    main()

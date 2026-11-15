@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""Runs pi in WORKING_HOME on the prompt read from standard input, then
+saves its session in AGENT_HOME/out/ as pi-session.jsonl and .html.
+
+    run AGENT_HOME WORKING_HOME
+"""
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+
+def main():
+    signal.signal(signal.SIGTERM, lambda *_: None)
+    home, work = Path(sys.argv[1]), Path(sys.argv[2])
+    os.chdir(work)
+    os.environ.update({
+        "PI_CODING_AGENT_DIR": str(home / "pi-agent"),
+        "PI_OFFLINE": "1",
+        "PI_SKIP_VERSION_CHECK": "1",
+        "PI_TELEMETRY": "0",
+        "NODE_USE_ENV_PROXY": "1",
+        "PATH": f"{home / 'bin'}{os.pathsep}{os.environ['PATH']}",
+    })
+    settings = json.loads((home / "pi-agent" / "settings.json").read_text())
+    model = ["--model", f"{settings['defaultProvider']}/{settings['defaultModel']}"]
+    model += ["--thinking", settings["defaultThinkingLevel"]]
+    status = subprocess.run(["pi", "-nc", "-p", *model]).returncode
+    status = status if status >= 0 else 128 - status
+    out = home / "out"
+    out.mkdir(exist_ok=True)
+    for session in (home / "pi-agent" / "sessions").glob("*/*.jsonl"):
+        shutil.copy(session, out / "pi-session.jsonl")
+        export = json.dumps({"type": "export_html", "outputPath": str(out / "pi-session.html")})
+        rpc = ["pi", "-nc", "--mode", "rpc", "--session", session]
+        subprocess.run(rpc, input=f"{export}\n", text=True, stdout=subprocess.DEVNULL)
+        print(f"Session:  {out / 'pi-session.html'}", file=sys.stderr)
+    sys.exit(status)
+
+
+if __name__ == "__main__":
+    main()
