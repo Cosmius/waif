@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use super::Result;
 use crate::parser::Severity;
 
-pub const SCHEMA_VERSION: &str = "0.4-dev";
+pub const SCHEMA_VERSION: &str = "0.4";
 
 #[derive(Serialize, Deserialize)]
 struct Manifest {
