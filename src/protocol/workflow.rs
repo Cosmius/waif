@@ -84,24 +84,7 @@ impl WorkflowDir {
         };
         fs::create_dir(self.tasks_dir())?;
         manifest::write_library_manifest(&self.library_dir())?;
-        match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(self.path.join(".gitignore"))
-        {
-            Ok(mut file) => {
-                use std::io::Write;
-                file.write_all(b"/current_task\n")?;
-            }
-            Err(error) if error.kind() == ErrorKind::AlreadyExists => (),
-            Err(error) => return Err(error.into()),
-        }
-        match fs::metadata(self.path.join(".git")) {
-            Ok(_) => return Ok(Initialisation::Created(None)),
-            Err(error) if error.kind() == ErrorKind::NotFound => (),
-            Err(error) => return Err(error.into()),
-        }
-        let git_error = GitRepo::new(&self.path).initialise().err();
+        let git_error = GitRepo::new(&self.library_dir()).initialise().err();
         Ok(Initialisation::Created(git_error))
     }
 

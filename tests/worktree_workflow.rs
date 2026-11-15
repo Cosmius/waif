@@ -94,8 +94,7 @@ fn linked_commands_isolate_goal_acceptance_and_resume_shared_tasks() {
     assert_eq!(fs::read_link(linked.join(".waif/current_task")).unwrap(), root_pointer);
     assert_eq!(fs::read_to_string(&root_goal).unwrap(), root_source);
     assert!(!linked.join(".waif/.git").exists());
-    assert!(GitRepo::new(&main.join(".waif")).is_ignored("current_task").unwrap());
-    assert!(String::from_utf8_lossy(&GitRepo::new(&main.join(".waif")).working_tree_status().unwrap()).contains("library/"));
+    assert!(String::from_utf8_lossy(&GitRepo::new(&main.join(".waif/library")).working_tree_status().unwrap()).contains("tasks/"));
     assert_eq!(GitRepo::new(&main).branch_name().unwrap(), root_branch);
     assert_eq!(GitRepo::new(&linked).branch_name().unwrap(), linked_branch);
     assert_eq!(GitRepo::new(&main).index_entries().unwrap(), root_index);
@@ -130,7 +129,7 @@ fn independent_worktree_isolates_records_and_loses_its_library_on_removal() {
     assert!(private_created.status.success());
     assert!(accepted.status.success());
     assert!(inspected.status.success());
-    assert!(independent.join(".waif/.git").is_dir());
+    assert!(independent.join(".waif/library/.git").is_dir());
     assert_eq!(fs::read_to_string(&root_goal).unwrap(), DRAFT_GOAL);
     assert_eq!(fs::read_link(main.join(".waif/current_task")).unwrap(), root_pointer);
     assert!(!main.join(".waif").join(&private_pointer).exists());

@@ -36,7 +36,7 @@ impl InitCommand {
         match outcome {
             Initialisation::Skipped => println!("Library already exists; setup skipped"),
             Initialisation::Created(Some(error)) => {
-                print_tabular_row("Workflow git:", format!("not initialised ({error})"));
+                print_tabular_row("Library git:", format!("not initialised ({error})"));
             }
             Initialisation::Created(None) => (),
         }

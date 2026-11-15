@@ -51,7 +51,7 @@ fn initialise_creates_workflow_dir_and_tasks_dir() {
         .expect("workflow should initialise");
 
     assert_eq!(git_error, Initialisation::Created(None));
-    assert!(workflow_dir.path.join(".git").is_dir());
+    assert!(workflow_dir.library_dir().join(".git").is_dir());
     assert!(workflow_dir.tasks_dir().is_dir());
     assert!(workflow_dir
         .current_task()

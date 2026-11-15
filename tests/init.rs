@@ -14,7 +14,7 @@ mod test_support;
 use test_support::TestDir;
 
 #[test]
-fn init_creates_an_independent_library_and_workflow_repository() {
+fn init_creates_an_independent_library_with_its_own_repository() {
     let workspace = TestDir::new("init-independent");
     let workflow = workspace.path.join(".waif");
 
@@ -23,13 +23,13 @@ fn init_creates_an_independent_library_and_workflow_repository() {
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     assert!(workflow.join("library/tasks").is_dir());
     assert!(!fs::symlink_metadata(workflow.join("library")).unwrap().is_symlink());
-    assert!(workflow.join(".git").is_dir());
-    assert_eq!(fs::read_to_string(workflow.join(".gitignore")).unwrap(), "/current_task\n");
+    assert!(workflow.join("library/.git").is_dir());
+    assert!(!workflow.join(".git").exists());
+    assert!(!workflow.join(".gitignore").exists());
     assert!(!workflow.join("current_task").exists());
     assert!(!workflow.join("library/charter.md").exists());
     assert_eq!(fs::read_to_string(workflow.join("library/waif.toml")).unwrap(), format!("schema_version = \"{SCHEMA_VERSION}\"\n"));
     assert_eq!(fs::read_dir(workflow.join("library/tasks")).unwrap().count(), 0);
-    assert!(GitRepo::new(&workflow).is_ignored("current_task").unwrap());
 }
 
 #[test]
@@ -228,8 +228,7 @@ fn linked_worktree_setup_shares_records_and_keeps_source_contexts_unchanged() {
     assert_eq!(fs::read_to_string(main.join(".waif").join(&linked_pointer).join("goal.md")).unwrap(), "shared-goal");
     assert!(!linked.join(".waif/.git").exists());
     assert!(!main.join(".waif/library/current_task").exists());
-    assert!(GitRepo::new(&main.join(".waif")).is_ignored("current_task").unwrap());
-    assert!(String::from_utf8_lossy(&GitRepo::new(&main.join(".waif")).working_tree_status().unwrap()).contains("library/"));
+    assert!(String::from_utf8_lossy(&GitRepo::new(&main.join(".waif/library")).working_tree_status().unwrap()).contains("tasks/"));
     assert_eq!(GitRepo::new(&main).branch_name().unwrap(), main_branch);
     assert_eq!(GitRepo::new(&linked).branch_name().unwrap(), linked_branch);
     assert_eq!(GitRepo::new(&main).index_entries().unwrap(), main_index);
