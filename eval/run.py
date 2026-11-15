@@ -2,7 +2,7 @@
 """Runs scenarios with an agent inside the macOS sandbox and keeps the records.
 
     eval/run.py --model PROVIDER/MODEL/EFFORT [--agent NAME] [--limit SECONDS]
-        SCENARIO_DIR...
+        [--jobs N] SCENARIO_DIR...
 """
 import argparse
 import json
@@ -11,7 +11,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 EVAL = Path(__file__).parent.absolute()
@@ -23,6 +25,7 @@ MODELS = {
     "anthropic": ("fable-5.2", "opus-5.5", "sonnet-5.5", "haiku-5.5"),
 }
 EFFORTS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+CONSOLE = threading.Lock()
 
 
 def main():
@@ -34,8 +37,12 @@ def main():
         stop(f"unknown agent {args.agent.name!r}; known: {known}")
     scenarios = [path.absolute() for path in args.scenarios]
     run = time.strftime("%Y%m%d-%H%M%S")
-    for scenario_dir in scenarios:
-        run_scenario(args, run, scenario_dir)
+    futures = []
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        for scenario_dir in scenarios:
+            futures.append(pool.submit(run_scenario, args, run, scenario_dir))
+    for future in futures:
+        future.result()
 
 
 def run_scenario(args, run, scenario_dir):
@@ -49,9 +56,10 @@ def run_scenario(args, run, scenario_dir):
     command = sandbox_command(args.agent, record, home, work, needs)
     outcome = run_agent(command, scenario_dir / "prompt.md", record / "output.txt", args.limit)
     fetch_out(home / "out", record)
-    print(f"Scenario: {name}")
-    print(f"Run:      {outcome}")
-    print(f"Record:   {record}")
+    with CONSOLE:
+        print(f"Scenario: {name}")
+        print(f"Run:      {outcome}")
+        print(f"Record:   {record}", flush=True)
 
 
 def prepare_work(scenario_dir, work):
@@ -116,6 +124,7 @@ def parse_arguments():
     parser.add_argument("--agent", default="pi", help="an adapter in eval/agents/")
     parser.add_argument("scenarios", nargs="+", type=Path, metavar="SCENARIO_DIR")
     parser.add_argument("--limit", type=int, default=600, help="seconds")
+    parser.add_argument("--jobs", type=int, default=1, help="scenarios run at once")
     return parser.parse_args()
 
 

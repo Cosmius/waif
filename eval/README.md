@@ -23,6 +23,7 @@ eval/run.py --model PROVIDER/MODEL/EFFORT [--agent NAME] SCENARIO_DIR...
   `eval/scenarios/dev-workflow-setup/new-project`.
 - `--limit SECONDS` stops the agent after that time in each scenario, 600
   by default.
+- `--jobs N` runs up to N scenarios at once, 1 by default.
 
 Each scenario prints how it ended, and leaves in its run directory,
 `RUN_HOME`:
